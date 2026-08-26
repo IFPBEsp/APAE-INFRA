@@ -40,7 +40,7 @@ Usaremos o padrão **[App of Apps](https://argo-cd.readthedocs.io/en/stable/oper
 **Importante — são dois loops de sincronização independentes, rodando em paralelo o tempo todo:**
 
 1. **Loop da raiz**: garante que os 4 objetos `Application` (definições) existam no cluster exatamente como estão descritos em `argocd/apps/*.yaml`. Ela só entra em Out-of-Sync se alguém alterar/adicionar/remover um desses arquivos YAML (ex.: criar uma 5ª Application). Um bump de tag de imagem **não afeta** esse loop.
-2. **Loop de cada Application filha**: cada uma monitora seu próprio `source.path` (o overlay Kustomize da aplicação dela) e garante que o Deployment/Service/etc. estejam como descrito lá. É **esse** loop que entra em Out-of-Sync quando a tag da imagem é atualizada.
+2. **Loop de cada Application filha**: cada uma monitora seu próprio `source.path` (o overlay Kustomize da aplicação dela) e garante que o Deployment/Service/etc. estejam como descrito lá. É esse loop que entra em Out-of-Sync quando a tag da imagem é atualizada.
 
 Ou seja, a raiz não "descobre" as filhas reagindo a um push de imagem — ela já as mantém registradas continuamente. Quem reage ao push de imagem é diretamente a Application filha correspondente, porque foi o overlay dela que mudou.
 
@@ -65,9 +65,9 @@ argocd/
 
 > Neste primeiro momento cada Application filha aponta para um único ambiente (ver seção de Sync abaixo). Conforme os ambientes hml/prod forem estruturados, o padrão se repete: um arquivo por combinação aplicação+ambiente dentro de `argocd/apps/`.
 
-### Applications estáticas (decisão para este momento)
+### Applications estáticas
 
-Optamos por escrever manualmente um YAML de `Application` por repositório — abordagem mais simples de entender e depurar enquanto o time ainda está validando o funcionamento do ArgoCD. Ela tem caminho de evolução direto: quando o número de aplicações/ambientes crescer, o mesmo padrão de pastas pode ser consumido por um `ApplicationSet` sem precisar reestruturar nada (ver seção final).
+Será adotado uma abordagem para escrever manualmente um YAML de `Application` por repositório — abordagem mais simples de entender e depurar enquanto o time ainda está validando o funcionamento do ArgoCD. Ela tem caminho de evolução direto: quando o número de aplicações/ambientes crescer, o mesmo padrão de pastas pode ser consumido por um `ApplicationSet` sem precisar reestruturar nada.
 
 ```yaml
 # argocd/app-of-apps.yaml — Application raiz
@@ -110,7 +110,7 @@ spec:
   syncPolicy: {}   # sync manual — ver seção de Política de Sincronização
 ```
 
-> A raiz (`apae-root`) mantém `automated` porque ela só gerencia a existência das *definições* de Application — baixo risco. As Applications filhas (workloads reais) ficam sem `automated`, exigindo aprovação manual, conforme decidido para este momento do projeto.
+> A raiz (`apae-root`) mantém `automated` porque ela só gerencia a existência das *definições* de Application — baixo risco. As Applications filhas (workloads reais) ficam sem `automated`, exigindo aprovação manual, decisão para essa fase do projeto inicial.
 
 Repita a mesma estrutura para `apae-gestao-escolar.yaml`, `apae-atendimento.yaml` e `apae-site-comemorativo.yaml`, mudando `name`, `path` e `namespace`.
 
@@ -200,14 +200,14 @@ Duas origens de mudança, dois fluxos — mas **ambos terminam exigindo aprovaç
 
 1. Um push/merge em um dos repositórios de aplicação (APAE, APAE-gestão escolar, APAE-atendimento ou APAE-site-comemorativo) dispara o pipeline de **CI** (GitHub Actions);
 2. O CI builda a imagem e faz o **push da imagem** para o **GHCR** (Container Registry);
-3. Um **job do próprio GitHub Actions ("Image Updater")** identifica que uma nova imagem foi publicada e atualiza a tag no `kustomization.yaml` do overlay correspondente do APAE-INFRA (ex.: `kubernetes/overlays/dev/apae`), via commit ou PR (é interessante que seja aberto um PR para revisão adicional ao invés de um coomit direto nessa fase inicial de desenvolvimento);
+3. Um **job do próprio GitHub Actions (Image Updater)** identifica que uma nova imagem foi publicada e atualiza a tag no `kustomization.yaml` do overlay correspondente do APAE-INFRA (ex.: `kubernetes/overlays/dev/apae`), via PR para revisão adicional antes do commit;
 4. A partir daqui o fluxo é o mesmo do caso 1: o ArgoCD Controller detecta que **a Application filha daquele repositório** está Out-of-Sync (a raiz não é afetada, pois a definição das Applications em `argocd/apps/` não mudou — apenas o conteúdo do overlay que a Application filha já apontava);
 5. Alguém aprova o sync manualmente no ArgoCD;
 6. O ArgoCD sincroniza a Application filha: normalmente isso é um **rolling update** do Deployment já existente (novos Pods sobem com a imagem nova do GHCR e os antigos são removidos gradualmente) — só no primeiro deploy daquela aplicação/ambiente é que os Pods são criados do zero.
 
 Em ambos os casos, **a única forma de o cluster mudar é através de um commit no APAE-INFRA seguido de aprovação manual no ArgoCD** — nunca há `kubectl apply` manual nem alteração direta do GHCR/CI no cluster.
 
-### COmportamento da Application raiz dentro do ArgoCD
+### Comportamento da Application raiz dentro do ArgoCD
 
 A Application raiz (`apae-root`) já mantém as 4 filhas registradas no cluster o tempo todo, desde o bootstrap — ela roda seu próprio loop de sincronização continuamente, independente de qualquer push de imagem. O que acontece a cada deploy é a Application filha *já existente* entrando em Out-of-Sync porque o conteúdo do overlay que ela aponta mudou — não a criação de uma Application nova.
 
@@ -231,10 +231,3 @@ As Applications de workload rodam no mesmo cluster monitorado pela stack de obse
 - **Prometheus** coleta métricas dos Pods/Deployments de todas as aplicações;
 - **Grafana** visualiza as métricas do Prometheus em dashboards;
 - **Loki** centraliza os logs dos Pods, também visualizados no Grafana.
-
-## Pontos em aberto para validação com a squad
-
-- [ ] Definir se o job de Image Updater fará commit direto no APAE-INFRA ou abrirá PR para revisão adicional;
-- [ ] Validar nomenclatura final das Applications e dos namespaces;
-- [ ] Definir quando `apae-site-comemorativo` entra no escopo de gerenciamento do ArgoCD;
-- [ ] Planejar estrutura de `hml`/`prod` quando esses ambientes forem criados (novas Applications por ambiente, mesmo padrão).
