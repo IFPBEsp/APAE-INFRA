@@ -6,7 +6,7 @@ Este documento define o padrão de mensagens de commit adotado no repositório *
 
 ## Formato da mensagem
 
-```
+```text
 tipo: descrição
 ```
 
@@ -20,7 +20,7 @@ As mensagens de commit devem ser escritas em **português**.
 ## Tipos de commit permitidos
 
 | Tipo | Quando usar | Exemplo |
-|---|---|---|
+| --- | --- | --- |
 | `feat` | Nova funcionalidade | `feat: adiciona pipeline de deploy do argocd` |
 | `fix` | Correção de bug | `fix: corrige path do values.yaml do grafana` |
 | `docs` | Mudanças de documentação | `docs: adiciona padronizacao de mensagens de commit` |

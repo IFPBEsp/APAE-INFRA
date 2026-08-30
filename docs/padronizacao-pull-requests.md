@@ -6,7 +6,7 @@
 
 As branches devem seguir o padrão:
 
-```
+```text
 {numero-da-issue}-{titulo-da-issue-em-kebab-case}
 ```
 
@@ -22,7 +22,7 @@ Todo PR deve estar vinculado a uma issue. O campo `Issue: {issue_link}` da seç�
 
 O título do PR deve seguir o padrão:
 
-```
+```texte
 [TIPO] Descrição
 ```
 

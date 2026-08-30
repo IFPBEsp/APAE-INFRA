@@ -6,7 +6,7 @@ Este documento descreve a estrutura de diretórios base do repositório **APAE-I
 
 ## Estrutura de diretórios
 
-```
+```text
 /terraform
   /modules        # módulos reutilizáveis
   /environments   # configuração por ambiente (dev, hml, prod)
