@@ -40,4 +40,4 @@ As mensagens de commit devem ser escritas em **português**.
 
 ## Referência
 
-* https://www.conventionalcommits.org/pt-br/
+* [Conventional Commits](https://www.conventionalcommits.org/pt-br/)

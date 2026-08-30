@@ -39,3 +39,4 @@ As subpastas por aplicação e ambiente serão criadas conforme o trabalho de ca
 
 * [Padronização de mensagens de commit](padronizacao-commits.md)
 * [Padronização de abertura de Pull Requests](padronizacao-pull-requests.md)
+* [Padronização de Markdown](padronizacao-markdown.md)

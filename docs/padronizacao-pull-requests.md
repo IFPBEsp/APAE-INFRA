@@ -35,7 +35,7 @@ O título do PR deve seguir o padrão:
 
 Antes de marcar o PR como pronto para revisão, verificar:
 
-* Build/pipeline passando (quando aplicável);
+* Build/pipeline passando (incluindo lint de Markdown via CI);
 * Testes executados (quando aplicável);
 * Evidências anexadas na seção **Evidências** do template (prints, logs, capturas de tela, etc.);
 * Campo `Issue:` do template preenchido.
@@ -46,6 +46,8 @@ Antes de marcar o PR como pronto para revisão, verificar:
 * Quem abre o PR não pode aprovar o próprio PR;
 * O merge só pode ser feito depois que todos os checks obrigatórios (CI) passarem e a aprovação mínima for obtida.
 
-## Referência
+## Referências
 
-* Template de PR: [`.github/PULL_REQUEST_TEMPLATE/Default.md`](../.github/pull_request_template.md)
+* Template de PR: [`.github/pull_request_template.md`](../.github/pull_request_template.md)
+* [Padronização de Markdown](padronizacao-markdown.md)
+* [Padronização de mensagens de commit](padronizacao-commits.md)
