@@ -42,11 +42,22 @@ terraform/
   environments/   # configuração por ambiente (dev/hml/prod)
 ```
 
-## Padronização
+> Proposta inicial para validação com o time — pode ser revisada conforme surgirem necessidades reais de cada aplicação.
 
-- Commits: [docs/padronizacao-commits.md](docs/padronizacao-commits.md)
-- Pull Requests: [docs/padronizacao-pull-requests.md](docs/padronizacao-pull-requests.md)
+### Separação por ambiente (dev/hml/prod)
+
+- **Terraform:** cada ambiente tem sua própria pasta em `terraform/environments/`, com variáveis e state próprios, usando os módulos compartilhados de `terraform/modules/`.
+- **Kubernetes/ArgoCD:** padrão Kustomize — manifests comuns em `kubernetes/base/`, e os ajustes de cada ambiente em `kubernetes/overlays/{dev,hml,prod}/`.
+
+### Separação por aplicação
+
+Os 4 repositórios orquestrados (listados acima) são organizados como uma subdivisão dentro de cada ambiente:
+
+- **Kubernetes:** `kubernetes/base/{aplicacao}/` e `kubernetes/overlays/{ambiente}/{aplicacao}/`;
+- **ArgoCD:** uma `Application` por combinação aplicação + ambiente, agrupada em `argocd/{aplicacao}/`.
+
+As subpastas de cada aplicação e ambiente serão criadas conforme o trabalho avançar — por enquanto só existe o esqueleto base.
 
 ## Como contribuir
 
-Ver [CONTRIBUTING.md](CONTRIBUTING.md).
+Padrões de branch, commits e Pull Request estão centralizados em [CONTRIBUTING.md](CONTRIBUTING.md).
