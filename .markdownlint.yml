@@ -1,0 +1,18 @@
+# Configuração do markdownlint
+# Documentação das regras: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+default: true
+
+# MD013/line-length: Desativa limite de caracteres por linha (útil para URLs longas e tabelas)
+MD013: false
+
+# MD024/no-duplicate-heading: Permite títulos repetidos desde que em seções irmãs diferentes
+MD024:
+  siblings_only: true
+
+# MD025/single-title/single-h1: Desativa verificação de título em front-matter para evitar conflitos em templates
+MD025:
+  front_matter_title: ""
+
+# MD033/no-inline-html: Permite elementos HTML pontuais caso necessários (ex: <kbd>, <details>, <img>)
+MD033: false

@@ -6,7 +6,7 @@ Este documento descreve a estrutura de diretórios base do repositório **APAE-I
 
 ## Estrutura de diretórios
 
-```
+```text
 /terraform
   /modules        # módulos reutilizáveis
   /environments   # configuração por ambiente (dev, hml, prod)
@@ -39,3 +39,4 @@ As subpastas por aplicação e ambiente serão criadas conforme o trabalho de ca
 
 * [Padronização de mensagens de commit](padronizacao-commits.md)
 * [Padronização de abertura de Pull Requests](padronizacao-pull-requests.md)
+* [Padronização de Markdown](padronizacao-markdown.md)
