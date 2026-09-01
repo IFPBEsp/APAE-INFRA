@@ -38,6 +38,56 @@ As mensagens de commit devem ser escritas em **português**.
 * Sem caracteres especiais, além dos dois-pontos após o tipo;
 * Sem acentuação (ex: `documentacao`, não `documentação`).
 
-## Referência
+## Validação automática (commitlint)
+ 
+A adesão a este padrão passou a ser **verificada automaticamente** em cada Pull Request, usando o [commitlint](https://commitlint.js.org/) com o preset `@commitlint/config-conventional`.
+ 
+### Regras configuradas
+ 
+As regras estão definidas em [`commitlint.config.js`](../commitlint.config.js), na raiz do repositório. Além do preset padrão, foram adicionadas/ajustadas as seguintes regras para refletir os tipos definidos neste documento:
+ 
+| Regra | Configuração | Efeito |
+|---|---|---|
+| `type-enum` | `feat, fix, docs, refactor, test, chore, ci, build` | Só aceita os tipos listados na seção [Tipos de commit permitidos](#tipos-de-commit-permitidos) |
+| `type-case` | `lower-case` | O tipo deve estar em minúsculo (ex: `feat`, não `Feat`) |
+| `subject-case` | `lower-case` | A descrição deve estar em minúsculo |
+| `subject-full-stop` | proibido ponto final | A descrição não pode terminar com `.` |
+| `subject-exclamation-mark` | proibido `!` | A descrição não pode terminar com `!` |
+ 
+> Observação: o preset `@commitlint/config-conventional` valida a estrutura `tipo: descrição`, mas não impõe idioma nem acentuação. A regra de "sem acentuação" e "modo imperativo" ainda dependem de revisão humana/atenção de quem commita — o commitlint não cobre esses dois pontos.
+ 
+### Onde a validação roda
+ 
+A validação **não** roda localmente por padrão (nenhum hook obrigatório é instalado). Ela roda em um workflow dedicado do GitHub Actions (`.github/workflows/commitlint.yml`), disparado nos eventos `opened`, `synchronize` e `reopened` de Pull Requests.
+ 
+O workflow usa a action [`wagoid/commitlint-github-action`](https://github.com/wagoid/commitlint-github-action), que valida **todo o range de commits do PR** (do commit-base até o topo da branch), não apenas o último commit. Isso garante que, mesmo em um PR com vários commits, nenhum deles escape da validação.
+ 
+Esse desenho foi escolhido para que quem só mexe com Terraform, YAML ou Dockerfile não precise instalar Node.js nem configurar nada localmente — o check roda inteiramente no CI.
+ 
+### Hook local (opcional, via Husky)
+ 
+Não é obrigatório instalar nada localmente para contribuir. Quem tiver Node.js instalado e quiser feedback imediato (antes mesmo de abrir o PR) pode, opcionalmente, configurar um hook local com [Husky](https://typicode.github.io/husky/) + commitlint. Essa configuração é individual e não faz parte da árvore de dependências obrigatória do projeto.
+ 
+### O que acontece quando um commit falha na validação
+ 
+* O check `commitlint` no Pull Request falha (fica vermelho), com o log apontando qual commit e qual regra foi violada;
+* Enquanto o check estiver marcado como **obrigatório** nas regras de proteção da branch principal, o PR não pode ser mesclado até a mensagem ser corrigida;
+* Para corrigir:
+  * **Se for o último commit:**
+```bash
+    git commit --amend -m "tipo: descrição corrigida"
+    git push --force-with-lease
+```
+  * **Se for um commit mais antigo no histórico do PR:**
+```bash
+    git rebase -i <commit-anterior-ao-que-precisa-mudar>
+    # marque o commit com problema como "reword" (ou "r")
+    # salve, edite a mensagem, salve novamente
+    git push --force-with-lease
+```
+* Após o push forçado, o workflow do GitHub Actions roda novamente e o check é atualizado automaticamente.
 
+## Referência
+ 
 * https://www.conventionalcommits.org/pt-br/
+* https://commitlint.js.org/
