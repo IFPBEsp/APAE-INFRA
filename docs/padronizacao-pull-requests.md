@@ -22,7 +22,7 @@ Todo PR deve estar vinculado a uma issue. O campo `Issue: {issue_link}` da seç�
 
 O título do PR deve seguir o padrão:
 
-```texte
+```text
 [TIPO] Descrição
 ```
 
