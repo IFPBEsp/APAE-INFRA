@@ -1,0 +1,25 @@
+name: Kubernetes Manifests Lint
+
+on:
+  pull_request:
+    paths:
+      - "kubernetes/**"
+      - "argocd/**"
+      - ".github/k8s/workflows/reusable-k8s-lint.yml"
+      - ".github/k8s/workflows/k8s-lint.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  kubernetes:
+    name: Lint Kubernetes manifests
+    uses: ./.github/workflows/reusable-k8s-lint.yml
+    with:
+      manifests-path: "kubernetes"
+
+  argocd:
+    name: Lint Argo CD manifests
+    uses: ./.github/workflows/reusable-k8s-lint.yml
+    with:
+      manifests-path: "argocd"
