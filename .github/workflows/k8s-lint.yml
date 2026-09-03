@@ -5,7 +5,7 @@ on:
     paths:
       - "kubernetes/**"
       - "argocd/**"
-      - ".github/workflows/reusable-k8s-lint.yml"
+      - ".github/workflows/k8s-lint-reusable.yml"
       - ".github/workflows/k8s-lint.yml"
 
 permissions:
@@ -14,12 +14,12 @@ permissions:
 jobs:
   kubernetes:
     name: Lint Kubernetes manifests
-    uses: ./.github/workflows/reusable-k8s-lint.yml
+    uses: ./.github/workflows/k8s-lint-reusable.yml
     with:
       manifests-path: "kubernetes"
 
   argocd:
     name: Lint Argo CD manifests
-    uses: ./.github/workflows/reusable-k8s-lint.yml
+    uses: ./.github/workflows/k8s-lint-reusable.yml
     with:
       manifests-path: "argocd"
