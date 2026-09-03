@@ -5,8 +5,8 @@ on:
     paths:
       - "kubernetes/**"
       - "argocd/**"
-      - ".github/k8s/workflows/reusable-k8s-lint.yml"
-      - ".github/k8s/workflows/k8s-lint.yml"
+      - ".github/workflows/reusable-k8s-lint.yml"
+      - ".github/workflows/k8s-lint.yml"
 
 permissions:
   contents: read
