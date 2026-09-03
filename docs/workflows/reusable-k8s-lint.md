@@ -104,6 +104,7 @@ jobs:
     with:
       manifests-path: "kubernetes"
 ```
+A referência <commit-sha> deve ser substituída pelo SHA completo do commit do PR aprovado no APAE-INFRA.
 
 Evitar referências mutáveis como:
 
