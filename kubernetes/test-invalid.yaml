@@ -1,9 +1,17 @@
-apiVersion: v1
-kind: Service
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: test-invalid-schema
+  name: test-kube-linter
 spec:
-  type: ClusterIP
-  invalidField: true
-  ports:
-    - port: 80
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-kube-linter
+  template:
+    metadata:
+      labels:
+        app: test-kube-linter
+    spec:
+      containers:
+        - name: app
+          image: nginx:latest
