@@ -1,0 +1,151 @@
+name: Reusable Kubernetes Manifests Lint
+
+on:
+  workflow_call:
+    inputs:
+      manifests-path:
+        description: "Diretório contendo os manifests Kubernetes"
+        required: false
+        type: string
+        default: "kubernetes"
+
+      kubernetes-version:
+        description: "Versão Kubernetes usada na validação de schema"
+        required: false
+        type: string
+        default: ""
+
+      ignore-missing-schemas:
+        description: "Permite ignorar CRDs sem schema disponível"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint Kubernetes manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Discover Kubernetes manifests
+        id: manifests
+        shell: bash
+        env:
+          MANIFESTS_PATH: ${{ inputs.manifests-path }}
+        run: |
+          set -euo pipefail
+          
+          if [[ ! -d "$MANIFESTS_PATH" ]]; then
+            echo "::error::Diretório de manifests não encontrado: $MANIFESTS_PATH"
+            exit 1
+          fi
+          
+          manifest_list="$RUNNER_TEMP/k8s-manifests.list"
+          
+          find "$MANIFESTS_PATH" \
+            -type f \
+            \( -name '*.yaml' -o -name '*.yml' \) \
+            -print0 > "$manifest_list"
+          
+          if [[ ! -s "$manifest_list" ]]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Nenhum manifesto YAML encontrado em $MANIFESTS_PATH"
+            exit 0
+          fi
+          
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "list=$manifest_list" >> "$GITHUB_OUTPUT"
+
+      - name: Install yamllint
+        if: steps.manifests.outputs.found == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 -m venv "$RUNNER_TEMP/yamllint"
+
+          "$RUNNER_TEMP/yamllint/bin/pip" install \
+            --disable-pip-version-check \
+            --no-cache-dir \
+            "yamllint==1.38.0"
+
+          echo "$RUNNER_TEMP/yamllint/bin" >> "$GITHUB_PATH"
+
+      - name: Validate YAML syntax
+        if: steps.manifests.outputs.found == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > "$RUNNER_TEMP/.yamllint.yml" <<'YAML'
+          extends: relaxed
+
+          rules:
+            document-start: disable
+            line-length: disable
+          YAML
+
+          mapfile -d '' -t files < "$RUNNER_TEMP/k8s-manifests.list"
+
+          yamllint \
+            -c "$RUNNER_TEMP/.yamllint.yml" \
+            "${files[@]}"
+
+      - name: Install kubeconform
+        if: steps.manifests.outputs.found == 'true'
+        shell: bash
+        env:
+          KUBECONFORM_VERSION: "0.8.0"
+          KUBECONFORM_SHA256: "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883"
+        run: |
+          set -euo pipefail
+
+          archive="$RUNNER_TEMP/kubeconform.tar.gz"
+
+          curl -fsSLo "$archive" \
+            "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+
+          echo "${KUBECONFORM_SHA256}  ${archive}" | sha256sum --check -
+
+          tar -xzf "$archive" -C "$RUNNER_TEMP" kubeconform
+
+          sudo install \
+            -m 0755 \
+            "$RUNNER_TEMP/kubeconform" \
+            /usr/local/bin/kubeconform
+
+      - name: Validate Kubernetes schemas
+        if: steps.manifests.outputs.found == 'true'
+        shell: bash
+        env:
+          KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
+          IGNORE_MISSING_SCHEMAS: ${{ inputs.ignore-missing-schemas }}
+          CRD_CATALOG_REVISION: "866b2653a5334db9aed20ad74701e20fd464471b"
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' -t files < "$RUNNER_TEMP/k8s-manifests.list"
+
+          args=(
+            -strict
+            -summary
+            -output text
+            -schema-location default
+            -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRD_CATALOG_REVISION}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+          )
+
+          if [[ -n "$KUBERNETES_VERSION" ]]; then
+            args+=(-kubernetes-version "$KUBERNETES_VERSION")
+          fi
+
+          if [[ "$IGNORE_MISSING_SCHEMAS" == "true" ]]; then
+            args+=(-ignore-missing-schemas)
+          fi
+
+          kubeconform "${args[@]}" "${files[@]}"
