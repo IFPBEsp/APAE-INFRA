@@ -60,7 +60,6 @@ jobs:
           fi
           
           echo "found=true" >> "$GITHUB_OUTPUT"
-          echo "list=$manifest_list" >> "$GITHUB_OUTPUT"
 
       - name: Install yamllint
         if: steps.manifests.outputs.found == 'true'
@@ -149,3 +148,36 @@ jobs:
           fi
 
           kubeconform "${args[@]}" "${files[@]}"
+
+      - name: Install kube-linter
+        if: steps.manifests.outputs.found == 'true'
+        shell: bash
+        env:
+          KUBE_LINTER_VERSION: "0.8.3"
+          KUBE_LINTER_SHA256: "618d299a3e2839c8ca9d86fce0db617be0fba41f0fecbbbfb7fbf1c04299fae1"
+        run: |
+          set -euo pipefail
+
+          binary="$RUNNER_TEMP/kube-linter"
+
+          curl -fsSLo "$binary" \
+            "https://github.com/stackrox/kube-linter/releases/download/v${KUBE_LINTER_VERSION}/kube-linter-linux"
+
+          echo "${KUBE_LINTER_SHA256}  ${binary}" | sha256sum --check -
+
+          sudo install \
+            -m 0755 \
+            "$binary" \
+            /usr/local/bin/kube-linter
+
+      - name: Validate Kubernetes best practices
+        if: steps.manifests.outputs.found == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' -t files < "$RUNNER_TEMP/k8s-manifests.list"
+
+          kube-linter lint \
+            --fail-on-invalid-resource \
+            "${files[@]}"
