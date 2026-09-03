@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-O workflow `.github/workflows/reusable-k8s-lint.yml` centraliza a validação de manifests Kubernetes utilizados pelos repositórios APAE.
+O workflow `.github/workflows/k8s-lint-reusable.yml` centraliza a validação de manifests Kubernetes utilizados pelos repositórios APAE.
 
 A validação é executada em três camadas:
 
@@ -100,7 +100,7 @@ permissions:
 
 jobs:
   k8s-lint:
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-k8s-lint.yml@<commit-sha>
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/k8s-lint-reusable.yml@<commit-sha>
     with:
       manifests-path: "kubernetes"
 ```
