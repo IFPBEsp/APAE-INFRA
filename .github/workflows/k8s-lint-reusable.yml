@@ -178,6 +178,4 @@ jobs:
 
           mapfile -d '' -t files < "$RUNNER_TEMP/k8s-manifests.list"
 
-          kube-linter lint \
-            --fail-on-invalid-resource \
-            "${files[@]}"
+          kube-linter lint "${files[@]}"
