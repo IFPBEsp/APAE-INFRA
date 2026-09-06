@@ -1,6 +1,6 @@
 # APAE-INFRA
 
-Repositório responsável por centralizar a infraestrutura e o DevOps do projeto APAE, orquestrando os repositórios de aplicação abaixo.
+Repositório responsável por centralizar a infraestrutura e os processos de DevOps do projeto APAE, orquestrando os repositórios de aplicação abaixo.
 
 ## Objetivo
 
@@ -8,14 +8,14 @@ Manter em um único lugar tudo que é infraestrutura como código, pipelines de 
 
 ## Tecnologias utilizadas
 
-- ArgoCD
-- Kubernetes
-- Docker
-- GitHub Actions
-- Terraform
-- Grafana
-- Prometheus
-- Loki
+- [ArgoCD](https://argo-cd.readthedocs.io/en/stable/)
+- [Kubernetes](https://kubernetes.io/)
+- [Docker](https://www.docker.com/)
+- [GitHub Actions](https://github.com/features/actions)
+- [Terraform](https://www.terraform.io/)
+- [Grafana](https://grafana.com/)
+- [Prometheus](https://prometheus.io/)
+- [Loki](https://grafana.com/oss/loki/)
 
 ## Repositórios orquestrados
 
