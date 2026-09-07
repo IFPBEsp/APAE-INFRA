@@ -44,7 +44,7 @@ npx markdownlint-cli2 --fix "**/*.md"
 
 Existe um workflow do GitHub Actions configurado em [`.github/workflows/markdown-lint.yml`](../.github/workflows/markdown-lint.yml) que:
 
-* É disparado automaticamente em qualquer Pull Request que altere arquivos `**/*.md` ou a configuração de lint;
+* É disparado automaticamente em qualquer Pull Request validando todos os arquivos `**/*.md` (modificados ou não) ou a configuração de lint;
 * Executa a validação usando a action oficial `DavidAnson/markdownlint-cli2-action`;
 * Falha o status do PR caso seja encontrado qualquer erro de formatação, impedindo o merge de documentação fora dos padrões.
 
