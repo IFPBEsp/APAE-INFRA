@@ -12,7 +12,7 @@ Toda mudança neste repositório parte de uma issue. Se o que você quer fazer a
 
 Crie a branch a partir da própria issue (botão "Create a branch"), seguindo o padrão:
 
-```
+```text
 {numero-da-issue}-{titulo-da-issue-em-kebab-case}
 ```
 
@@ -24,16 +24,16 @@ Este é o mesmo formato que o GitHub já gera automaticamente ao criar uma branc
 
 Seguimos o modelo [Conventional Commits](https://www.conventionalcommits.org/pt-br/), com mensagens escritas em **português**.
 
-#### Formato
+### Formato
 
-```
+```text
 tipo: descrição
 ```
 
 #### Tipos permitidos
 
 | Tipo | Quando usar | Exemplo |
-|---|---|---|
+| --- | --- | --- |
 | `feat` | Nova funcionalidade | `feat: adiciona pipeline de deploy do argocd` |
 | `fix` | Correção de bug | `fix: corrige path do values.yaml do grafana` |
 | `docs` | Mudanças de documentação | `docs: adiciona padronizacao de mensagens de commit` |
@@ -53,7 +53,7 @@ tipo: descrição
 
 ## Pull Request
 
-#### Vínculo com a issue
+### Vínculo com a issue
 
 Todo PR deve estar vinculado a uma issue: preencha o campo `Issue: {issue_link}` da seção **Tarefas Relacionadas** do template.
 
