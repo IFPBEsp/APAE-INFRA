@@ -19,4 +19,4 @@ jobs:
       - name: Validate PR commits with commitlint
         uses: wagoid/commitlint-github-action@v5
         with:
-          configFile: ./commitlint.config.js 
+          configFile: ./commitlint.config.js
