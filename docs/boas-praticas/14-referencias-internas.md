@@ -2,6 +2,6 @@
 
 [← Voltar ao índice](README.md)
 
-* [Estrutura do repositório](../estrutura-repositorio.md)
-* [Padronização de mensagens de commit](../padronizacao-commits.md)
-* [Padronização de abertura de Pull Requests](../padronizacao-pull-requests.md)
+* [Estrutura do repositório](../../README.md#estrutura-de-diretórios)
+* [Padronização de mensagens de commit](../../CONTRIBUTING.md#commits)
+* [Padronização de abertura de Pull Requests](../../CONTRIBUTING.md#pull-request)

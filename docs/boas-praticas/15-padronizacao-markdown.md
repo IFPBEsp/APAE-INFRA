@@ -14,7 +14,7 @@ A validação é feita através do [markdownlint-cli2](https://github.com/DavidA
 
 ## Configuração de regras
 
-As regras de lint estão versionadas no arquivo [`.markdownlint.yml`](../.markdownlint.yml) na raiz do repositório.
+As regras de lint estão versionadas no arquivo [`.markdownlint.yml`](../../.markdownlint.yml) na raiz do repositório.
 
 Principais diretrizes configuradas:
 
@@ -42,7 +42,7 @@ npx markdownlint-cli2 --fix "**/*.md"
 
 ## Integração Contínua (CI)
 
-Existe um workflow do GitHub Actions configurado em [`.github/workflows/markdown-lint.yml`](../.github/workflows/markdown-lint.yml) que:
+Existe um workflow do GitHub Actions configurado em [`.github/workflows/markdown-lint.yml`](../../.github/workflows/markdown-lint.yml) que:
 
 * É disparado automaticamente em qualquer Pull Request validando todos os arquivos `**/*.md` (modificados ou não) ou a configuração de lint;
 * Executa a validação usando a action oficial `DavidAnson/markdownlint-cli2-action`;
@@ -52,4 +52,4 @@ Existe um workflow do GitHub Actions configurado em [`.github/workflows/markdown
 
 * [Repositório do markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2)
 * [Regras do markdownlint](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md)
-* [Padronização de abertura de Pull Requests](padronizacao-pull-requests.md)
+* [Padronização de abertura de Pull Requests](../../CONTRIBUTING.md#pull-request)

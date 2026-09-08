@@ -10,5 +10,5 @@ Este diretório contém os pipelines de Integração Contínua (CI) e Entrega Co
 
 ## Referências
 
-* [Padronização de Markdown](../../docs/padronizacao-markdown.md)
-* [Padronização de Pull Requests](../../docs/padronizacao-pull-requests.md)
+* [Padronização de Markdown](../../docs/boas-praticas/15-padronizacao-markdown.md)
+* [Padronização de Pull Requests](../../CONTRIBUTING.md#pull-request)
