@@ -247,4 +247,3 @@ Essa abordagem melhora:
 * Controle de acesso;
 * Auditoria;
 * Reprodutibilidade.
-
