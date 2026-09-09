@@ -1,0 +1,309 @@
+name: Terraform PR Validation
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+    paths:
+      - "terraform/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VERSION: "1.13.5"
+
+jobs:
+  fmt:
+    name: Terraform Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff terraform
+
+
+  discover:
+    name: Discover Terraform Environments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      environments: ${{ steps.discover.outputs.environments }}
+      has-environments: ${{ steps.discover.outputs.has-environments }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Discover root modules
+        id: discover
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          environments="$(
+            find terraform/environments \
+              -mindepth 1 \
+              -maxdepth 1 \
+              -type d \
+              -print0 |
+            while IFS= read -r -d '' dir; do
+              if find "$dir" \
+                -maxdepth 1 \
+                -type f \
+                -name '*.tf' \
+                -print \
+                -quit | grep -q .; then
+                basename "$dir"
+              fi
+            done |
+            sort |
+            jq -R -s -c 'split("\n") | map(select(length > 0))'
+          )"
+
+          echo "environments=$environments" >> "$GITHUB_OUTPUT"
+
+          if [ "$environments" = "[]" ]; then
+            echo "has-environments=false" >> "$GITHUB_OUTPUT"
+            echo "No Terraform root modules found in terraform/environments/."
+          else
+            echo "has-environments=true" >> "$GITHUB_OUTPUT"
+            echo "Terraform environments found: $environments"
+          fi
+
+
+  validate-plan:
+    name: Terraform ${{ matrix.environment }}
+
+    needs:
+      - fmt
+      - discover
+
+    if: |
+      always() &&
+      needs.discover.result == 'success' &&
+      needs.discover.outputs.has-environments == 'true'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.discover.outputs.environments) }}
+
+    defaults:
+      run:
+        working-directory: terraform/environments/${{ matrix.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init for validation
+        id: init-validate
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Init for plan
+        id: init-plan
+        run: terraform init -input=false -reconfigure
+
+      - name: Terraform Plan
+        id: plan
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform plan \
+            -input=false \
+            -no-color \
+            -lock-timeout=5m \
+            2>&1 | tee "$RUNNER_TEMP/plan.txt"
+
+      - name: Build PR comment
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          COMMENT="$RUNNER_TEMP/terraform-comment-${{ matrix.environment }}.md"
+          PLAN="$RUNNER_TEMP/plan.txt"
+          MAX_PLAN_SIZE=18000
+
+          {
+            echo "## Terraform Plan — \`${{ matrix.environment }}\`"
+            echo
+            echo "| Etapa | Resultado |"
+            echo "|---|---|"
+            echo "| Init (validate) | \`${{ steps.init-validate.outcome }}\` |"
+            echo "| Validate | \`${{ steps.validate.outcome }}\` |"
+            echo "| Init (plan) | \`${{ steps.init-plan.outcome }}\` |"
+            echo "| Plan | \`${{ steps.plan.outcome }}\` |"
+            echo
+
+            if [ -f "$PLAN" ]; then
+              echo "<details>"
+              echo "<summary>Exibir terraform plan</summary>"
+              echo
+              echo '```terraform'
+              head -c "$MAX_PLAN_SIZE" "$PLAN"
+              echo
+              echo '```'
+
+              if [ "$(wc -c < "$PLAN")" -gt "$MAX_PLAN_SIZE" ]; then
+                echo
+                echo "> Plan truncado. Consulte os logs do workflow para visualizar a saída completa."
+              fi
+
+              echo "</details>"
+            else
+              echo "> O Terraform Plan não produziu saída."
+            fi
+          } > "$COMMENT"
+
+      - name: Upload PR comment artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: terraform-comment-${{ matrix.environment }}
+          path: ${{ runner.temp }}/terraform-comment-${{ matrix.environment }}.md
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Fail when Terraform Plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+
+  comment:
+    name: Publish Terraform Plan
+
+    needs:
+      - discover
+      - validate-plan
+
+    if: |
+      always() &&
+      needs.discover.result == 'success' &&
+      needs.discover.outputs.has-environments == 'true'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Download Terraform comments
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: terraform-comment-*
+          path: terraform-comments
+          merge-multiple: true
+
+      - name: Publish PR comment
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const fs = require("fs");
+            const path = require("path");
+
+            const marker = "<!-- terraform-plan-comment -->";
+            const directory = "terraform-comments";
+
+            if (!fs.existsSync(directory)) {
+              core.warning("No Terraform comment artifacts were found.");
+              return;
+            }
+
+            const files = fs
+              .readdirSync(directory)
+              .filter(file => file.endsWith(".md"))
+              .sort();
+
+            if (files.length === 0) {
+              core.warning("No Terraform comment files were found.");
+              return;
+            }
+
+            const sections = files.map(file =>
+              fs.readFileSync(path.join(directory, file), "utf8")
+            );
+
+            const body = [
+              marker,
+              "# Terraform PR Validation",
+              "",
+              ...sections
+            ].join("\n");
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100
+              }
+            );
+
+            const previous = comments.find(
+              comment =>
+                comment.user?.type === "Bot" &&
+                comment.body?.includes(marker)
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body
+              });
+
+              core.info(`Updated Terraform comment ${previous.id}.`);
+            } else {
+              const { data: created } =
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body
+                });
+
+              core.info(`Created Terraform comment ${created.id}.`);
+            }
