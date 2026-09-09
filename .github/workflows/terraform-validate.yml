@@ -179,7 +179,10 @@ jobs:
               echo "<summary>Exibir terraform plan</summary>"
               echo
               echo '```terraform'
-              head -c "$MAX_PLAN_SIZE" "$PLAN"
+          
+              # Evita publicar UTF-8 inválido caso head corte um caractere multibyte.
+              head -c "$MAX_PLAN_SIZE" "$PLAN" \
+                | { iconv -f utf-8 -t utf-8 -c 2>/dev/null || true; }
               echo
               echo '```'
 

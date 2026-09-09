@@ -139,38 +139,56 @@ Alterações concorrentes podem causar inconsistências ou corrupção do estado
 
 ## 3.6 Validação
 
-Antes de abrir ou aprovar um Pull Request contendo Terraform, executar:
+Antes de abrir um Pull Request contendo Terraform, recomenda-se executar localmente:
 
 ```bash
 terraform fmt -check
 terraform validate
 ```
 
-Sempre que possível, também deve ser gerado:
+Sempre que possível:
 
 ```bash
 terraform plan
 ```
 
-O resultado do `plan` deve ser revisado antes de qualquer `apply`.
+Além da validação local, Pull Requests que alterem arquivos em:
 
-O `terraform apply` não deve ser executado sem que as alterações planejadas sejam conhecidas e revisadas.
+```text
+terraform/**
+```
 
----
+disparam automaticamente o workflow:
 
-## 3.7 Terraform Plan
+```text
+.github/workflows/terraform-validate.yml
+```
 
-O `terraform plan` deve ser tratado como uma etapa importante do processo de revisão.
+A pipeline executa validações de formatação, sintaxe e planejamento dos ambientes Terraform identificados em:
 
-Durante a análise, verificar principalmente:
+```text
+terraform/environments/*
+```
 
-* Recursos criados;
-* Recursos alterados;
-* Recursos removidos;
-* Recursos substituídos;
-* Mudanças inesperadas.
+As etapas automatizadas incluem:
 
-Alterações destrutivas devem receber atenção especial.
+```text
+terraform fmt -check -recursive
+terraform validate
+terraform plan
+```
+
+O resultado do `terraform plan` é publicado no próprio Pull Request para revisão.
+
+Essa validação automática complementa a verificação local e atua como barreira de CI antes da integração das alterações.
+
+O workflow de Pull Request não executa:
+
+```bash
+terraform apply
+```
+
+O `terraform apply` permanece restrito ao fluxo autorizado de provisionamento.
 
 ---
 
@@ -189,11 +207,16 @@ O fluxo recomendado é:
 ```text
 Alteração Terraform
         ↓
+Validação local
+        ↓
 Pull Request
         ↓
-terraform plan
+Pipeline Terraform
+  ├── fmt -check
+  ├── validate
+  └── plan
         ↓
-Revisão
+Revisão do plan
         ↓
 Merge
         ↓
@@ -209,4 +232,3 @@ Essa abordagem melhora:
 * Auditoria;
 * Reprodutibilidade.
 
----
