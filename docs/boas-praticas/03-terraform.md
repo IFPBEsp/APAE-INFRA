@@ -192,6 +192,22 @@ O `terraform apply` permanece restrito ao fluxo autorizado de provisionamento.
 
 ---
 
+## 3.7 Terraform Plan
+
+O `terraform plan` deve ser tratado como uma etapa importante do processo de revisão.
+
+Durante a análise, verificar principalmente:
+
+* Recursos criados;
+* Recursos alterados;
+* Recursos removidos;
+* Recursos substituídos;
+* Mudanças inesperadas.
+
+Alterações destrutivas devem receber atenção especial.
+
+---
+
 ## 3.8 Terraform Apply
 
 Em ambientes compartilhados e principalmente em produção, deve-se evitar executar:
