@@ -12,7 +12,7 @@ Toda mudança neste repositório parte de uma issue. Se o que você quer fazer a
 
 Crie a branch a partir da própria issue (botão "Create a branch"), seguindo o padrão:
 
-```
+```text
 {numero-da-issue}-{titulo-da-issue-em-kebab-case}
 ```
 
@@ -24,16 +24,16 @@ Este é o mesmo formato que o GitHub já gera automaticamente ao criar uma branc
 
 Seguimos o modelo [Conventional Commits](https://www.conventionalcommits.org/pt-br/), com mensagens escritas em **português**.
 
-#### Formato
+### Formato
 
-```
+```text
 tipo: descrição
 ```
 
 #### Tipos permitidos
 
 | Tipo | Quando usar | Exemplo |
-|---|---|---|
+| --- | --- | --- |
 | `feat` | Nova funcionalidade | `feat: adiciona pipeline de deploy do argocd` |
 | `fix` | Correção de bug | `fix: corrige path do values.yaml do grafana` |
 | `docs` | Mudanças de documentação | `docs: adiciona padronizacao de mensagens de commit` |
@@ -51,9 +51,51 @@ tipo: descrição
 - Sem caracteres especiais, além dos dois-pontos após o tipo;
 - Sem acentuação (ex: `documentacao`, não `documentação`).
 
+### Validação automática (commitlint)
+
+A adesão a este padrão passou a ser **verificada automaticamente** em cada Pull Request, usando o [commitlint](https://commitlint.js.org/) com o preset `@commitlint/config-conventional`.
+A validação **não** roda localmente por padrão (nenhum hook obrigatório é instalado). Ela roda em um workflow dedicado do GitHub Actions (`.github/workflows/commitlint.yml`), disparado nos eventos `opened`, `synchronize` e `reopened` de Pull Requests.
+
+#### Regras configuradas
+
+As regras estão definidas em [`commitlint.config.js`](commitlint.config.js), na raiz do repositório. Além do preset padrão, foram adicionadas/ajustadas as seguintes regras para refletir os tipos definidos neste documento:
+
+| Regra | Configuração | Efeito |
+| --- | --- | --- |
+| `type-enum` | `feat, fix, docs, refactor, test, chore, ci, build` | Só aceita os tipos listados na seção [Tipos de commit permitidos](#tipos-permitidos) |
+| `type-case` | `lower-case` | O tipo deve estar em minúsculo (ex: `feat`, não `Feat`) |
+| `subject-case` | `lower-case` | A descrição deve estar em minúsculo |
+| `subject-full-stop` | proibido ponto final | A descrição não pode terminar com `.` |
+| `subject-exclamation-mark` | proibido `!` | A descrição não pode terminar com `!` |
+
+> Observação: o preset `@commitlint/config-conventional` valida a estrutura `tipo: descrição`, mas não impõe idioma nem acentuação. A regra de "sem acentuação" e "modo imperativo" ainda dependem de revisão humana/atenção de quem commita — o commitlint não cobre esses dois pontos.
+
+#### O que acontece quando um commit falha na validação
+
+- O check `commitlint` no Pull Request falha (fica vermelho), com o log apontando qual commit e qual regra foi violada;
+- Enquanto o check estiver marcado como **obrigatório** nas regras de proteção da branch principal, o PR não pode ser mesclado até a mensagem ser corrigida;
+- Para corrigir:
+  - **Se for o último commit:**
+
+```bash
+    git commit --amend -m "tipo: descrição corrigida"
+    git push --force-with-lease
+```
+
+- **Se for um commit mais antigo no histórico do PR:**
+
+```bash
+    git rebase -i <commit-anterior-ao-que-precisa-mudar>
+    # marque o commit com problema como "reword" (ou "r")
+    # salve, edite a mensagem, salve novamente
+    git push --force-with-lease
+```
+
+- Após o push forçado, o workflow do GitHub Actions roda novamente e o check é atualizado automaticamente.
+
 ## Pull Request
 
-#### Vínculo com a issue
+### Vínculo com a issue
 
 Todo PR deve estar vinculado a uma issue: preencha o campo `Issue: {issue_link}` da seção **Tarefas Relacionadas** do template.
 
@@ -83,3 +125,4 @@ Formato `[TIPO] Descrição`:
 
 - Template de PR: [`.github/pull_request_template.md`](.github/pull_request_template.md)
 - [Conventional Commits](https://www.conventionalcommits.org/pt-br/)
+- [Commitlint](https://commitlint.js.org/)

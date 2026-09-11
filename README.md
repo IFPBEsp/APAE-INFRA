@@ -26,7 +26,7 @@ Manter em um único lugar tudo que é infraestrutura como código, pipelines de 
 
 ## Estrutura de diretórios
 
-```
+```text
 .github/
   workflows/      # pipelines de CI/CD (GitHub Actions)
 argocd/           # manifests de aplicação para o ArgoCD
