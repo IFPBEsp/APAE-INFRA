@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+data:
+  API_PORT: "8080"
+  JWT_EXPIRATION_HOURS: "24"
+  MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
