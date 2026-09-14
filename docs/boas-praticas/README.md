@@ -21,4 +21,5 @@ As recomendações devem ser consideradas durante o desenvolvimento, a revisão 
 - [Boas práticas gerais](11-boas-praticas-gerais.md)
 - [Decisões arquiteturais](12-decisoes-arquiteturais.md)
 - [Checklist antes do Pull Request](13-checklist-pull-request.md)
-- [Referências internas](14-referencias-internas.md)
+- [Estimativa de esforço (escala de Fibonacci)](14-sequencia-de-fibonacci.md)
+- [Referências internas](15-referencias-internas.md)
