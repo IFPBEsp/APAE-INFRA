@@ -32,6 +32,8 @@ Manter em um único lugar tudo que é infraestrutura como código, pipelines de 
 argocd/           # manifests de aplicação para o ArgoCD
 docker/           # Dockerfiles e configurações de containers
 docs/             # documentação de padrões e boas práticas do repositório
+  argocd/         # documentação do fluxo do ArgoCD (GitOps)
+  diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
 kubernetes/       # manifests e configurações do cluster
 monitoring/
   grafana/        # dashboards
