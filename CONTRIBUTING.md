@@ -129,7 +129,10 @@ Formato `[TIPO] Descrição`:
 <<<<<<< HEAD
 =======
 - [Commitlint](https://commitlint.js.org/)
+
 >>>>>>> f75aaf1 (docs: atualiza contributing.md com documentacao de commits)
 =======
+
 - [Commitlint](https://commitlint.js.org/)
+
 >>>>>>> dev
