@@ -6,12 +6,14 @@ O **APAE-INFRA** é o repositório GitOps: a única fonte de verdade lida pelo A
 
 Isso garante o princípio central do GitOps: **o Git é a única fonte de verdade** e o histórico de commits do APAE-INFRA é, ao mesmo tempo, o histórico de deploys.
 
+![Diagrama do Fluxo do ArgoCD](../diagramas/fluxo-argocd.svg)
+
 ## AppProject: governança compartilhada
 
 Antes de falar de Applications, existe um único **`AppProject`** (`apae`) que todas elas compartilham. O `AppProject` não implanta nada sozinho — ele é a camada de permissão/segurança que orienta e padroniza como as Applications dos repositórios envolvidos podem se comportar:
 
 - `sourceRepos`: só o próprio APAE-INFRA pode ser usado como fonte de manifestos (nenhuma Application pode apontar para um repositório fora do GitOps);
-- `destinations`: só os namespaces `apae-*` no cluster interno são destinos válidos;
+- `destinations`: os namespaces `apae-*` (para os workloads das aplicações) e o namespace `argocd` (necessário para que a Application raiz `apae-root` gerencie os objetos `Application` filhos);
 - `clusterResourceWhitelist`: restringe quais tipos de recurso Kubernetes uma Application pode criar (evita, por exemplo, que uma Application de aplicação crie um `ClusterRole` sem necessidade).
 
 ```yaml
@@ -28,6 +30,8 @@ spec:
   destinations:
     - namespace: 'apae-*'
       server: https://kubernetes.default.svc
+    - namespace: 'argocd'
+      server: https://kubernetes.default.svc
   clusterResourceWhitelist:
     - group: '*'
       kind: Namespace
@@ -35,18 +39,18 @@ spec:
 
 ## Padrão adotado: App of Apps
 
-Usaremos o padrão **[App of Apps](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)**: existe uma única `Application` raiz (`apae-root`), criada uma única vez no bootstrap do cluster, que aponta para a pasta `argocd/apps/` do próprio APAE-INFRA. Todas as demais Applications (as **4 Applications filhas**: `apae`, `apae-gestao-escolar`, `apae-atendimento`, `apae-site-comemorativo`) são definidas como arquivos YAML dentro dessa pasta e passam a existir no cluster assim que a raiz sincroniza.
+Usaremos o padrão **[App of Apps](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)**: existe uma única `Application` raiz (`apae-root`), criada uma única vez no bootstrap do cluster, que aponta para o diretório `argocd/` do próprio APAE-INFRA com busca recursiva (`directory.recurse: true`). Todas as demais Applications (as **4 Applications filhas**: `apae`, `apae-gestao-escolar`, `apae-atendimento`, `apae-site-comemorativo`) são organizadas em pastas por aplicação (`argocd/{aplicacao}/`) e passam a existir no cluster assim que a raiz sincroniza.
 
 **Importante — são dois loops de sincronização independentes, rodando em paralelo o tempo todo:**
 
-1. **Loop da raiz**: garante que os 4 objetos `Application` (definições) existam no cluster exatamente como estão descritos em `argocd/apps/*.yaml`. Ela só entra em Out-of-Sync se alguém alterar/adicionar/remover um desses arquivos YAML (ex.: criar uma 5ª Application). Um bump de tag de imagem **não afeta** esse loop.
+1. **Loop da raiz**: garante que os objetos `Application` (definições) existam no cluster exatamente como estão descritos nas subpastas `argocd/{aplicacao}/*.yaml`. Ela só entra em Out-of-Sync se alguém alterar/adicionar/remover um desses arquivos YAML (ex.: adicionar um ambiente `hml.yaml` ou criar uma 5ª Application). Um bump de tag de imagem **não afeta** esse loop.
 2. **Loop de cada Application filha**: cada uma monitora seu próprio `source.path` (o overlay Kustomize da aplicação dela) e garante que o Deployment/Service/etc. estejam como descrito lá. É esse loop que entra em Out-of-Sync quando a tag da imagem é atualizada.
 
 Ou seja, a raiz não "descobre" as filhas reagindo a um push de imagem — ela já as mantém registradas continuamente. Quem reage ao push de imagem é diretamente a Application filha correspondente, porque foi o overlay dela que mudou.
 
 Vantagens do App of Apps neste contexto:
 
-- Adicionar uma nova Application (ex. `apae-outro-serviço`, no futuro) é só criar um arquivo em `argocd/apps/` — a raiz sincroniza e cria a Application sozinha, sem `kubectl apply` manual;
+- Adicionar uma nova Application ou ambiente (ex.: `apae-outro-serviço` ou `hml`) é só criar o manifesto na respectiva pasta em `argocd/{aplicacao}/` — a raiz sincroniza e cria a Application sozinha, sem `kubectl apply` manual;
 - O próprio conjunto de Applications fica versionado e auditável junto com o resto da infraestrutura;
 - Segue a mesma separação por pasta já definida na issue #7 (`argocd/{aplicacao}/`).
 
@@ -54,16 +58,19 @@ Vantagens do App of Apps neste contexto:
 
 ```text
 argocd/
-  app-of-apps.yaml       # Application raiz (apae-root), aponta para argocd/apps/
-  project.yaml           # AppProject único (apae)
-  apps/
-    apae.yaml                    # Application filha: repositório APAE
-    apae-gestao-escolar.yaml     # Application filha: repositório APAE-gestao-escolar
-    apae-atendimento.yaml        # Application filha: repositório APAE-atendimento
-    apae-site-comemorativo.yaml        # Application filha: repositório APAE-site-comemorativo
+  app-of-apps.yaml               # Application raiz (apae-root), monitora argocd/ com recurse
+  project.yaml                   # AppProject único (apae)
+  apae/
+    dev.yaml                     # Application filha: repositório APAE (ambiente dev)
+  apae-gestao-escolar/
+    dev.yaml                     # Application filha: repositório APAE-gestao-escolar (ambiente dev)
+  apae-atendimento/
+    dev.yaml                     # Application filha: repositório APAE-atendimento (ambiente dev)
+  apae-site-comemorativo/
+    dev.yaml                     # Application filha: repositório APAE-site-comemorativo (ambiente dev)
 ```
 
-> Neste primeiro momento cada Application filha aponta para um único ambiente (ver seção de Sync abaixo). Conforme os ambientes hml/prod forem estruturados, o padrão se repete: um arquivo por combinação aplicação+ambiente dentro de `argocd/apps/`.
+> Neste primeiro momento cada aplicação possui um manifesto apontando para o ambiente de desenvolvimento (`dev.yaml`). Caso os ambientes `hml` e `prod` fossem estruturados, o padrão se repete com novos arquivos dentro da pasta da respectiva aplicação (ex.: `argocd/apae/hml.yaml`, `argocd/apae/prod.yaml`), alinhado à convenção documentada no `README.md`: uma `Application` por combinação aplicação + ambiente, agrupada em `argocd/{aplicacao}/`.
 
 ### Applications estáticas
 
@@ -81,7 +88,10 @@ spec:
   source:
     repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
     targetRevision: main
-    path: argocd/apps
+    path: argocd
+    directory:
+      recurse: true
+      exclude: '{app-of-apps.yaml,project.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -92,7 +102,7 @@ spec:
 ```
 
 ```yaml
-# argocd/apps/apae.yaml — Application filha
+# argocd/apae/dev.yaml — Application filha
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -112,7 +122,7 @@ spec:
 
 > A raiz (`apae-root`) mantém `automated` porque ela só gerencia a existência das *definições* de Application — baixo risco. As Applications filhas (workloads reais) ficam sem `automated`, exigindo aprovação manual, decisão para essa fase do projeto inicial.
 
-Repita a mesma estrutura para `apae-gestao-escolar.yaml`, `apae-atendimento.yaml` e `apae-site-comemorativo.yaml`, mudando `name`, `path` e `namespace`.
+Repita a mesma estrutura para `argocd/apae-gestao-escolar/dev.yaml`, `argocd/apae-atendimento/dev.yaml` e `argocd/apae-site-comemorativo/dev.yaml`, mudando `name`, `path` e `namespace`.
 
 ### Evolução futura: ApplicationSet
 
@@ -146,7 +156,7 @@ spec:
       syncPolicy: {}   # manter manual até a decisão de automatizar prod
 ```
 
-Essa migração não é destrutiva: pode ser feita substituindo os arquivos estáticos de `argocd/apps/` pelo `ApplicationSet` quando fizer sentido, sem alterar a estrutura de pastas do Kustomize.
+Essa migração não é destrutiva: pode ser feita substituindo os arquivos estáticos de `argocd/{aplicacao}/` pelo `ApplicationSet` quando fizer sentido, sem alterar a estrutura de pastas do Kustomize.
 
 ## De onde cada Application lê os manifestos
 
@@ -201,7 +211,7 @@ Duas origens de mudança, dois fluxos — mas **ambos terminam exigindo aprovaç
 1. Um push/merge em um dos repositórios de aplicação (APAE, APAE-gestão escolar, APAE-atendimento ou APAE-site-comemorativo) dispara o pipeline de **CI** (GitHub Actions);
 2. O CI builda a imagem e faz o **push da imagem** para o **GHCR** (Container Registry);
 3. Um **job do próprio GitHub Actions (Image Updater)** identifica que uma nova imagem foi publicada e atualiza a tag no `kustomization.yaml` do overlay correspondente do APAE-INFRA (ex.: `kubernetes/overlays/dev/apae`), via PR para revisão adicional antes do commit;
-4. A partir daqui o fluxo é o mesmo do caso 1: o ArgoCD Controller detecta que **a Application filha daquele repositório** está Out-of-Sync (a raiz não é afetada, pois a definição das Applications em `argocd/apps/` não mudou — apenas o conteúdo do overlay que a Application filha já apontava);
+4. A partir daqui o fluxo é o mesmo do caso 1: o ArgoCD Controller detecta que **a Application filha daquele repositório** está Out-of-Sync (a raiz não é afetada, pois a definição das Applications em `argocd/` não mudou — apenas o conteúdo do overlay que a Application filha já apontava);
 5. Alguém aprova o sync manualmente no ArgoCD;
 6. O ArgoCD sincroniza a Application filha: normalmente isso é um **rolling update** do Deployment já existente (novos Pods sobem com a imagem nova do GHCR e os antigos são removidos gradualmente) — só no primeiro deploy daquela aplicação/ambiente é que os Pods são criados do zero.
 
@@ -231,3 +241,9 @@ As Applications de workload rodam no mesmo cluster monitorado pela stack de obse
 - **Prometheus** coleta métricas dos Pods/Deployments de todas as aplicações;
 - **Grafana** visualiza as métricas do Prometheus em dashboards;
 - **Loki** centraliza os logs dos Pods, também visualizados no Grafana.
+
+## Referências
+
+- [Diagrama do Fluxo do ArgoCD (SVG)](../diagramas/fluxo-argocd.svg)
+- [Diagrama editável no Excalidraw](../diagramas/fluxo-argocd.excalidraw)
+- [Documentação Oficial do ArgoCD - App of Apps](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)
