@@ -167,7 +167,7 @@ jobs:
         with:
           version: v0.74.0
           scan-type: image
-          image-ref: ${{ steps.build.outputs.digest }}
+          image-ref: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
           scanners: vuln
           format: table
           exit-code: "1"
