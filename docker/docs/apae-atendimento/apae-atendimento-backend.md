@@ -765,7 +765,7 @@ WORKDIR /app
 COPY pom.xml .
 COPY src ./src
 
-RUN --mount=type=cache,target=/root/.m2 \
+RUN --mount=type=cache,id=atendimento-m2,target=/root/.m2 \
     mvn -B package -DskipTests
 
 
@@ -785,6 +785,8 @@ WORKDIR /app
 
 COPY --from=build --chown=65532:65532 \
     /app/target/*.jar app.jar
+
+USER 65532:65532
 
 EXPOSE 8080
 

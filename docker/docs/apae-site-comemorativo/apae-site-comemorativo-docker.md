@@ -274,18 +274,18 @@ O Prisma foi gerado no builder Alpine para musl, mas o runtime Distroless Debian
 Para alinhar build e runtime, o builder foi alterado para:
 
 ```dockerfile
-FROM node:20-bookworm-slim
+FROM node:22-trixie-slim@sha256:7b8a0c89c54499bee567618f96578e1a12a800f062fbdbfd1fb6a443fa6f6284
 ```
 
 A arquitetura passou a ser:
 
 ```text
-Node 20 Bookworm Slim
+Node 22 Trixie Slim
 Debian + glibc
         ↓
 Prisma gerado para Debian/glibc
         ↓
-Distroless Node 20 Debian
+Distroless Node 22 Debian 13
 Debian + glibc
 ```
 
@@ -414,15 +414,15 @@ shell
 ### Builder
 
 ```text
-node:20-bookworm-slim
-sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+node:22-trixie-slim
+sha256:7b8a0c89c54499bee567618f96578e1a12a800f062fbdbfd1fb6a443fa6f6284
 ```
 
 ### Runtime
 
 ```text
-gcr.io/distroless/nodejs20-debian13:nonroot
-sha256:c8da1b6cccb5c6cc4b8826c67353f31c5f7b2719c5517b1312d191b337d8bd99
+gcr.io/distroless/nodejs22-debian13:nonroot
+sha256:4e4fb0ce55fd73901600796ef079a9490369d2515d7da31633a91608c82ca13b
 ```
 
 ---
@@ -465,33 +465,128 @@ Foi adotada uma estratégia de allowlist para limitar o contexto de build soment
 
 !src/
 !src/**
-
-!app/
-!app/**
-
-!components/
-!components/**
-
-!lib/
-!lib/**
-
-!styles/
-!styles/**
-
-!postcss.config.*
-!tailwind.config.*
 ```
 
 O build final foi validado após a mudança.
 
 ---
 
-## 15. Dockerfile final
+## 15. Stage de dependências e migrations do Prisma
+
+Durante o review, o Dockerfile foi reorganizado para evitar que o serviço responsável pelas migrations execute o build completo do Next.js apenas para disponibilizar o Prisma e suas dependências.
+
+Foi criado um stage intermediário chamado `dependencies`:
+
+```dockerfile
+FROM node:22-trixie-slim@sha256:7b8a0c89c54499bee567618f96578e1a12a800f062fbdbfd1fb6a443fa6f6284 AS dependencies
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    openssl \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g pnpm@10.33.4
+
+COPY package.json pnpm-lock.yaml ./
+COPY prisma ./prisma
+
+RUN pnpm install --frozen-lockfile --shamefully-hoist
+```
+
+Esse stage concentra as dependências de sistema, o `pnpm`, as dependências Node.js e os arquivos do Prisma necessários para executar migrations.
+
+O stage responsável pelo build da aplicação passa a reutilizar esse ambiente:
+
+```dockerfile
+FROM dependencies AS builder
+
+COPY ..
+
+ARG NEXT_PUBLIC_URL_APAE
+ARG NEXT_PUBLIC_BASE_PATH
+
+ENV NEXT_PUBLIC_URL_APAE=$NEXT_PUBLIC_URL_APAE
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN pnpm build
+```
+
+Com essa separação, o Docker Compose pode utilizar diretamente o target `dependencies` para executar as migrations sem rodar `pnpm build`:
+
+```yaml
+migrate-comemorativo:
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: dependencies
+  environment:
+    - DATABASE_URL=${DATABASE_URL_COMEMORATIVO}
+  command: ["pnpm", "exec", "prisma", "migrate", "deploy"]
+  depends_on:
+    db-comemorativo:
+      condition: service_healthy
+  networks:
+    - apae-network
+  restart: "no"
+```
+
+A aplicação principal depende da conclusão bem-sucedida desse serviço:
+
+```yaml
+depends_on:
+  migrate-comemorativo:
+    condition: service_completed_successfully
+```
+
+Esse fluxo garante que:
+
+- as migrations sejam executadas somente após o PostgreSQL estar saudável;
+- o build completo do Next.js não seja executado apenas para aplicar migrations;
+- as ferramentas necessárias ao Prisma permaneçam fora da imagem final de runtime;
+- o runtime Distroless continue sem shell, `npm`, `npx` ou `pnpm`;
+- a imagem final de produção permaneça mínima e adequada à execução em ambientes orquestrados.
+
+---
+
+## 16. Build arguments do serviço principal
+
+O serviço principal mantém o repasse explícito das variáveis públicas utilizadas durante o build do Next.js:
+
+```yaml
+app:
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      NEXT_PUBLIC_URL_APAE: ${NEXT_PUBLIC_URL_APAE}
+      NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH}
+      APP_VERSION: ${APP_VERSION:-dev}
+      VCS_REF: ${VCS_REF:-local}
+```
+
+O `NEXT_PUBLIC_BASE_PATH` é utilizado pelo `next.config.ts` para definir o `basePath` da aplicação:
+
+```ts
+basePath: process.env.NEXT_PUBLIC_BASE_PATH || "/site-comemorativo"
+```
+
+Manter esse valor como build argument permite sobrescrever o caminho base através do ambiente, evitando depender exclusivamente do fallback definido na configuração do Next.js.
+
+Os argumentos `APP_VERSION` e `VCS_REF` continuam sendo utilizados para preencher os metadados OCI da imagem.
+
+---
+
+## 17. Dockerfile final
 
 ```dockerfile
 # syntax=docker/dockerfile:1.7
 
-FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS builder
+FROM node:22-trixie-slim@sha256:7b8a0c89c54499bee567618f96578e1a12a800f062fbdbfd1fb6a443fa6f6284 AS dependencies
 
 WORKDIR /app
 
@@ -509,6 +604,9 @@ COPY prisma ./prisma
 
 RUN pnpm install --frozen-lockfile --shamefully-hoist
 
+
+FROM dependencies AS builder
+
 COPY . .
 
 ARG NEXT_PUBLIC_URL_APAE
@@ -520,7 +618,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN pnpm build
 
-FROM gcr.io/distroless/nodejs20-debian13:nonroot@sha256:c8da1b6cccb5c6cc4b8826c67353f31c5f7b2719c5517b1312d191b337d8bd99 AS runner
+
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:4e4fb0ce55fd73901600796ef079a9490369d2515d7da31633a91608c82ca13b AS runner
 
 ARG APP_VERSION
 ARG VCS_REF
@@ -552,7 +651,7 @@ CMD ["server.js"]
 
 ---
 
-## 16. Comparativo final
+## 18. Comparativo final
 
 | Métrica | Antes | Depois | Resultado |
 |---|---:|---:|---:|
@@ -575,7 +674,7 @@ CMD ["server.js"]
 
 ---
 
-## 17. Conclusão
+## 19. Conclusão
 
 A refatoração do **APAE Site Comemorativo** apresentou um ganho expressivo de tamanho e segurança.
 
@@ -605,7 +704,7 @@ A solução final adotou:
 
 ```text
 Builder:
-Node 20 Bookworm Slim
+Node 22 Trixie Slim
 Debian + glibc
 
 Build:
@@ -613,11 +712,11 @@ Next.js standalone
 Prisma gerado em ambiente compatível
 
 Runtime:
-Distroless Node.js 20 Debian
+Distroless Node.js 22 Debian 13
 non-root
 sem shell
 sem pnpm/npm/npx
-sem apk
+sem gerenciador de pacotes
 ```
 
 A imagem final está preparada para integração com CI/CD, publicação em registry e execução em Kubernetes.
