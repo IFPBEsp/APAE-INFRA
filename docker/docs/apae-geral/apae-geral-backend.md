@@ -61,7 +61,7 @@ apae-backend:baseline
 ```
 
 | Métrica | Baseline |
-|---|---:|
+| --- | ---: |
 | Disk Usage | 452 MB |
 | Content Size | 151 MB |
 | Build limpo | 224,04 s |
@@ -91,7 +91,7 @@ Ferramentas identificadas no runtime:
 ### Sistema operacional — Alpine 3.24.1
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 18 |
 | MEDIUM | 9 |
@@ -102,7 +102,7 @@ Ferramentas identificadas no runtime:
 ### Dependências Java
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 10 |
 | MEDIUM | 25 |
@@ -128,7 +128,7 @@ RUN --mount=type=cache,id=apae-backend-m2,target=/root/.m2 \
 ```
 
 | Cenário | Baseline | BuildKit cache |
-|---|---:|---:|
+| --- | ---: | ---: |
 | Build limpo | 224,04 s | 78,01 s |
 | Build cacheado | 3,79 s | 2,46 s |
 | Alteração no código | 14,62 s | 6,82 s |
@@ -172,7 +172,7 @@ FROM gcr.io/distroless/java21-debian13:nonroot
 ### Resultado
 
 | Métrica | Antes | Depois | Resultado |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 452 MB | 423 MB | **-6,4%** |
 | Content Size | 151 MB | 140 MB | **-7,3%** |
 | OS HIGH | 3 | 1 | **-66,7%** |
@@ -197,7 +197,7 @@ Foram removidos do runtime: shell, `apk` e `wget`.
 ### Sistema operacional — Debian 13.6
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 2 |
 | LOW | 18 |
 | MEDIUM | 26 |
@@ -208,7 +208,7 @@ Foram removidos do runtime: shell, `apk` e `wget`.
 ### Dependências Java
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 10 |
 | MEDIUM | 25 |

@@ -98,7 +98,7 @@ atendimento-frontend:baseline
 ## 2.1 Tamanho da imagem
 
 | Métrica | Baseline |
-|---|---:|
+| --- | ---: |
 | Disk Usage | 334 MB |
 | Content Size | 80,1 MB |
 
@@ -118,7 +118,7 @@ curl               ~5,39 MB
 Foram medidos diferentes cenários:
 
 | Cenário | Tempo |
-|---|---:|
+| --- | ---: |
 | Build limpo | 78,48 s |
 | Build totalmente cacheado | 2,26 s |
 | Build após alteração em código | 23,56 s |
@@ -180,7 +180,7 @@ Foi realizado scan com Trivy.
 Imagem baseada em Alpine 3.24.1.
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 12 |
 | MEDIUM | 6 |
@@ -193,7 +193,7 @@ Imagem baseada em Alpine 3.24.1.
 ## 3.2 Dependências Node.js
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 5 |
 | MEDIUM | 21 |
@@ -258,7 +258,7 @@ por meio do entrypoint nativo da imagem Distroless Node.
 ## 6.1 Tamanho
 
 | Métrica | Antes | Distroless | Diferença |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 334 MB | 307 MB | -27 MB |
 | Content Size | 80,1 MB | 74,6 MB | -5,5 MB |
 
@@ -290,7 +290,7 @@ A alteração não representa correção de privilégio, pois a imagem original 
 Após a migração:
 
 | Severidade | Antes | Depois |
-|---|---:|---:|
+| --- | ---: | ---: |
 | UNKNOWN | 0 | 0 |
 | LOW | 12 | 7 |
 | MEDIUM | 6 | 10 |
@@ -317,7 +317,7 @@ Representando:
 O scan das dependências Node.js também apresentou melhora.
 
 | Severidade | Antes | Depois |
-|---|---:|---:|
+| --- | ---: | ---: |
 | UNKNOWN | 0 | 0 |
 | LOW | 5 | 3 |
 | MEDIUM | 21 | 13 |
@@ -462,7 +462,7 @@ RUN corepack enable && \
 Foi comparado o uso do Corepack com a instalação global via npm.
 
 | Cenário | Tempo |
-|---|---:|
+| --- | ---: |
 | Build anterior | 76,57 s |
 | Build com Corepack | 75,87 s |
 | Build cacheado com Corepack | 1,90 s |
@@ -939,7 +939,7 @@ CMD ["server.js"]
 # 22. Comparativo final
 
 | Métrica | Antes | Depois | Resultado |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 334 MB | 307 MB | **-8,1%** |
 | Content Size | 80,1 MB | 74,6 MB | **-6,9%** |
 | OS HIGH | 2 | 0 | **-100%** |

@@ -69,7 +69,7 @@ gestao-escolar-frontend:baseline
 ```
 
 | Métrica | Baseline |
-|---|---:|
+| --- | ---: |
 | Build limpo | 34,69 s |
 | Build totalmente cacheado | 0,52 s |
 | Disk Usage | 316 MB |
@@ -107,7 +107,7 @@ shell
 ### Sistema operacional — Alpine 3.23.4
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 32 |
 | MEDIUM | 14 |
@@ -118,7 +118,7 @@ shell
 ### Dependências Node.js
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 5 |
 | MEDIUM | 19 |
@@ -149,7 +149,7 @@ O builder permaneceu em `node:20-alpine`, pois precisa de npm, shell e tooling p
 ## 5. Resultado com Distroless
 
 | Métrica | Antes | Depois | Resultado |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 316 MB | 302 MB | **-4,4%** |
 | Content Size | 76,5 MB | 74,6 MB | **-2,5%** |
 | OS HIGH | 4 | 2 | **-50%** |

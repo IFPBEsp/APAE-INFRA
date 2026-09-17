@@ -81,7 +81,7 @@ apae-frontend:baseline
 ```
 
 | Métrica | Baseline |
-|---|---:|
+| --- | ---: |
 | Disk Usage | 262 MB |
 | Content Size | 63,7 MB |
 | Build limpo | 366,91 s |
@@ -119,7 +119,7 @@ public            ~225 KB
 ### Sistema operacional — Alpine 3.23.4
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 32 |
 | MEDIUM | 14 |
@@ -130,7 +130,7 @@ public            ~225 KB
 ### Dependências Node.js
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 4 |
 | MEDIUM | 15 |
@@ -238,7 +238,7 @@ Não há necessidade de copiar `node_modules` completo para a imagem final.
 ## 7. Resultado do build
 
 | Cenário | Baseline | Refatorado |
-|---|---:|---:|
+| --- | ---: | ---: |
 | Build limpo | 366,91 s | 208,25 s |
 | Build cacheado | 3,90 s | 5,14 s |
 | Alteração no código | 26,92 s | 26,66 s |
@@ -260,7 +260,7 @@ O build totalmente cacheado variou de 3,90 s para 5,14 s, diferença de aproxima
 ### Tamanho
 
 | Métrica | Antes | Depois | Resultado |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 262 MB | 243 MB | **-7,3%** |
 | Content Size | 63,7 MB | 60,4 MB | **-5,2%** |
 
@@ -273,7 +273,7 @@ Debian 13.4
 ```
 
 | Severidade | Antes | Depois |
-|---|---:|---:|
+| --- | ---: | ---: |
 | UNKNOWN | 0 | 1 |
 | LOW | 32 | 24 |
 | MEDIUM | 14 | 20 |
@@ -290,7 +290,7 @@ O ganho concreto foi a redução dos findings **HIGH** do sistema operacional:
 ### Dependências Node.js
 
 | Severidade | Antes | Depois |
-|---|---:|---:|
+| --- | ---: | ---: |
 | UNKNOWN | 0 | 0 |
 | LOW | 4 | 2 |
 | MEDIUM | 15 | 9 |

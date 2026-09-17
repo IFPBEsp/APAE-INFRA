@@ -85,7 +85,7 @@ apae-site-comemorativo:baseline
 ### 2.1 Tempo de build
 
 | Cenário | Tempo |
-|---|---:|
+| --- | ---: |
 | Build limpo | 132,61 s |
 | Build totalmente cacheado | 0,69 s |
 | Build após alteração em código | 61,01 s |
@@ -93,7 +93,7 @@ apae-site-comemorativo:baseline
 ### 2.2 Tamanho
 
 | Métrica | Baseline |
-|---|---:|
+| --- | ---: |
 | Disk Usage | 2,26 GB |
 | Content Size | 360 MB |
 
@@ -134,7 +134,7 @@ shell
 ### Dependências Node.js
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 8 |
 | MEDIUM | 54 |
@@ -185,7 +185,7 @@ apae-site-comemorativo:standalone
 ### 5.1 Tamanho
 
 | Métrica | Baseline | Standalone Alpine | Resultado |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 2,26 GB | 383 MB | **-83,1%** |
 | Content Size | 360 MB | 110 MB | **-69,4%** |
 
@@ -210,7 +210,7 @@ Redução observada de aproximadamente **41,5%**.
 ### 5.3 Findings Node.js
 
 | Severidade | Baseline | Standalone Alpine |
-|---|---:|---:|
+| --- | ---: | ---: |
 | LOW | 8 | 4 |
 | MEDIUM | 54 | 20 |
 | HIGH | 82 | 36 |
@@ -230,7 +230,7 @@ FROM gcr.io/distroless/nodejs20-debian13:nonroot
 ### Resultado
 
 | Métrica | Standalone Alpine | Standalone Distroless |
-|---|---:|---:|
+| --- | ---: | ---: |
 | Disk Usage | 383 MB | 369 MB |
 | Content Size | 110 MB | 108 MB |
 | OS HIGH | 4 | 2 |
@@ -330,7 +330,7 @@ apae-site-comemorativo:debian-distroless
 ### 10.1 Build
 
 | Cenário | Baseline | Final |
-|---|---:|---:|
+| --- | ---: | ---: |
 | Build limpo | 132,61 s | 108,91 s |
 | Build cacheado | 0,69 s | 3,64 s |
 | Alteração no código | 61,01 s | 59,31 s |
@@ -338,14 +338,14 @@ apae-site-comemorativo:debian-distroless
 ### 10.2 Tamanho
 
 | Métrica | Baseline | Final | Resultado |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 2,26 GB | 369 MB | **≈ -83,7%** |
 | Content Size | 360 MB | 108 MB | **-70%** |
 
 ### 10.3 Vulnerabilidades Node.js
 
 | Severidade | Baseline | Final |
-|---|---:|---:|
+| --- | ---: | ---: |
 | LOW | 8 | 2 |
 | MEDIUM | 54 | 14 |
 | HIGH | 82 | 17 |
@@ -373,7 +373,7 @@ Debian 13.4
 ```
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 2 |
 | LOW | 24 |
 | MEDIUM | 19 |
@@ -654,7 +654,7 @@ CMD ["server.js"]
 ## 18. Comparativo final
 
 | Métrica | Antes | Depois | Resultado |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 2,26 GB | 369 MB | **≈ -83,7%** |
 | Content Size | 360 MB | 108 MB | **-70%** |
 | Node HIGH | 82 | 17 | **≈ -79,3%** |

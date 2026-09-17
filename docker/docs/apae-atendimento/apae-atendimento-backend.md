@@ -20,7 +20,7 @@ Além das alterações realizadas, foram coletadas métricas antes e depois da r
 
 ---
 
-# 1. Dockerfile original
+## 1. Dockerfile original
 
 O backend utilizava inicialmente:
 
@@ -55,7 +55,7 @@ A imagem já utilizava **multi-stage build**, portanto essa característica foi 
 
 ---
 
-# 2. Baseline
+## 2. Baseline
 
 Antes de qualquer alteração, foi construída a imagem:
 
@@ -63,10 +63,10 @@ Antes de qualquer alteração, foi construída a imagem:
 atendimento-backend:baseline
 ```
 
-## 2.1 Tamanho da imagem
+### 2.1 Tamanho da imagem
 
 | Métrica | Baseline |
-|---|---:|
+| --- | ---: |
 | Disk Usage | 476 MB |
 | Content Size | 163 MB |
 
@@ -80,12 +80,12 @@ da imagem.
 
 ---
 
-## 2.2 Tempo de build
+### 2.2 Tempo de build
 
 Foram medidos diferentes cenários.
 
 | Cenário | Tempo |
-|---|---:|
+| --- | ---: |
 | Build sem cache | 445,04 s |
 | Build completamente cacheado | ~0,32 s |
 | Alteração somente em `src` | 25,42 s |
@@ -94,7 +94,7 @@ O cenário de alteração apenas no código-fonte foi utilizado como referência
 
 ---
 
-## 2.3 Usuário de runtime
+### 2.3 Usuário de runtime
 
 Foi executado:
 
@@ -122,7 +122,7 @@ sem a definição explícita de um grupo não privilegiado.
 
 ---
 
-## 2.4 Ferramentas presentes no runtime
+### 2.4 Ferramentas presentes no runtime
 
 A imagem original possuía:
 
@@ -135,16 +135,16 @@ Maven e `javac` não estavam presentes na imagem final, demonstrando que a separ
 
 ---
 
-# 3. Vulnerabilidades da imagem original
+## 3. Vulnerabilidades da imagem original
 
 Foi realizado scan com Trivy.
 
-## 3.1 Sistema operacional
+### 3.1 Sistema operacional
 
 Imagem baseada em Alpine.
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 18 |
 | MEDIUM | 9 |
@@ -153,10 +153,10 @@ Imagem baseada em Alpine.
 
 ---
 
-## 3.2 Dependências Java
+### 3.2 Dependências Java
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 10 |
 | MEDIUM | 43 |
@@ -170,7 +170,7 @@ A revisão dessas dependências foi registrada separadamente para avaliação do
 
 ---
 
-# 4. Avaliação do runtime
+## 4. Avaliação do runtime
 
 Durante a análise foram comparadas diferentes estratégias de runtime.
 
@@ -182,7 +182,7 @@ Foram avaliados:
 
 ---
 
-# 5. Migração para Distroless
+## 5. Migração para Distroless
 
 O runtime foi alterado de:
 
@@ -208,12 +208,12 @@ Isso reduz a superfície de ataque da imagem e dificulta a utilização do conta
 
 ---
 
-# 6. Resultado com Distroless
+## 6. Resultado com Distroless
 
-## 6.1 Tamanho
+### 6.1 Tamanho
 
 | Métrica | Antes | Distroless | Diferença |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 476 MB | 447 MB | -29 MB |
 | Content Size | 163 MB | 151 MB | -12 MB |
 
@@ -226,7 +226,7 @@ Content Size: -7,4%
 
 ---
 
-## 6.2 Usuário
+### 6.2 Usuário
 
 O runtime Distroless `nonroot` executa com:
 
@@ -245,12 +245,12 @@ por execução explicitamente não privilegiada.
 
 ---
 
-## 6.3 Vulnerabilidades do sistema operacional
+### 6.3 Vulnerabilidades do sistema operacional
 
 Após a alteração:
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 3 |
 | LOW | 18 |
 | MEDIUM | 22 |
@@ -283,14 +283,14 @@ confirmando que elas pertencem às dependências da aplicação e não à imagem
 
 ---
 
-# 7. Comparação com Chainguard
+## 7. Comparação com Chainguard
 
 Também foi construída uma imagem experimental utilizando Chainguard JRE.
 
-## Resultado
+### Resultado
 
 | Métrica | Distroless | Chainguard |
-|---|---:|---:|
+| --- | ---: | ---: |
 | Disk Usage | 447 MB | 628 MB |
 | Content Size | 151 MB | 198 MB |
 | Runtime UID | 65532 | 65532 |
@@ -327,7 +327,7 @@ como runtime do backend.
 
 ---
 
-# 8. Análise do tempo de build Maven
+## 8. Análise do tempo de build Maven
 
 A Dockerfile original utilizava:
 
@@ -353,7 +353,7 @@ era o principal gargalo do processo.
 
 ---
 
-## 8.1 Medição por etapa
+### 8.1 Medição por etapa
 
 BuildKit apresentou:
 
@@ -379,7 +379,7 @@ Também foram observadas resoluções diferentes de artefatos entre `go-offline`
 
 ---
 
-# 9. Substituição de `go-offline` por BuildKit cache mount
+## 9. Substituição de `go-offline` por BuildKit cache mount
 
 A estratégia foi alterada para:
 
@@ -398,17 +398,17 @@ sem integrar esses artefatos à imagem final.
 
 ---
 
-# 10. Resultado da otimização do build
+## 10. Resultado da otimização do build
 
 Foram executados novos benchmarks sem `dependency:go-offline`.
 
-## Build com cache inicialmente frio
+### Build com cache inicialmente frio
 
 ```text
 104,00 s
 ```
 
-## Segunda execução
+### Segunda execução
 
 ```text
 129,61 s
@@ -425,7 +425,7 @@ Mesmo considerando essa variação, ambos os resultados ficaram significativamen
 
 ---
 
-## 10.1 Comparação
+### 10.1 Comparação
 
 Um dos builds Distroless anteriores havia apresentado:
 
@@ -465,7 +465,7 @@ redução aproximada de 75–80% no benchmark observado.
 
 ---
 
-# 11. Build após alteração no código-fonte
+## 11. Build após alteração no código-fonte
 
 Foi realizada uma alteração em apenas um arquivo dentro de:
 
@@ -503,7 +503,7 @@ Esse cenário é especialmente relevante por representar builds incrementais com
 
 ---
 
-# 12. Remoção de `clean`
+## 12. Remoção de `clean`
 
 O comando foi simplificado de:
 
@@ -523,7 +523,7 @@ A etapa `clean`, portanto, não é necessária para garantir a integridade do ar
 
 ---
 
-# 13. `.dockerignore`
+## 13. `.dockerignore`
 
 Foi adotada uma estratégia de **allowlist**, permitindo ao contexto Docker somente os arquivos realmente utilizados pelo build.
 
@@ -554,7 +554,7 @@ A abordagem também reduz o risco de envio acidental de arquivos sensíveis.
 
 ---
 
-# 14. Healthcheck
+## 14. Healthcheck
 
 Não foi adicionado `HEALTHCHECK` ao Dockerfile.
 
@@ -594,7 +594,7 @@ Kubernetes
 
 ---
 
-# 15. Execução Java
+## 15. Execução Java
 
 A imagem original utilizava:
 
@@ -631,11 +631,11 @@ Os valores serão definidos de acordo com os recursos atribuídos ao Pod.
 
 ---
 
-# 16. Pinning das imagens
+## 16. Pinning das imagens
 
 As imagens base foram fixadas por versão e digest.
 
-## Maven
+### Maven
 
 ```text
 maven:3.9.9-eclipse-temurin-21-alpine
@@ -647,7 +647,7 @@ Digest:
 sha256:5a8b906c4faa11d33f6c74758f67db8eac25441e14b0729f6d50ff78992be58a
 ```
 
-## Distroless
+### Distroless
 
 ```text
 gcr.io/distroless/java21-debian13:nonroot
@@ -671,7 +671,7 @@ Isso evita mudanças silenciosas causadas pela atualização de tags no registry
 
 ---
 
-# 17. Atualização futura dos digests
+## 17. Atualização futura dos digests
 
 O pinning significa que atualizações das imagens base não serão automaticamente incorporadas.
 
@@ -709,7 +709,7 @@ merge
 
 ---
 
-# 18. Metadados OCI
+## 18. Metadados OCI
 
 Foram adicionados metadados utilizando labels padronizados OCI.
 
@@ -753,7 +753,7 @@ repositório de origem
 
 ---
 
-# 19. Dockerfile final
+## 19. Dockerfile final
 
 ```dockerfile
 # syntax=docker/dockerfile:1.7
@@ -796,7 +796,7 @@ CMD ["-jar", "app.jar"]
 
 ---
 
-# 20. `.dockerignore` final
+## 20. `.dockerignore` final
 
 ```dockerignore
 **
@@ -808,10 +808,10 @@ CMD ["-jar", "app.jar"]
 
 ---
 
-# 21. Comparativo final
+## 21. Comparativo final
 
 | Métrica | Antes | Depois | Resultado |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 476 MB | 447 MB | **-6,1%** |
 | Content Size | 163 MB | 151 MB | **-7,4%** |
 | OS HIGH | 3 | 0 | **-100%** |
@@ -830,7 +830,7 @@ CMD ["-jar", "app.jar"]
 
 ---
 
-# 22. Principais melhorias
+## 22. Principais melhorias
 
 A refatoração resultou principalmente em:
 
@@ -849,7 +849,7 @@ A refatoração resultou principalmente em:
 
 ---
 
-# 23. Pontos não alterados
+## 23. Pontos não alterados
 
 Algumas características já estavam corretas no Dockerfile original e foram preservadas:
 
@@ -862,7 +862,7 @@ Esses itens não devem ser apresentados como ganhos introduzidos pela refatoraç
 
 ---
 
-# 24. Achados fora do escopo
+## 24. Achados fora do escopo
 
 Durante a análise foram identificadas possíveis melhorias nas dependências Java da aplicação.
 

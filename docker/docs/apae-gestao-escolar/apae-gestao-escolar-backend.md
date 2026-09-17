@@ -56,7 +56,7 @@ gestao-escolar-backend:baseline
 ```
 
 | Métrica | Baseline |
-|---|---:|
+| --- | ---: |
 | Disk Usage | 444 MB |
 | Content Size | 148 MB |
 | Build limpo | 127,83 s |
@@ -86,7 +86,7 @@ Ferramentas identificadas no runtime:
 ### Sistema operacional — Alpine 3.24.1
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 18 |
 | MEDIUM | 9 |
@@ -97,7 +97,7 @@ Ferramentas identificadas no runtime:
 ### Dependências Java
 
 | Severidade | Quantidade |
-|---|---:|
+| --- | ---: |
 | UNKNOWN | 0 |
 | LOW | 15 |
 | MEDIUM | 42 |
@@ -122,7 +122,7 @@ RUN mvn package -DskipTests -B -q
 ```
 
 | Cenário | Baseline | Sem `go-offline` |
-|---|---:|---:|
+| --- | ---: | ---: |
 | Build limpo | 127,83 s | 46,28 s |
 | Build cacheado | 1,32 s | 0,96 s |
 | Alteração no código | 14,49 s | 57,73 s |
@@ -141,7 +141,7 @@ RUN --mount=type=cache,id=gestao-escolar-m2,target=/root/.m2 \
 ```
 
 | Cenário | Baseline | BuildKit cache |
-|---|---:|---:|
+| --- | ---: | ---: |
 | Build limpo | 127,83 s | 48,63 s |
 | Build cacheado | 1,32 s | 1,66 s |
 | Alteração no código | 14,49 s | 13,61 s |
@@ -167,7 +167,7 @@ FROM gcr.io/distroless/java21-debian13:nonroot
 ### Resultado
 
 | Métrica | Antes | Depois | Resultado |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Disk Usage | 444 MB | 417 MB | **-6,1%** |
 | Content Size | 148 MB | 137 MB | **-7,4%** |
 | OS HIGH | 3 | 0 | **-100%** |
