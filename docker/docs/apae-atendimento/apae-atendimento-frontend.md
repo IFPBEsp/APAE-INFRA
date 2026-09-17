@@ -22,7 +22,7 @@ Além das alterações realizadas, foram coletadas métricas antes e depois da r
 
 ---
 
-# 1. Dockerfile original
+## 1. Dockerfile original
 
 O frontend utilizava inicialmente:
 
@@ -48,7 +48,7 @@ ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY .. .
+COPY ../../../../.. .
 
 RUN pnpm build
 
@@ -87,7 +87,7 @@ Esses itens foram preservados e não devem ser apresentados como ganhos introduz
 
 ---
 
-# 2. Baseline
+## 2. Baseline
 
 Antes de qualquer alteração, foi construída a imagem:
 
@@ -171,7 +171,7 @@ Isso significa que a imagem final continha ferramentas não necessárias para a 
 
 ---
 
-# 3. Vulnerabilidades da imagem original
+## 3. Vulnerabilidades da imagem original
 
 Foi realizado scan com Trivy.
 
@@ -203,7 +203,7 @@ Imagem baseada em Alpine 3.24.1.
 
 ---
 
-# 4. Avaliação do runtime
+## 4. Avaliação do runtime
 
 O runtime original utilizava:
 
@@ -226,7 +226,7 @@ O objetivo foi reduzir:
 
 ---
 
-# 5. Migração para Distroless Node 24
+## 5. Migração para Distroless Node 24
 
 A nova imagem de runtime passou a utilizar:
 
@@ -253,7 +253,7 @@ por meio do entrypoint nativo da imagem Distroless Node.
 
 ---
 
-# 6. Resultado com Distroless
+## 6. Resultado com Distroless
 
 ## 6.1 Tamanho
 
@@ -312,7 +312,7 @@ Representando:
 
 ---
 
-# 7. Vulnerabilidades Node.js após Distroless
+## 7. Vulnerabilidades Node.js após Distroless
 
 O scan das dependências Node.js também apresentou melhora.
 
@@ -346,7 +346,7 @@ A redução das vulnerabilidades Node observadas na imagem final deve ser tratad
 
 ---
 
-# 8. Build após migração para Distroless
+## 8. Build após migração para Distroless
 
 Foram executados novos benchmarks.
 
@@ -424,7 +424,7 @@ O resultado deve ser registrado como benchmark observado, considerando possívei
 
 ---
 
-# 9. Substituição da instalação global do pnpm
+## 9. Substituição da instalação global do pnpm
 
 O Dockerfile original utilizava:
 
@@ -457,7 +457,7 @@ RUN corepack enable && \
 
 ---
 
-# 10. Benchmark do Corepack
+## 10. Benchmark do Corepack
 
 Foi comparado o uso do Corepack com a instalação global via npm.
 
@@ -478,7 +478,7 @@ A decisão de manter Corepack foi baseada principalmente em:
 
 ---
 
-# 11. Avaliação de BuildKit cache para pnpm
+## 11. Avaliação de BuildKit cache para pnpm
 
 Foi avaliado o uso de cache persistente do store do pnpm.
 
@@ -557,7 +557,7 @@ Essa decisão evita complexidade adicional sem benefício mensurável.
 
 ---
 
-# 12. Estratégia de cache de dependências
+## 12. Estratégia de cache de dependências
 
 O Dockerfile mantém:
 
@@ -588,7 +588,7 @@ não invalidam a instalação das dependências.
 
 ---
 
-# 13. `.dockerignore` original
+## 13. `.dockerignore` original
 
 A configuração original era:
 
@@ -608,7 +608,7 @@ Apesar de funcional, qualquer novo arquivo criado no projeto seria incluído no 
 
 ---
 
-# 14. `.dockerignore` refatorado
+## 14. `.dockerignore` refatorado
 
 Foi adotada uma estratégia de **allowlist**.
 
@@ -659,7 +659,7 @@ Isso reduz:
 
 ---
 
-# 15. Healthcheck
+## 15. Healthcheck
 
 Não foi adicionado `HEALTHCHECK` ao Dockerfile.
 
@@ -697,7 +697,7 @@ Kubernetes
 
 ---
 
-# 16. Imagem de build
+## 16. Imagem de build
 
 Foi mantida:
 
@@ -729,7 +729,7 @@ Caso surjam futuramente incompatibilidades com bibliotecas nativas baseadas em `
 
 ---
 
-# 17. Pinning das imagens
+## 17. Pinning das imagens
 
 As imagens base foram fixadas por tag e digest.
 
@@ -781,7 +781,7 @@ mantém a versão legível e garante que diferentes builds utilizem exatamente o
 
 ---
 
-# 18. Atualização futura dos digests
+## 18. Atualização futura dos digests
 
 O uso de digests exige atualização controlada quando novas versões das imagens forem disponibilizadas.
 
@@ -821,7 +821,7 @@ merge
 
 ---
 
-# 19. Metadados OCI
+## 19. Metadados OCI
 
 Foram adicionados labels compatíveis com o padrão OCI para melhorar a rastreabilidade das imagens publicadas no GHCR.
 
@@ -849,7 +849,7 @@ licença
 
 ---
 
-# 20. Dockerfile final
+## 20. Dockerfile final
 
 ```dockerfile
 # syntax=docker/dockerfile:1.7
@@ -913,7 +913,7 @@ CMD ["server.js"]
 
 ---
 
-# 21. `.dockerignore` final
+## 21. `.dockerignore` final
 
 ```dockerignore
 **
@@ -936,7 +936,7 @@ CMD ["server.js"]
 
 ---
 
-# 22. Comparativo final
+## 22. Comparativo final
 
 | Métrica | Antes | Depois | Resultado |
 | --- | ---: | ---: | ---: |
@@ -962,7 +962,7 @@ CMD ["server.js"]
 
 ---
 
-# 23. Principais melhorias
+## 23. Principais melhorias
 
 A refatoração resultou principalmente em:
 
@@ -986,7 +986,7 @@ A refatoração resultou principalmente em:
 
 ---
 
-# 24. Otimizações avaliadas e descartadas
+## 24. Otimizações avaliadas e descartadas
 
 Nem toda alteração considerada apresentou benefício.
 
@@ -1019,7 +1019,7 @@ Essa decisão evita adicionar complexidade ao Dockerfile sem ganho mensurável.
 
 ---
 
-# 25. Pontos não alterados
+## 25. Pontos não alterados
 
 Alguns aspectos já estavam adequados no Dockerfile original e foram preservados:
 
@@ -1035,7 +1035,7 @@ Esses itens não devem ser contabilizados como ganhos da refatoração.
 
 ---
 
-# 26. Achados fora do escopo
+## 26. Achados fora do escopo
 
 Durante a análise do `package.json`, foi observado que o projeto possui:
 
@@ -1051,7 +1051,7 @@ A alteração não foi realizada nesta tarefa por pertencer ao escopo de depend�
 
 ---
 
-# 27. Conclusão
+## 27. Conclusão
 
 A refatoração tornou a imagem do frontend mais enxuta, segura e previsível, mantendo o comportamento esperado da aplicação.
 

@@ -489,8 +489,8 @@ A baseline para alteração apenas em código era:
 
 Comparação:
 
-| Cenário | Antes | Depois |
-|---|---:|---:|
+| Cenário                    |   Antes |  Depois |
+| -------------------------- | ------: | ------: |
 | Alteração somente em `src` | 25,42 s | 12,83 s |
 
 Redução aproximada:
@@ -879,7 +879,7 @@ Os achados foram documentados separadamente e deverão ser avaliados pelo time r
 
 ---
 
-# 25. Conclusão
+## 25. Conclusão
 
 A refatoração manteve o comportamento esperado da aplicação enquanto tornou a imagem mais adequada para um ambiente de produção baseado em containers e Kubernetes.
 
