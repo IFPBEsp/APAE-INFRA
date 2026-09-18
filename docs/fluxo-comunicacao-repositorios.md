@@ -4,11 +4,11 @@ Este documento descreve o caminho percorrido desde um commit em um repositório 
 
 ## Repositórios envolvidos
 
-- **APAE**
-- **APAE-atendimento**
-- **APAE-gestao-escolar**
-- **apae-site-comemorativo**
-- **APAE-INFRA** (orquestração / GitOps repo)
+- [**APAE**](https://github.com/IFPBEsp/APAE)
+- [**APAE-atendimento**](https://github.com/IFPBEsp/APAE-atendimento)
+- [**APAE-gestao-escolar**](https://github.com/IFPBEsp/APAE-gestao-escolar)
+- [**apae-site-comemorativo**](https://github.com/IFPBEsp/apae-site-comemorativo)
+- **APAE-INFRA**
 
 Os quatro primeiros são repositórios de aplicação. Cada um segue exatamente o mesmo fluxo, de forma independente dos demais.
 
