@@ -4,5 +4,4 @@ metadata:
   name: apae-config
 data:
   NODE_ENV: "production"
-  NEXT_PUBLIC_API_URL: "/apae-geral/api"
   API_URL: "http://api:8080/apae-geral/api"

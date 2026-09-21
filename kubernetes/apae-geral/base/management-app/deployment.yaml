@@ -17,15 +17,7 @@ spec:
       containers:
         - name: management-app
           image: management-app:unpublished
-          imagePullPolicy: IfNotPresent
-
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
+          imagePullPolicy: Always
 
           resources:
             requests:
