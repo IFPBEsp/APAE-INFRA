@@ -17,6 +17,7 @@ jobs:
     uses: ./.github/workflows/k8s-lint-reusable.yml
     with:
       manifests-path: "kubernetes"
+      kustomize-path: "kubernetes/apae-geral/base"
 
   argocd:
     name: Lint Argo CD manifests
