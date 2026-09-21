@@ -23,4 +23,5 @@ As recomendações devem ser consideradas durante o desenvolvimento, a revisão 
 - [Checklist antes do Pull Request](13-checklist-pull-request.md)
 - [Padronização de Markdown](14-padronizacao-markdown.md)
 - [Estimativa de esforço (escala de Fibonacci)](15-sequencia-de-fibonacci.md)
-- [Referências internas](16-referencias-internas.md)
+- [Política de tags de imagens Docker](16-politica-tags-imagens-docker.md)
+- [Referências internas](17-referencias-internas.md)

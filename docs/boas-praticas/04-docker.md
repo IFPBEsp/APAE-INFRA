@@ -6,63 +6,29 @@ As imagens Docker devem ser reproduzíveis, mínimas e versionadas.
 
 ---
 
-## 4.1 Versionamento
+## 4.1 Versionamento e rastreabilidade
 
-Não utilizar a tag `latest` para imagens executadas em produção.
+As imagens Docker devem seguir a política central de identificação e rastreabilidade definida em:
 
-Evitar:
+[Política de tags de imagens Docker](16-politica-tags-imagens-docker.md)
 
-```text
-apae-backend:latest
-```
+Como regra geral:
 
-Preferir versões identificáveis:
-
-```text
-apae-backend:1.4.0
-```
-
-Também podem ser utilizados identificadores imutáveis relacionados ao commit:
-
-```text
-apae-backend:a73f2c1
-```
-
-A versão utilizada em produção deve permitir identificar qual código originou aquela imagem.
+- o digest OCI (`image@sha256:<digest>`) é a referência canônica e imutável;
+- `sha-<short-sha>` é utilizado para rastreabilidade entre imagem e commit;
+- `vX.Y.Z` pode ser utilizado para releases;
+- `latest` não deve ser utilizado em deployments, rollback, auditoria ou GitOps.
 
 ---
 
 ## 4.2 Imutabilidade das imagens
 
-Uma tag utilizada para identificar uma versão de produção não deve posteriormente apontar para uma imagem diferente.
+A identidade técnica definitiva de uma imagem é o digest OCI.
 
-Por exemplo:
+Tags são referências mutáveis no registry e devem seguir as regras definidas na
+[política de versionamento e rastreabilidade](16-politica-tags-imagens-docker.md).
 
-```text
-apae-backend:1.4.0
-```
-
-deve representar sempre o mesmo artefato.
-
-Não deve ocorrer:
-
-```text
-1.4.0 → imagem A
-
-posteriormente
-
-1.4.0 → imagem B
-```
-
-Caso seja necessária uma nova imagem, deve ser criada uma nova versão.
-
-Exemplo:
-
-```text
-1.4.1
-```
-
-Essa prática aumenta a previsibilidade de deploys e rollbacks.
+Tags baseadas em commit e versões de release não devem ser sobrescritas para apontar para conteúdos diferentes.
 
 ---
 
@@ -70,10 +36,10 @@ Essa prática aumenta a previsibilidade de deploys e rollbacks.
 
 Utilizar preferencialmente imagens:
 
-* Oficiais;
-* Mantidas;
-* Com versões explicitamente definidas;
-* Com apenas os componentes necessários para execução da aplicação.
+- Oficiais;
+- Mantidas;
+- Com versões explicitamente definidas;
+- Com apenas os componentes necessários para execução da aplicação.
 
 Evitar imagens base sem versão definida.
 
@@ -144,12 +110,12 @@ Esses mecanismos podem posteriormente ser utilizados por Docker, Kubernetes ou f
 
 Não incluir na imagem:
 
-* Segredos;
-* Credenciais;
-* Chaves privadas;
-* Arquivos `.env` de produção;
-* Arquivos temporários;
-* Conteúdo desnecessário para execução.
+- Segredos;
+- Credenciais;
+- Chaves privadas;
+- Arquivos `.env` de produção;
+- Arquivos temporários;
+- Conteúdo desnecessário para execução.
 
 Utilizar `.dockerignore` para reduzir o contexto do build.
 
