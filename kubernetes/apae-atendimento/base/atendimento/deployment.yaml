@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atendimento
+  labels:
+    app: atendimento
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: atendimento
+  template:
+    metadata:
+      labels:
+        app: atendimento
+    spec:
+      containers:
+        - name: atendimento
+          image: ghcr.io/ifpbesp/apae-atendimento-backend:dev
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: atendimento-config
+
+          startupProbe:
+            httpGet:
+              path: /atendimento/actuator/health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30
+
+          readinessProbe:
+            httpGet:
+              path: /atendimento/actuator/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /atendimento/actuator/health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
