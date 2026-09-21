@@ -2,7 +2,7 @@
 
 ## Visão Geral
 
-O Terraform é utilizado para provisionar e gerenciar a infraestrutura base do projeto APAE na Oracle Cloud (OCI), incluindo o cluster Kubernetes (OKE), VMs, redes e o bucket de armazenamento do state.
+O Terraform é utilizado para provisionar e gerenciar a infraestrutura base do projeto APAE em uma VPS na **Contabo**, incluindo a instalação do cluster Kubernetes, configuração de rede e recursos de computação.
 
 ## Organização de Módulos
 
@@ -10,10 +10,9 @@ Os módulos ficam em `/terraform/modules/` e são blocos reutilizáveis de infra
 
 | Módulo | Responsabilidade |
 |---|---|
-| `kubernetes-cluster/` | Provisiona o cluster OKE |
-| `network/` | Cria VPC e subnets |
-| `compute/` | Provisiona VMs |
-| `object-storage/` | Cria bucket para armazenar o state |
+| `kubernetes-cluster/` | Instala e configura o Kubernetes na VPS |
+| `network/` | Configura rede e regras de firewall |
+| `compute/` | Provisiona e configura a VPS |
 
 ## Separação por Ambiente
 
@@ -23,13 +22,12 @@ Os ambientes ficam em `/terraform/environments/` e cada um consome os módulos c
 - **hml/** — configurações intermediárias para homologação
 - **prod/** — configurações completas para produção
 
-## Backend de State
+## Terraform State
 
-O state do Terraform é armazenado remotamente no **Oracle Object Storage** para garantir consistência entre execuções e membros do time:
+O state do Terraform é armazenado **localmente na própria VPS Contabo**:
 
-- **Bucket:** Oracle Object Storage
-- **Arquivo:** `terraform.tfstate`
-- **Lock:** OCI Lock para evitar execuções simultâneas
+- **Localização:** arquivo `terraform.tfstate` na VPS
+- **Atenção:** o state local exige que todos os membros do time que executam o Terraform tenham acesso à VPS e ao arquivo de state para evitar conflitos
 
 ## Fluxo de plan/apply
 
@@ -37,14 +35,13 @@ As mudanças de infraestrutura seguem o seguinte fluxo:
 
 1. Desenvolvedor faz push no GitHub
 2. GitHub Actions dispara automaticamente
-3. `terraform init` — inicializa o backend e os módulos
+3. `terraform init` — inicializa os módulos
 4. `terraform plan` — exibe o que será criado/alterado/destruído
 5. Aprovação manual por membro autorizado da squad
-6. `terraform apply` — aplica as mudanças na Oracle Cloud
+6. `terraform apply` — aplica as mudanças na VPS Contabo
 
 ## Recursos Provisionados
 
-- Cluster Kubernetes (OKE)
-- VMs
-- VPC e Subnets
-- Object Storage (bucket do state)
+- VPS Contabo
+- Cluster Kubernetes (instalado manualmente via Terraform)
+- Configuração de rede e firewall
