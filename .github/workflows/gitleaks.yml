@@ -1,0 +1,11 @@
+name: Secret Scanning
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  call-gitleaks:
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-gitleaks.yml@dev
