@@ -18,7 +18,6 @@ jobs:
     with:
       manifests-path: "kubernetes"
       kustomize-paths: |
-        kubernetes/apae-geral/base
         kubernetes/apae-atendimento/base
 
   argocd:
