@@ -20,7 +20,7 @@ on:
       java-version:
         description: 'Versão do JDK'
         required: false
-        default: '17'
+        default: '21'
         type: string
       sonar-host-url:
         description: 'URL do servidor SonarQube ou SonarCloud'
