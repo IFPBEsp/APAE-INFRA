@@ -98,7 +98,7 @@ jobs:
       project-key: "ifpbesp_apae-backend"
       organization: "ifpbesp"
       working-directory: "backend"
-      java-version: 21"
+      java-version: "21"
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -119,49 +119,66 @@ jobs:
 Arquivo `.github/workflows/sonar.yml`:
 
 ```yaml
-name: Code Quality Scan
+name: SonarQube Analysis
 
 on:
   push:
-    branches: [main, dev]
+    branches: [ "dev", "main" ]
   pull_request:
-    branches: [main, dev]
+    branches: [ "dev", "main" ]
 
 permissions:
   contents: read
 
 jobs:
-  sonar:
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-sonarqube-node.yml@main
+  sonar-frontend:
+    name: Frontend Analysis (Node)
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-sonarqube-node.yml@dev
     with:
-      project-key: "ifpbesp_apae-site-comemorativo"
+      project-key: "apae-site-comemorativo-frontend"
       organization: "ifpbesp"
+      working-directory: "."
+      node-version: "22"
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 ```
 
-### 3. Repositórios `IFPBEsp/APAE-atendimento` e `IFPBEsp/APAE-gestao-escolar`
+### 3. Repositórios `IFPBEsp/APAE-atendimento`
 
 Para serviços em Java/Maven:
 
 ```yaml
-name: Code Quality Scan
+name: SonarQube Analysis
 
 on:
   push:
-    branches: [main, dev]
+    branches: [ "dev", "main" ]
   pull_request:
-    branches: [main, dev]
+    branches: [ "dev", "main" ]
 
 permissions:
   contents: read
 
 jobs:
-  sonar:
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-sonarqube-maven.yml@main
+  sonar-backend:
+    name: Backend Analysis
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-sonarqube-maven.yml@dev
     with:
-      project-key: "ifpbesp_apae-atendimento"
+      project-key: "apae-atendimento-backend"
       organization: "ifpbesp"
+      working-directory: "backend/atendimento"
+      java-version: "21"
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  sonar-frontend:
+    name: Frontend Analysis
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-sonarqube-node.yml@dev
+    with:
+      project-key: "apae-atendimento-frontend"
+      organization: "ifpbesp"
+      working-directory: "frontend/atendimento-app"
+      node-version: "22"
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 ```
