@@ -1,0 +1,104 @@
+name: SonarQube Analysis - Node
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: 'Chave do projeto no SonarQube / SonarCloud'
+        required: true
+        type: string
+      organization:
+        description: 'Chave da organização (obrigatório para SonarQube Cloud)'
+        required: false
+        default: ''
+        type: string
+      working-directory:
+        description: 'Diretório raiz do projeto Node'
+        required: false
+        default: '.'
+        type: string
+      node-version:
+        description: 'Versão do Node.js'
+        required: false
+        default: '22'
+        type: string
+      sonar-host-url:
+        description: 'URL do servidor SonarQube ou SonarCloud'
+        required: false
+        default: 'https://sonarcloud.io'
+        type: string
+      run-tests:
+        description: 'Executar testes com cobertura antes do scan'
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      SONAR_TOKEN:
+        description: 'Token de autenticação no SonarQube / SonarCloud'
+        required: true
+      SONAR_HOST_URL:
+        description: 'URL do SonarQube (se definida como secret no repositório)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  sonar-node:
+    name: SonarQube Analysis (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        if: hashFiles(format('{0}/**/pnpm-lock.yaml', inputs.working-directory)) != ''
+        with:
+          version: latest
+
+      - name: Install dependencies (pnpm)
+        if: hashFiles(format('{0}/**/pnpm-lock.yaml', inputs.working-directory)) != ''
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install dependencies (npm)
+        if: hashFiles(format('{0}/**/pnpm-lock.yaml', inputs.working-directory)) == ''
+        working-directory: ${{ inputs.working-directory }}
+        run: npm ci
+
+      - name: Run tests with coverage (pnpm)
+        if: inputs.run-tests && hashFiles(format('{0}/**/pnpm-lock.yaml', inputs.working-directory)) != ''
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm run test --if-present -- --coverage
+
+      - name: Run tests with coverage (npm)
+        if: inputs.run-tests && hashFiles(format('{0}/**/pnpm-lock.yaml', inputs.working-directory)) == ''
+        working-directory: ${{ inputs.working-directory }}
+        run: npm run test --if-present -- --coverage
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || inputs.sonar-host-url }}
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.project-key }}
+            ${{ inputs.organization != '' && format('-Dsonar.organization={0}', inputs.organization) || '' }}
+
+      - name: SonarQube Quality Gate Check
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || inputs.sonar-host-url }}
