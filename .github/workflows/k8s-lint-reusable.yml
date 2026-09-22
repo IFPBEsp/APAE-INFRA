@@ -9,8 +9,8 @@ on:
         type: string
         default: "kubernetes"
 
-      kustomize-path:
-        description: "Diretório raiz do Kustomize a ser renderizado"
+      kustomize-paths:
+        description: "Diretórios raiz do Kustomize a serem renderizados, um por linha"
         required: false
         type: string
         default: ""
@@ -103,22 +103,29 @@ jobs:
             "${files[@]}"
           
       - name: Render Kustomize manifests
-        if: steps.manifests.outputs.found == 'true' && inputs.kustomize-path != ''
+        if: steps.manifests.outputs.found == 'true' && inputs.kustomize-paths != ''
         shell: bash
         env:
-          KUSTOMIZE_PATH: ${{ inputs.kustomize-path }}
+          KUSTOMIZE_PATHS: ${{ inputs.kustomize-paths }}
         run: |
           set -euo pipefail
 
-          if [[ ! -d "$KUSTOMIZE_PATH" ]]; then
-            echo "::error::Diretório Kustomize não encontrado: $KUSTOMIZE_PATH"
-            exit 1
-          fi
+          rendered="$RUNNER_TEMP/k8s-rendered.yaml"
+          : > "$rendered"
 
-          kubectl kustomize "$KUSTOMIZE_PATH" \
-            > "$RUNNER_TEMP/k8s-rendered.yaml"
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
 
-          if [[ ! -s "$RUNNER_TEMP/k8s-rendered.yaml" ]]; then
+            if [[ ! -d "$path" ]]; then
+              echo "::error::Diretório Kustomize não encontrado: $path"
+              exit 1
+            fi
+
+            echo "---" >> "$rendered"
+            kubectl kustomize "$path" >> "$rendered"
+          done <<< "$KUSTOMIZE_PATHS"
+
+          if [[ ! -s "$rendered" ]]; then
             echo "::error::O Kustomize não gerou manifests."
             exit 1
           fi
@@ -152,7 +159,7 @@ jobs:
         env:
           KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
           IGNORE_MISSING_SCHEMAS: ${{ inputs.ignore-missing-schemas }}
-          KUSTOMIZE_PATH: ${{ inputs.kustomize-path }}
+          KUSTOMIZE_PATHS: ${{ inputs.kustomize-paths }}
           CRD_CATALOG_REVISION: "866b2653a5334db9aed20ad74701e20fd464471b"
         run: |
           set -euo pipefail
@@ -175,7 +182,7 @@ jobs:
             args+=(-ignore-missing-schemas)
           fi
 
-          if [[ -n "$KUSTOMIZE_PATH" ]]; then
+          if [[ -n "$KUSTOMIZE_PATHS" ]]; then
             kubeconform "${args[@]}" "$RUNNER_TEMP/k8s-rendered.yaml"
           else
             kubeconform "${args[@]}" "${files[@]}"
@@ -206,13 +213,13 @@ jobs:
         if: steps.manifests.outputs.found == 'true'
         shell: bash
         env:
-          KUSTOMIZE_PATH: ${{ inputs.kustomize-path }}
+          KUSTOMIZE_PATHS: ${{ inputs.kustomize-paths }}
         run: |
           set -euo pipefail
 
           mapfile -d '' -t files < "$RUNNER_TEMP/k8s-manifests.list"
 
-          if [[ -n "$KUSTOMIZE_PATH" ]]; then
+          if [[ -n "$KUSTOMIZE_PATHS" ]]; then
             kube-linter lint "$RUNNER_TEMP/k8s-rendered.yaml"
           else
             kube-linter lint "${files[@]}"
