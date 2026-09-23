@@ -67,7 +67,7 @@ jobs:
       - name: Install dependencies (pnpm)
         if: hashFiles(format('{0}/**/pnpm-lock.yaml', inputs.working-directory)) != ''
         working-directory: ${{ inputs.working-directory }}
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --dangerously-allow-all-builds
 
       - name: Install dependencies (npm)
         if: hashFiles(format('{0}/**/pnpm-lock.yaml', inputs.working-directory)) == ''
