@@ -28,19 +28,13 @@ Manter em um único lugar tudo que é infraestrutura como código, pipelines de 
 
 ```text
 .github/
-  workflows/        # pipelines de CI/CD (GitHub Actions)
-
-argocd/             # manifests de aplicações para o ArgoCD
-
-docker/             # Dockerfiles e configurações relacionadas a containers
-
-docs/               # documentação de padrões e boas práticas do repositório
-
-kubernetes/         # manifests e configurações Kubernetes
-  {aplicacao}/
-    base/           # manifests base e componentes Kustomize da aplicação
-    overlays/       # customizações por ambiente (dev/hml/prod)
-
+  workflows/      # pipelines de CI/CD (GitHub Actions)
+argocd/           # manifests de aplicação para o ArgoCD
+docker/           # Dockerfiles e configurações de containers
+docs/             # documentação de padrões e boas práticas do repositório
+  argocd/         # documentação do fluxo do ArgoCD (GitOps)
+  diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
+kubernetes/       # manifests e configurações do cluster
 monitoring/
   grafana/          # dashboards
   prometheus/       # regras e configuração de métricas

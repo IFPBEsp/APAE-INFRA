@@ -125,4 +125,14 @@ Formato `[TIPO] Descrição`:
 
 - Template de PR: [`.github/pull_request_template.md`](.github/pull_request_template.md)
 - [Conventional Commits](https://www.conventionalcommits.org/pt-br/)
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
 - [Commitlint](https://commitlint.js.org/)
+
+>>>>>>> f75aaf1 (docs: atualiza contributing.md com documentacao de commits)
+=======
+
+- [Commitlint](https://commitlint.js.org/)
+
+>>>>>>> dev
