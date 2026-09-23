@@ -65,7 +65,7 @@ Exemplo:
 image: ghcr.io/ifpbesp/apae-geral-backend@sha256:8a0ab0aa283e69dc728075f9a347d543b0c12f1bf25ae8463407f2468d3c5667
 ```
 
-## Tag por commit
+### Tag por commit
 
 Cada build publicado deve receber também uma tag baseada no commit Git que originou a imagem.
 
@@ -110,7 +110,7 @@ digest OCI
 
 A tag `sha-<short-sha>` deve apontar para o mesmo conteúdo identificado pelo digest correspondente.
 
-## Imutabilidade
+### Imutabilidade
 
 O digest OCI é imutável por definição de conteúdo.
 
@@ -121,7 +121,7 @@ Uma tag, mesmo quando baseada em commit, é tecnicamente mutável no registry. P
 - uma tag `sha-*` já publicada não deve ser reutilizada para apontar para outro conteúdo;
 - validações de CI/CD devem evitar sobrescrita acidental de tags de commit.
 
-## Releases com Semantic Versioning
+### Releases com Semantic Versioning
 
 Quando os produtos adotarem versionamento formal, uma imagem também poderá receber uma tag de release:
 
@@ -135,7 +135,9 @@ Exemplo:
 v1.4.0
 ```
 
-Essa tag deve ser publicada somente quando o build for originado por uma tag Git correspondente.
+Essa tag deve ser publicada somente quando for criada uma tag Git correspondente.
+
+A release não gera um novo build: a tag `vX.Y.Z` é adicionada à imagem já publicada para aquele commit, mantendo o mesmo digest e a mesma tag `sha-<short-sha>`.
 
 Exemplo:
 
@@ -157,13 +159,13 @@ associado a:
 sha256:<digest-da-imagem>
 ```
 
-## Uso de `latest`
+### Uso de `latest`
 
-A tag `latest` não faz parte da estratégia principal de rastreabilidade.
+A tag `latest` é uma tag flutuante: é publicada em todo push em `dev`, sempre em paralelo a `sha-<short-sha>`, e aponta para o build mais recente de `dev`.
 
-Ela pode existir opcionalmente apenas como alias de conveniência para uso manual ou local.
+Ela serve como atalho de conveniência para uso manual ou local e não faz parte da estratégia de rastreabilidade.
 
-Caso seja publicada:
+Por ser flutuante, `latest`:
 
 - não deve ser utilizada em manifests Kubernetes;
 - não deve ser utilizada em GitOps;
@@ -173,14 +175,12 @@ Caso seja publicada:
 - não substitui a tag `sha-<short-sha>`;
 - não substitui o digest OCI.
 
-A ausência de `latest` não prejudica o processo de publicação ou deployment.
-
 ## Gatilhos de publicação
 
 | Evento | Digest OCI | `sha-<short-sha>` | `latest` | `vX.Y.Z` |
 | --- | ---: | ---: | ---: | ---: |
-| Push ou merge em `dev` | Sim | Sim | Opcional | Não |
-| Tag Git `vX.Y.Z` | Sim | Sim | Não | Sim |
+| Push ou merge em `dev` | Sim | Sim | Sim (flutuante) | Não |
+| Tag Git `vX.Y.Z` | Reutiliza o do build de `dev` | Reutiliza a existente | Não | Sim |
 | Pull Request | Não | Não | Não | Não |
 
 O SHA utilizado deve corresponder ao commit que efetivamente originou o build.
@@ -194,19 +194,19 @@ ghcr.io/ifpbesp/<imagem>:sha-<short-sha>
 ghcr.io/ifpbesp/<imagem>@sha256:<digest>
 ```
 
-Opcionalmente:
+E atualizar a tag flutuante:
 
 ```text
 ghcr.io/ifpbesp/<imagem>:latest
 ```
 
-Para uma release:
+Para uma release, sem novo build, adicionar à imagem já publicada:
 
 ```text
-ghcr.io/ifpbesp/<imagem>:sha-<short-sha>
 ghcr.io/ifpbesp/<imagem>:vX.Y.Z
-ghcr.io/ifpbesp/<imagem>@sha256:<digest>
 ```
+
+A tag `vX.Y.Z` deve apontar para o mesmo digest já associado à tag `sha-<short-sha>` do commit da release.
 
 ## Uso em deployments
 
@@ -216,7 +216,7 @@ A ordem de preferência para referências de imagem é:
 1. digest OCI
 2. tag sha-<short-sha>
 3. tag vX.Y.Z
-4. latest apenas para uso manual/conveniência
+4. latest (flutuante) apenas para uso manual/conveniência
 ```
 
 ### Preferencial
@@ -333,8 +333,8 @@ O workflow reutilizável deverá ser responsável por:
 - publicar a imagem no GHCR;
 - obter e expor o digest OCI resultante;
 - impedir a reutilização indevida de tags `sha-*`;
-- gerar `vX.Y.Z` quando o build for originado por uma tag Git de release;
-- publicar `latest` somente se essa conveniência for mantida;
+- adicionar `vX.Y.Z` à imagem já publicada quando uma tag Git de release for criada, sem novo build;
+- publicar `latest` em todo push em `dev`, em paralelo a `sha-<short-sha>`;
 - preencher metadados OCI da imagem;
 - disponibilizar o digest para etapas futuras de deployment ou GitOps.
 
@@ -374,30 +374,6 @@ apae-gestao-escolar-backend
 
 A adoção deve ocorrer pela utilização do workflow reutilizável, sem duplicação da lógica de versionamento nos workflows locais.
 
-## Responsabilidades
-
-### Issue APAE-INFRA#43
-
-Responsável por:
-
-- definir a política de identificação das imagens;
-- priorizar digest OCI como referência canônica;
-- definir a tag `sha-<short-sha>` para rastreabilidade humana;
-- definir o uso opcional de `vX.Y.Z`;
-- definir `latest` como alias opcional e não confiável para deployment;
-- registrar a política como pré-requisito de GitOps e ArgoCD.
-
-### Issue APAE-INFRA#35
-
-Responsável por:
-
-- implementar a política no workflow reutilizável;
-- gerar automaticamente a tag `sha-<short-sha>`;
-- capturar e disponibilizar o digest OCI;
-- publicar tags de release quando aplicável;
-- impedir comportamento inconsistente entre os produtos;
-- documentar como os repositórios consumidores utilizam a pipeline.
-
 ## Compartilhamento da política
 
 Esta documentação deve ser compartilhada com:
@@ -419,7 +395,7 @@ A política definida é:
 digest OCI         -> identidade canônica e imutável
 sha-<short-sha>    -> rastreabilidade humana entre imagem e commit
 vX.Y.Z             -> referência semântica opcional para releases
-latest             -> alias opcional, sem uso em deployment ou auditoria
+latest             -> tag flutuante do último build de `dev`, sem uso em deployment ou auditoria
 ```
 
 Para deployments e GitOps:
