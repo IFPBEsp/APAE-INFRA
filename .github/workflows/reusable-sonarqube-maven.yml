@@ -1,0 +1,81 @@
+name: SonarQube Analysis - Maven
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: 'Chave do projeto no SonarQube / SonarCloud'
+        required: true
+        type: string
+      organization:
+        description: 'Chave da organização (obrigatório para SonarQube Cloud)'
+        required: false
+        default: ''
+        type: string
+      working-directory:
+        description: 'Diretório raiz do projeto Maven'
+        required: false
+        default: '.'
+        type: string
+      java-version:
+        description: 'Versão do JDK'
+        required: false
+        default: '21'
+        type: string
+      sonar-host-url:
+        description: 'URL do servidor SonarQube ou SonarCloud'
+        required: false
+        default: 'https://sonarcloud.io'
+        type: string
+    secrets:
+      SONAR_TOKEN:
+        description: 'Token de autenticação no SonarQube / SonarCloud'
+        required: true
+      SONAR_HOST_URL:
+        description: 'URL do SonarQube (se definida como secret no repositório)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  sonar-maven:
+    name: SonarQube Analysis (Maven)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ inputs.java-version }}
+          cache: 'maven'
+
+      - name: Cache Sonar packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Build and Analyze with Sonar
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || inputs.sonar-host-url }}
+        run: |
+          ORGANIZATION_ARG=""
+          if [ -n "${{ inputs.organization }}" ]; then
+            ORGANIZATION_ARG="-Dsonar.organization=${{ inputs.organization }}"
+          fi
+
+          mvn clean verify sonar:sonar \
+            -Dsonar.projectKey="${{ inputs.project-key }}" \
+            -Dsonar.host.url="${SONAR_HOST_URL}" \
+            -Dsonar.qualitygate.wait=true \
+            ${ORGANIZATION_ARG}
