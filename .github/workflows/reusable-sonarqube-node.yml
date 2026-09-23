@@ -77,12 +77,22 @@ jobs:
       - name: Run tests with coverage (pnpm)
         if: inputs.run-tests && hashFiles(format('{0}/**/pnpm-lock.yaml', inputs.working-directory)) != ''
         working-directory: ${{ inputs.working-directory }}
-        run: pnpm run test --if-present -- --coverage
+        run: |
+          if pnpm run | grep -qE '^[[:space:]]*test'; then
+            pnpm run test -- --coverage
+          else
+            echo "No test script found. Skipping coverage."
+          fi
 
       - name: Run tests with coverage (npm)
         if: inputs.run-tests && hashFiles(format('{0}/**/pnpm-lock.yaml', inputs.working-directory)) == ''
         working-directory: ${{ inputs.working-directory }}
-        run: npm run test --if-present -- --coverage
+        run: |
+          if npm pkg get scripts.test | grep -qv '{}'; then
+            npm run test -- --coverage
+          else
+            echo "No test script found. Skipping coverage."
+          fi
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
