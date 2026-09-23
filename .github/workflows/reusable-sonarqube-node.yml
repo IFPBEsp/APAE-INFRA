@@ -95,12 +95,5 @@ jobs:
           args: >
             -Dsonar.projectKey=${{ inputs.project-key }}
             ${{ inputs.organization != '' && format('-Dsonar.organization={0}', inputs.organization) || '' }}
-
-      - name: SonarQube Quality Gate Check
-        uses: SonarSource/sonarqube-quality-gate-action@v1
-        timeout-minutes: 5
-        with:
-          scanMetadataReportFile: ${{ inputs.working-directory }}/.scannerwork/report-task.txt
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || inputs.sonar-host-url }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
