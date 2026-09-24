@@ -1,0 +1,371 @@
+name: Reusable Docker Build, Scan and Publish
+
+on:
+  workflow_call:
+    inputs:
+      context:
+        description: "Contexto do build Docker"
+        required: true
+        type: string
+
+      dockerfile:
+        description: "Caminho do Dockerfile"
+        required: true
+        type: string
+
+      image-name:
+        description: "Nome da imagem no GHCR, sem registry/owner"
+        required: true
+        type: string
+
+      build-args:
+        description: "Build args adicionais, um por linha"
+        required: false
+        type: string
+        default: ""
+
+      platforms:
+        description: "Lista JSON de plataformas, ex.: [\"linux/amd64\"]"
+        required: false
+        type: string
+        default: '["linux/amd64"]'
+
+      target:
+        description: "Stage alvo do Dockerfile"
+        required: false
+        type: string
+        default: ""
+
+      publish-latest:
+        description: "Publica latest somente quando o caller executa em dev"
+        required: false
+        type: boolean
+        default: false
+
+      scan-severity:
+        description: "Severidades que bloqueiam a promoção"
+        required: false
+        type: string
+        default: "HIGH,CRITICAL"
+
+    outputs:
+      image:
+        description: "Nome completo da imagem no GHCR"
+        value: ${{ jobs.publish.outputs.image }}
+
+      digest:
+        description: "Digest OCI final da imagem promovida"
+        value: ${{ jobs.publish.outputs.digest }}
+
+      immutable-reference:
+        description: "Referência imutável image@sha256:digest"
+        value: ${{ jobs.publish.outputs.immutable-reference }}
+
+      sha-tag:
+        description: "Tag humana baseada no commit"
+        value: ${{ jobs.publish.outputs.sha-tag }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-scan:
+    name: Build and scan (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(inputs.platforms) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Normalize image owner
+        id: image
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+        run: |
+          set -euo pipefail
+
+          owner="${OWNER,,}"
+          image_name="${IMAGE_NAME,,}"
+          echo "name=ghcr.io/${owner}/${image_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare platform metadata
+        id: platform
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+
+          normalized="${PLATFORM//\//-}"
+          echo "name=${normalized}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare build metadata
+        id: build-meta
+        shell: bash
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          short_sha="${COMMIT_SHA:0:7}"
+          echo "short-sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "version=sha-${short_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        if: matrix.platform != 'linux/amd64'
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Generate OCI metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.build-meta.outputs.version }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          target: ${{ inputs.target }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ inputs.build-args }}
+          outputs: >-
+            type=image,
+            name=${{ steps.image.outputs.name }},
+            push-by-digest=true,
+            name-canonical=true,
+            push=true
+          cache-from: type=gha,scope=${{ inputs.image-name }}-${{ steps.platform.outputs.name }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.image-name }}-${{ steps.platform.outputs.name }}
+
+      - name: Scan image vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+          scanners: vuln
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: ${{ inputs.scan-severity }}
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ github.token }}
+
+      - name: Persist digest
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/digests"
+
+          digest="${DIGEST#sha256:}"
+
+          if [[ -z "$digest" || "$digest" == "$DIGEST" ]]; then
+            echo "::error::Digest OCI inválido: $DIGEST"
+            exit 1
+          fi
+
+          touch "$RUNNER_TEMP/digests/$digest"
+
+      - name: Upload platform digest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digest-${{ steps.platform.outputs.name }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Promote approved image
+    needs: build-and-scan
+    runs-on: ubuntu-latest
+
+    outputs:
+      image: ${{ steps.result.outputs.image }}
+      digest: ${{ steps.result.outputs.digest }}
+      immutable-reference: ${{ steps.result.outputs.immutable-reference }}
+      sha-tag: ${{ steps.result.outputs.sha-tag }}
+
+    steps:
+      - name: Normalize image owner
+        id: image
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+        run: |
+          set -euo pipefail
+
+          owner="${OWNER,,}"
+          image_name="${IMAGE_NAME,,}"
+          echo "name=ghcr.io/${owner}/${image_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Download approved digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Generate final tags
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha,format=short
+            type=semver,pattern=v{{version}},value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ inputs.publish-latest && github.ref == 'refs/heads/dev' }}
+
+      - name: Promote digests to final tags
+        id: promote
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGESTS_DIR: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+
+          mapfile -t digest_files < <(
+            find "$DIGESTS_DIR" -maxdepth 1 -type f -printf '%f\n' | sort
+          )
+
+          if (( ${#digest_files[@]} == 0 )); then
+            echo "::error::Nenhum digest aprovado foi encontrado."
+            exit 1
+          fi
+
+          sources=()
+
+          for digest in "${digest_files[@]}"; do
+            if [[ ! "$digest" =~ ^[a-f0-9]{64}$ ]]; then
+              echo "::error::Digest inválido encontrado: $digest"
+              exit 1
+            fi
+
+            sources+=("${IMAGE}@sha256:${digest}")
+          done
+
+          tag_args=()
+
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            tag_args+=(--tag "$tag")
+          done <<< "$TAGS"
+
+          if (( ${#tag_args[@]} == 0 )); then
+            echo "::error::Nenhuma tag final foi gerada."
+            exit 1
+          fi
+
+          metadata_file="$RUNNER_TEMP/image-metadata.json"
+
+          docker buildx imagetools create \
+            --metadata-file "$metadata_file" \
+            "${tag_args[@]}" \
+            "${sources[@]}"
+
+          digest="$(
+            jq -r '.["containerimage.descriptor"].digest' \
+              "$metadata_file"
+          )"
+
+          if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Digest final inválido: $digest"
+            exit 1
+          fi
+
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Verify promoted image
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.promote.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect "${IMAGE}@${DIGEST}" > /dev/null
+
+      - name: Export workflow outputs
+        id: result
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.promote.outputs.digest }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          short_sha="${COMMIT_SHA:0:7}"
+          sha_tag="sha-${short_sha}"
+
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "sha-tag=$sha_tag" >> "$GITHUB_OUTPUT"
+          echo "immutable-reference=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish workflow summary
+        shell: bash
+        env:
+          IMAGE: ${{ steps.result.outputs.image }}
+          DIGEST: ${{ steps.result.outputs.digest }}
+          SHA_TAG: ${{ steps.result.outputs.sha-tag }}
+          IMMUTABLE_REFERENCE: ${{ steps.result.outputs.immutable-reference }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "## Docker image publication"
+            echo
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Commit tag: \`${SHA_TAG}\`"
+            echo "- Digest: \`${DIGEST}\`"
+            echo "- Immutable reference: \`${IMMUTABLE_REFERENCE}\`"
+            echo
+            echo "### Published tags"
+            echo
+            while IFS= read -r tag; do
+              [[ -z "$tag" ]] && continue
+              echo "- \`${tag}\`"
+            done <<< "$TAGS"
+          } >> "$GITHUB_STEP_SUMMARY"
