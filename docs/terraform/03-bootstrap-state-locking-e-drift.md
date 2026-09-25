@@ -4,9 +4,9 @@ Esses quatro pontos influenciam diretamente a escolha arquitetural e, por isso, 
 
 ---
 
-# 1. Bootstrap
+## 1. Bootstrap
 
-## Problema
+### Problema
 
 A infraestrutura necessária para executar ArgoCD precisa existir antes do ArgoCD.
 
@@ -38,7 +38,7 @@ Isso torna inadequado colocar toda a infraestrutura fundacional sob responsabili
 
 ---
 
-# 2. Infraestrutura fundacional
+## 2. Infraestrutura fundacional
 
 Para este estudo, infraestrutura fundacional é tudo aquilo necessário para que a plataforma Kubernetes exista.
 
@@ -61,7 +61,7 @@ O mecanismo exato de instalação do Kubernetes não é definido nesta issue.
 
 ---
 
-# 3. Infraestrutura gerenciada pelo cluster
+## 3. Infraestrutura gerenciada pelo cluster
 
 Depois que Kubernetes e ArgoCD existem, ArgoCD pode reconciliar recursos do cluster:
 
@@ -80,7 +80,7 @@ Essa separação evita que duas ferramentas tentem administrar o mesmo domínio.
 
 ---
 
-# 4. Infraestrutura complementar
+## 4. Infraestrutura complementar
 
 Alguns recursos podem ser classificados no futuro como infraestrutura complementar:
 
@@ -98,7 +98,7 @@ Ela apenas registra que essa categoria pode ser reavaliada futuramente para Terr
 
 ---
 
-# 5. Terraform State
+## 5. Terraform State
 
 Terraform State representa a relação entre a configuração declarada e os recursos gerenciados.
 
@@ -116,7 +116,7 @@ Remote Backend
 Terraform State
 ```
 
-## Requisitos do backend
+### Requisitos do backend
 
 O backend escolhido posteriormente deve oferecer, no mínimo:
 
@@ -131,7 +131,7 @@ A HashiCorp recomenda remote state em automação e destaca o valor de locking p
 
 ---
 
-# 6. State por ambiente
+## 6. State por ambiente
 
 A estrutura conceitual é:
 
@@ -151,7 +151,7 @@ O requisito arquitetural é:
 
 ---
 
-# 7. Contabo Object Storage como candidato
+## 7. Contabo Object Storage como candidato
 
 A Contabo oferece Object Storage compatível com S3 e o Terraform possui backend S3 com suporte a endpoint customizado.
 
@@ -171,7 +171,7 @@ A PoC e a configuração do backend ficam fora do escopo.
 
 ---
 
-# 8. Locking
+## 8. Locking
 
 Duas operações simultâneas sobre o mesmo state podem causar race conditions.
 
@@ -183,11 +183,11 @@ GitHub Actions concurrency
 Terraform backend locking
 ```
 
-## GitHub Actions
+### GitHub Actions
 
 `concurrency` reduz execuções paralelas indesejadas no workflow.
 
-## Terraform
+### Terraform
 
 O backend deve impedir mutações simultâneas do mesmo state.
 
@@ -195,7 +195,7 @@ As duas proteções são complementares.
 
 ---
 
-# 9. Drift
+## 9. Drift
 
 Drift ocorre quando o estado real diverge da configuração esperada.
 
@@ -219,7 +219,7 @@ Isso pode acontecer após:
 
 ---
 
-# 10. Pipeline versus reconciliação contínua
+## 10. Pipeline versus reconciliação contínua
 
 ArgoCD trabalha continuamente comparando desired state e live state.
 
@@ -239,7 +239,7 @@ Essa é a principal diferença operacional entre a alternativa GitHub Actions + 
 
 ---
 
-# 11. Estratégia de drift proposta
+## 11. Estratégia de drift proposta
 
 O reconciliation loop contínuo não é obrigatório para infraestrutura fundacional.
 
@@ -273,7 +273,7 @@ apply controlado
 
 ---
 
-# 12. Detectar versus corrigir automaticamente
+## 12. Detectar versus corrigir automaticamente
 
 Para infraestrutura fundacional, o estudo recomenda separar:
 
@@ -299,7 +299,7 @@ A implementação do workflow de drift é assunto de issue posterior.
 
 ---
 
-# 13. Impacto na decisão arquitetural
+## 13. Impacto na decisão arquitetural
 
 Os quatro pontos analisados favorecem uma separação clara:
 
@@ -320,13 +320,13 @@ porque:
 
 ---
 
-# 14. Referências
+## 14. Referências
 
 - HashiCorp — Running Terraform in Automation  
-  https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform
+  <https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform>
 
 - HashiCorp — S3 Backend  
-  https://developer.hashicorp.com/terraform/language/backend/s3
+  <https://developer.hashicorp.com/terraform/language/backend/s3>
 
 - Terraform Provider Contabo  
-  https://registry.terraform.io/providers/contabo/contabo/latest/docs
+  <https://registry.terraform.io/providers/contabo/contabo/latest/docs>

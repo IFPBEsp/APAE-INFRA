@@ -255,10 +255,10 @@ A arquitetura mais sofisticada não é automaticamente a mais adequada ao estág
 ## 10. Referências
 
 - ArgoCD — Declarative Setup  
-  https://argo-cd.readthedocs.io/en/latest/operator-manual/declarative-setup/
+  <https://argo-cd.readthedocs.io/en/latest/operator-manual/declarative-setup/>
 
 - HashiCorp — Running Terraform in Automation  
-  https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform
+  <https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform>
 
 - Terraform Provider Contabo  
-  https://registry.terraform.io/providers/contabo/contabo/latest/docs
+  <https://registry.terraform.io/providers/contabo/contabo/latest/docs>

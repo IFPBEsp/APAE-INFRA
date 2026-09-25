@@ -4,9 +4,9 @@ Este documento compara as alternativas consideradas para aplicar GitOps ao Terra
 
 ---
 
-# 1. Alternativa A — GitHub Actions + Terraform
+## 1. Alternativa A — GitHub Actions + Terraform
 
-## Funcionamento
+### Funcionamento
 
 ```text
 Git
@@ -32,7 +32,7 @@ Terraform continua sendo responsável pelo estado da infraestrutura.
 
 GitHub Actions é o executor do ciclo de automação.
 
-## Benefícios
+### Benefícios
 
 - baixa complexidade;
 - aproveita ferramentas já utilizadas pelo projeto;
@@ -45,14 +45,14 @@ GitHub Actions é o executor do ciclo de automação.
 - debugging concentrado em GitHub Actions e Terraform;
 - implantação incremental.
 
-## Limitações
+### Limitações
 
 - não possui reconciliation loop contínuo por padrão;
 - drift precisa ser detectado por execução posterior;
 - remote state e locking precisam ser configurados;
 - controle de `apply` precisa ser implementado.
 
-## Aderência ao APAE-INFRA
+### Aderência ao APAE-INFRA
 
 Alta.
 
@@ -60,9 +60,9 @@ A infraestrutura atual do repositório já possui parte significativa desse flux
 
 ---
 
-# 2. Alternativa B — ArgoCD + Terraform Operator
+## 2. Alternativa B — ArgoCD + Terraform Operator
 
-## Funcionamento conceitual
+### Funcionamento conceitual
 
 ```text
 Git
@@ -90,7 +90,7 @@ Um Operator observaria esses recursos e seria responsável por acionar o ciclo T
 
 No caso do HCP Terraform Operator, o Operator integra Kubernetes ao HCP Terraform, que gerencia workspaces/runs.
 
-## Benefícios
+### Benefícios
 
 - aproxima Terraform do modelo baseado em controllers;
 - permite declarar recursos relacionados ao Terraform via Kubernetes;
@@ -98,7 +98,7 @@ No caso do HCP Terraform Operator, o Operator integra Kubernetes ao HCP Terrafor
 - mantém Git no fluxo;
 - pode centralizar execução, state e runs em uma plataforma especializada.
 
-## Custos
+### Custos
 
 Passam a existir mais componentes:
 
@@ -124,7 +124,7 @@ Isso adiciona:
 - possível dependência SaaS;
 - maior curva de aprendizado.
 
-## Limitação de bootstrap
+### Limitação de bootstrap
 
 O Operator só existe depois que:
 
@@ -136,7 +136,7 @@ já existe.
 
 Logo, ele não elimina a necessidade de uma camada externa para provisionar o cluster que hospedará o Operator.
 
-## Aderência ao APAE-INFRA
+### Aderência ao APAE-INFRA
 
 Média.
 
@@ -144,9 +144,9 @@ Média.
 
 ---
 
-# 3. Alternativa C — ArgoCD + Crossplane
+## 3. Alternativa C — ArgoCD + Crossplane
 
-## Funcionamento
+### Funcionamento
 
 ```text
 Git
@@ -166,7 +166,7 @@ Crossplane transforma Kubernetes em um control plane também para recursos exter
 
 A infraestrutura passa a ser representada por APIs Kubernetes.
 
-## Benefícios
+### Benefícios
 
 - reconciliação contínua;
 - modelo Kubernetes-native;
@@ -187,7 +187,7 @@ spec:
   storage: true
 ```
 
-## Custos
+### Custos
 
 - CRDs adicionais;
 - Providers Crossplane;
@@ -199,11 +199,11 @@ spec:
 
 Também seria necessário validar suporte adequado ao provedor de infraestrutura utilizado pelo projeto.
 
-## Limitação de bootstrap
+### Limitação de bootstrap
 
 Assim como um Terraform Operator, Crossplane depende de Kubernetes previamente existente.
 
-## Aderência ao APAE-INFRA
+### Aderência ao APAE-INFRA
 
 Baixa no estágio atual.
 
@@ -217,7 +217,7 @@ Seu valor aumenta se o projeto evoluir para uma plataforma interna com:
 
 ---
 
-# 4. Alternativa D — Arquitetura híbrida
+## 4. Alternativa D — Arquitetura híbrida
 
 A alternativa híbrida mantém responsabilidades diferentes por domínio.
 
@@ -255,10 +255,10 @@ sem alterar a responsabilidade da camada de bootstrap.
 
 ---
 
-# 5. Comparação
+## 5. Comparação
 
 | Critério | Actions + Terraform | ArgoCD + Terraform Operator | ArgoCD + Crossplane |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Git como fonte da verdade | Sim | Sim | Sim |
 | Bootstrap independente do cluster | Sim | Não | Não |
 | Aproveita pipeline atual | Alto | Baixo | Baixo |
@@ -273,7 +273,7 @@ sem alterar a responsabilidade da camada de bootstrap.
 
 ---
 
-# 6. Síntese
+## 6. Síntese
 
 As três opções conseguem preservar Git como fonte da verdade.
 
@@ -292,16 +292,16 @@ As alternativas B e C passam a fazer mais sentido quando existir necessidade con
 
 ---
 
-# 7. Referências
+## 7. Referências
 
 - HashiCorp — Running Terraform in Automation  
-  https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform
+  <https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform>
 
 - HCP Terraform Operator for Kubernetes  
-  https://developer.hashicorp.com/terraform/cloud-docs/integrations/kubernetes
+  <https://developer.hashicorp.com/terraform/cloud-docs/integrations/kubernetes>
 
 - Crossplane with ArgoCD  
-  https://docs.crossplane.io/latest/guides/crossplane-with-argo-cd/
+  <https://docs.crossplane.io/latest/guides/crossplane-with-argo-cd/>
 
 - ArgoCD — Declarative Setup  
-  https://argo-cd.readthedocs.io/en/latest/operator-manual/declarative-setup/
+  <https://argo-cd.readthedocs.io/en/latest/operator-manual/declarative-setup/>

@@ -17,7 +17,7 @@ Terraform Operator e Crossplane permanecem como alternativas futuras, condiciona
 
 ---
 
-# 2. Arquitetura
+## 2. Arquitetura
 
 ```text
                          GitHub
@@ -50,7 +50,7 @@ Terraform Operator e Crossplane permanecem como alternativas futuras, condiciona
 
 ---
 
-# 3. Fonte da verdade
+## 3. Fonte da verdade
 
 Git será a fonte da verdade para os dois domínios:
 
@@ -74,9 +74,9 @@ Isso mantém GitOps sem transformar ArgoCD em executor universal.
 
 ---
 
-# 4. Responsabilidades
+## 4. Responsabilidades
 
-## Terraform
+### Terraform
 
 Responsável pela infraestrutura fundacional externa ao cluster.
 
@@ -93,7 +93,7 @@ bootstrap mínimo do ArgoCD
 
 O mecanismo exato de bootstrap não faz parte desta decisão.
 
-## GitHub Actions
+### GitHub Actions
 
 Responsável por automatizar:
 
@@ -107,17 +107,17 @@ apply
 
 conforme workflows que serão definidos posteriormente.
 
-## ArgoCD
+### ArgoCD
 
 Responsável pela reconciliação dos recursos Kubernetes depois que o cluster estiver disponível.
 
-## Git
+### Git
 
 Responsável por armazenar o estado desejado versionado e servir de origem das mudanças revisadas.
 
 ---
 
-# 5. Por que não executar Terraform diretamente pelo ArgoCD
+## 5. Por que não executar Terraform diretamente pelo ArgoCD
 
 A abordagem não foi escolhida porque:
 
@@ -131,7 +131,7 @@ A abordagem não foi escolhida porque:
 
 ---
 
-# 6. Por que não adotar Terraform Operator agora
+## 6. Por que não adotar Terraform Operator agora
 
 Terraform Operator é uma alternativa tecnicamente válida.
 
@@ -147,7 +147,7 @@ Essas necessidades não foram identificadas como requisito atual da APAE.
 
 ---
 
-# 7. Por que não adotar Crossplane agora
+## 7. Por que não adotar Crossplane agora
 
 Crossplane é mais aderente a um cenário de Platform Engineering.
 
@@ -164,7 +164,7 @@ No estágio atual, esse modelo adicionaria complexidade antes que exista o probl
 
 ---
 
-# 8. Remote State como pré-requisito
+## 8. Remote State como pré-requisito
 
 Não deve existir automação de `terraform apply` em CI sem uma estratégia adequada de state remoto.
 
@@ -186,7 +186,7 @@ Contabo Object Storage permanece candidato e deverá passar por PoC.
 
 ---
 
-# 9. Drift
+## 9. Drift
 
 A arquitetura não utilizará inicialmente reconciliação automática contínua da infraestrutura fundacional.
 
@@ -208,7 +208,7 @@ Isso preserva Git como fonte da verdade e reduz risco de self-healing destrutivo
 
 ---
 
-# 10. Evolução futura
+## 10. Evolução futura
 
 A arquitetura não bloqueia uma futura evolução:
 
@@ -227,7 +227,7 @@ A adição deve ocorrer somente quando sustentada por um requisito concreto.
 
 ---
 
-# 11. Critérios que motivariam reavaliação
+## 11. Critérios que motivariam reavaliação
 
 A decisão deve ser revisitada caso ocorram:
 
@@ -243,7 +243,7 @@ A decisão deve ser revisitada caso ocorram:
 
 ---
 
-# 12. Resultado
+## 12. Resultado
 
 A arquitetura escolhida busca o equilíbrio entre:
 

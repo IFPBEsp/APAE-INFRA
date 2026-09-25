@@ -6,7 +6,7 @@ Não define uma estratégia completa de segurança ou operação.
 
 ---
 
-# 1. Princípio do menor privilégio
+## 1. Princípio do menor privilégio
 
 Terraform e ArgoCD devem usar identidades distintas.
 
@@ -26,7 +26,7 @@ Terraform não precisa possuir privilégios permanentes sobre os workloads que A
 
 ---
 
-# 2. Credenciais fora do Git
+## 2. Credenciais fora do Git
 
 Nenhuma credencial deve ser versionada em:
 
@@ -44,7 +44,7 @@ A escolha de Vault, External Secrets ou solução equivalente não faz parte da 
 
 ---
 
-# 3. Terraform State como dado sensível
+## 3. Terraform State como dado sensível
 
 Terraform State pode conter valores derivados de recursos e configurações.
 
@@ -59,7 +59,7 @@ O state não deve ser publicado em artifacts ou commitado no Git.
 
 ---
 
-# 4. Ciclo `plan` e `apply`
+## 4. Ciclo `plan` e `apply`
 
 O fluxo recomendado em automação é:
 
@@ -77,7 +77,7 @@ A pipeline atual já cobre parte desse ciclo no PR.
 
 ---
 
-# 5. Plan especulativo
+## 5. Plan especulativo
 
 Um `terraform plan` realizado no PR é útil para revisão, mas pode ser especulativo.
 
@@ -99,7 +99,7 @@ Portanto, não se deve assumir que um plan antigo representa necessariamente a s
 
 ---
 
-# 6. Saved plan
+## 6. Saved plan
 
 Terraform permite:
 
@@ -122,7 +122,7 @@ A issue #59 registra o padrão como alternativa recomendada para estudo de imple
 
 ---
 
-# 7. `-auto-approve`
+## 7. `-auto-approve`
 
 `terraform apply -auto-approve` remove a confirmação interativa.
 
@@ -144,7 +144,7 @@ No estágio atual, o estudo recomenda aprovação humana para mudanças crítica
 
 ---
 
-# 8. Mudanças destrutivas
+## 8. Mudanças destrutivas
 
 Terraform pode propor:
 
@@ -163,7 +163,7 @@ Uma política automatizada detalhada para bloquear `destroy` fica fora da issue 
 
 ---
 
-# 9. Falhas parciais
+## 9. Falhas parciais
 
 Terraform não é uma transação global.
 
@@ -197,7 +197,7 @@ A existência desse comportamento reforça a necessidade de state remoto consist
 
 ---
 
-# 10. Rollback
+## 10. Rollback
 
 Rollback Terraform não é equivalente a rollback de aplicação.
 
@@ -225,9 +225,9 @@ A política completa de backup e disaster recovery fica fora do escopo.
 
 ---
 
-# 11. Segurança comparada entre alternativas
+## 11. Segurança comparada entre alternativas
 
-## GitHub Actions + Terraform
+### GitHub Actions + Terraform
 
 Credenciais ficam no domínio da automação Terraform.
 
@@ -239,11 +239,11 @@ credencial Terraform
 Contabo
 ```
 
-## Terraform Operator
+### Terraform Operator
 
 Credenciais e permissões passam a existir também dentro do cluster ou no serviço conectado ao Operator.
 
-## Crossplane
+### Crossplane
 
 Providers precisam de credenciais para operar recursos externos a partir do cluster.
 
@@ -253,7 +253,7 @@ A comparação não significa que Operators ou Crossplane sejam inseguros. Signi
 
 ---
 
-# 12. Impacto na decisão
+## 12. Impacto na decisão
 
 Para o estágio atual, a alternativa GitHub Actions + Terraform permite manter:
 
@@ -267,13 +267,13 @@ Isso reforça a separação de responsabilidades proposta pelo estudo.
 
 ---
 
-# 13. Referências
+## 13. Referências
 
 - HashiCorp — Running Terraform in Automation  
-  https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform
+  <https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform>
 
 - Terraform — `plan`  
-  https://developer.hashicorp.com/terraform/cli/commands/plan
+  <https://developer.hashicorp.com/terraform/cli/commands/plan>
 
 - Terraform — `apply`  
-  https://developer.hashicorp.com/terraform/cli/commands/apply
+  <https://developer.hashicorp.com/terraform/cli/commands/apply>

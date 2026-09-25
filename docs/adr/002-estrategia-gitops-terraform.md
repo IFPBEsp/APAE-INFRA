@@ -55,15 +55,15 @@ Git
 
 ### Responsabilidades
 
-**Terraform + GitHub Actions**
+#### Terraform + GitHub Actions
 
 Responsáveis pela infraestrutura fundacional e pelo ciclo automatizado de Terraform.
 
-**ArgoCD**
+#### ArgoCD
 
 Responsável pela reconciliação dos recursos Kubernetes após a existência do cluster.
 
-**Git**
+#### Git
 
 Permanece como fonte da verdade dos dois domínios.
 
@@ -137,16 +137,16 @@ Este ADR deve ser reavaliado se surgirem:
 ## Referências
 
 - ArgoCD — Declarative Setup  
-  https://argo-cd.readthedocs.io/en/latest/operator-manual/declarative-setup/
+  <https://argo-cd.readthedocs.io/en/latest/operator-manual/declarative-setup/>
 
 - HashiCorp — Running Terraform in Automation  
-  https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform
+  <https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform>
 
 - HashiCorp — S3 Backend  
-  https://developer.hashicorp.com/terraform/language/backend/s3
+  <https://developer.hashicorp.com/terraform/language/backend/s3>
 
 - HCP Terraform Operator  
-  https://developer.hashicorp.com/terraform/cloud-docs/integrations/kubernetes
+  <https://developer.hashicorp.com/terraform/cloud-docs/integrations/kubernetes>
 
 - Crossplane with ArgoCD  
-  https://docs.crossplane.io/latest/guides/crossplane-with-argo-cd/
+  <https://docs.crossplane.io/latest/guides/crossplane-with-argo-cd/>
