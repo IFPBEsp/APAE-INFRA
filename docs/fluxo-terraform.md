@@ -8,12 +8,12 @@ O Terraform é utilizado para provisionar e gerenciar a infraestrutura base do p
 
 Os módulos ficam em `/terraform/modules/` e são blocos reutilizáveis de infraestrutura:
 
-| Módulo | Responsabilidade |
+|Módulo|Responsabilidade|
 |---|---|
-| `kubernetes-cluster/` | Instala e configura o Kubernetes na VPS |
-| `network/` | Configura rede e regras de firewall |
-| `compute/` | Provisiona e configura a VPS |
-| `object-storage/` | Gerencia armazenamento de objetos na VPS |
+|`kubernetes-cluster/`|Instala e configura o Kubernetes na VPS|
+|`network/`|Configura rede e regras de firewall|
+|`compute/`|Provisiona e configura a VPS|
+|`object-storage/`|Gerencia armazenamento de objetos na VPS|
 
 ## Separação por Ambiente
 
