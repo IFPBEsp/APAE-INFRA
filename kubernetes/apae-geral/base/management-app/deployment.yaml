@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: management-app
+  labels:
+    app: management-app
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: management-app
+  template:
+    metadata:
+      labels:
+        app: management-app
+    spec:
+      containers:
+        - name: management-app
+          image: management-app:unpublished
+          imagePullPolicy: Always
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

@@ -4,7 +4,7 @@ Repositório responsável por centralizar a infraestrutura e os processos de Dev
 
 ## Objetivo
 
-Manter em um único lugar tudo que é infraestrutura como código, pipelines de CI/CD e observabilidade usados pelos sistemas da APAE, em vez de espalhar isso por cada repositório de aplicação.
+Manter em um único lugar tudo que é infraestrutura como código, pipelines de CI/CD e observabilidade usados pelos sistemas da APAE, em vez de espalhar essas configurações por cada repositório de aplicação.
 
 ## Tecnologias utilizadas
 
@@ -36,29 +36,103 @@ docs/             # documentação de padrões e boas práticas do repositório
   diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
 kubernetes/       # manifests e configurações do cluster
 monitoring/
-  grafana/        # dashboards
-  prometheus/     # regras e configuração de métricas
-  loki/           # configuração de logs
+  grafana/          # dashboards
+  prometheus/       # regras e configuração de métricas
+  loki/             # configuração de logs
+
 terraform/
-  modules/        # módulos reutilizáveis
-  environments/   # configuração por ambiente (dev/hml/prod)
+  modules/          # módulos reutilizáveis
+  environments/     # configuração por ambiente (dev/hml/prod)
 ```
 
-> Proposta inicial para validação com o time — pode ser revisada conforme surgirem necessidades reais de cada aplicação.
+> Estrutura sujeita a evolução conforme surgirem novas necessidades de infraestrutura e de cada aplicação.
 
-### Separação por ambiente (dev/hml/prod)
+## Organização por ambiente
 
-- **Terraform:** cada ambiente tem sua própria pasta em `terraform/environments/`, com variáveis e state próprios, usando os módulos compartilhados de `terraform/modules/`.
-- **Kubernetes/ArgoCD:** padrão Kustomize — manifests comuns em `kubernetes/base/`, e os ajustes de cada ambiente em `kubernetes/overlays/{dev,hml,prod}/`.
+### Terraform
 
-### Separação por aplicação
+Cada ambiente possui sua própria pasta em:
 
-Os 4 repositórios orquestrados (listados acima) são organizados como uma subdivisão dentro de cada ambiente:
+```text
+terraform/environments/
+```
 
-- **Kubernetes:** `kubernetes/base/{aplicacao}/` e `kubernetes/overlays/{ambiente}/{aplicacao}/`;
-- **ArgoCD:** uma `Application` por combinação aplicação + ambiente, agrupada em `argocd/{aplicacao}/`.
+com variáveis e state próprios, utilizando os módulos compartilhados de:
 
-As subpastas de cada aplicação e ambiente serão criadas conforme o trabalho avançar — por enquanto só existe o esqueleto base.
+```text
+terraform/modules/
+```
+
+### Kubernetes
+
+O padrão adotado é baseado em Kustomize.
+
+Cada aplicação possui sua própria estrutura dentro de:
+
+```text
+kubernetes/{aplicacao}/
+```
+
+Os manifests comuns ficam em:
+
+```text
+kubernetes/{aplicacao}/base/
+```
+
+e os ajustes específicos de ambiente ficam em:
+
+```text
+kubernetes/{aplicacao}/overlays/{dev,hml,prod}/
+```
+
+### ArgoCD
+
+O ArgoCD é responsável por apontar para os manifests ou overlays correspondentes a cada aplicação e ambiente.
+
+## Organização por aplicação
+
+Cada produto possui uma estrutura própria dentro de `kubernetes/`.
+
+O padrão adotado é:
+
+```text
+kubernetes/
+└── {aplicacao}/
+    ├── base/
+    │   ├── components/
+    │   ├── {servico-1}/
+    │   ├── {servico-2}/
+    │   └── kustomization.yaml
+    └── overlays/
+        ├── dev/
+        ├── hml/
+        └── prod/
+```
+
+Os manifests base de cada serviço ficam em:
+
+```text
+kubernetes/{aplicacao}/base/{servico}/
+```
+
+Componentes Kustomize reutilizáveis dentro da aplicação, como configurações comuns de segurança, ficam em:
+
+```text
+kubernetes/{aplicacao}/base/components/
+```
+
+Os ajustes específicos de ambiente ficam em:
+
+```text
+kubernetes/{aplicacao}/overlays/{ambiente}/
+```
+
+Exemplos de aplicações já organizadas nesse padrão:
+
+```text
+kubernetes/apae-geral/
+kubernetes/apae-atendimento/
+```
 
 ## Como contribuir
 
