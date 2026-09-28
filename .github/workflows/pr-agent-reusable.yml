@@ -90,7 +90,8 @@ jobs:
 
     steps:
       - name: Run PR-Agent
-        uses: docker://pragent/pr-agent@sha256:65e5b196e38cecd7df8a71fe29942052e081a0c6645132c2ac874df60b1760c7 
+        # pragent/pr-agent:0.46.0-github_action
+        uses: docker://pragent/pr-agent@sha256:65e5b196e38cecd7df8a71fe29942052e081a0c6645132c2ac874df60b1760c7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -99,10 +100,13 @@ jobs:
 
           config.model: ${{ inputs.model }}
           config.response_language: ${{ inputs.response-language }}
+          config.restricted_mode: "true"
 
           github_action_config.auto_review: ${{ inputs.auto-review }}
           github_action_config.auto_improve: ${{ inputs.auto-improve }}
           github_action_config.auto_describe: ${{ inputs.auto-describe }}
+
+          github_action_config.pr_actions: '["opened", "reopened", "synchronize", "ready_for_review"]'
 
           pr_reviewer.extra_instructions: ${{ inputs.extra-instructions }}
           pr_code_suggestions.extra_instructions: ${{ inputs.extra-instructions }}
@@ -110,5 +114,3 @@ jobs:
           pr_code_suggestions.num_code_suggestions_per_chunk: ${{ inputs.num-code-suggestions }}
 
           ignore.glob: ${{ inputs.ignore-globs }}
-
-          config.restricted_mode: "true"
