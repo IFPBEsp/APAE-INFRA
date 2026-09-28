@@ -1,0 +1,114 @@
+name: Reusable PR-Agent
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: "Modelo LLM utilizado pelo PR-Agent"
+        required: false
+        type: string
+        default: "gemini/gemini-3.6-flash"
+
+      response-language:
+        description: "Idioma das respostas do PR-Agent"
+        required: false
+        type: string
+        default: "pt-BR"
+
+      auto-review:
+        description: "Executa /review automaticamente"
+        required: false
+        type: boolean
+        default: true
+
+      auto-improve:
+        description: "Executa /improve automaticamente"
+        required: false
+        type: boolean
+        default: true
+
+      auto-describe:
+        description: "Executa /describe automaticamente"
+        required: false
+        type: boolean
+        default: false
+
+      num-code-suggestions:
+        description: "Quantidade maxima de sugestoes de codigo"
+        required: false
+        type: number
+        default: 3
+
+      ignore-globs:
+        description: "Lista de globs ignorados pelo PR-Agent"
+        required: false
+        type: string
+        default: '["*.lock", "pnpm-lock.yaml", "package-lock.json"]'
+
+      extra-instructions:
+        description: "Instrucoes adicionais especificas do repositorio"
+        required: false
+        type: string
+        default: ""
+
+    secrets:
+      LLM_API_KEY:
+        description: "Chave da API do provedor LLM"
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  pr-agent:
+    name: Run PR-Agent
+    runs-on: ubuntu-latest
+
+    if: >
+      github.event.sender.type != 'Bot' &&
+      (
+        (
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.fork == false
+        )
+        ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request != null &&
+          contains(
+            fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+            github.event.comment.author_association
+          )
+        )
+      )
+
+    concurrency:
+      group: pr-agent-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Run PR-Agent
+        uses: docker://pragent/pr-agent@sha256:65e5b196e38cecd7df8a71fe29942052e081a0c6645132c2ac874df60b1760c7 
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          GEMINI_API_KEY: ${{ secrets.LLM_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.LLM_API_KEY }}
+
+          config.model: ${{ inputs.model }}
+          config.response_language: ${{ inputs.response-language }}
+
+          github_action_config.auto_review: ${{ inputs.auto-review }}
+          github_action_config.auto_improve: ${{ inputs.auto-improve }}
+          github_action_config.auto_describe: ${{ inputs.auto-describe }}
+
+          pr_reviewer.extra_instructions: ${{ inputs.extra-instructions }}
+          pr_code_suggestions.extra_instructions: ${{ inputs.extra-instructions }}
+
+          pr_code_suggestions.num_code_suggestions_per_chunk: ${{ inputs.num-code-suggestions }}
+
+          ignore.glob: ${{ inputs.ignore-globs }}
+
+          config.restricted_mode: "true"
