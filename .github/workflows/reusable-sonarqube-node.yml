@@ -23,9 +23,9 @@ on:
         default: '22'
         type: string
       sonar-host-url:
-        description: 'URL do servidor SonarQube ou SonarCloud'
+        description: 'URL do servidor SonarQube'
         required: false
-        default: 'https://sonarcloud.io'
+        default: 'https://sonar.ideia'
         type: string
       run-tests:
         description: 'Executar testes com cobertura antes do scan'
