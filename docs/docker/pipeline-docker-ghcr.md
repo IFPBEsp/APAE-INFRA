@@ -77,9 +77,7 @@ Tags são tratadas como referências humanas e de conveniência.
 
 A política relacionada às tags e ao uso de digest é documentada separadamente em:
 
-```text
-docker/docs/politica-tags-imagem-docker.md
-```
+[Política de tags de imagens Docker](../boas-praticas/16-politica-tags-imagens-docker.md)
 
 ### Tags geradas
 
