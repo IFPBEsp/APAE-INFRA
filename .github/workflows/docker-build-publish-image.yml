@@ -349,9 +349,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "=== Verify signature ==="
+
           cosign verify "${IMAGE}@${DIGEST}" \
             --certificate-identity-regexp='.*' \
             --certificate-oidc-issuer-regexp='.*'
+
+          echo
+          echo "=== Download signature metadata ==="
+
+          cosign download signature "${IMAGE}@${DIGEST}" | jq .
 
       - name: Export workflow outputs
         id: result
