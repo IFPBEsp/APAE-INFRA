@@ -4,11 +4,11 @@ on:
   workflow_call:
     inputs:
       project-key:
-        description: 'Chave do projeto no SonarQube / SonarCloud'
+        description: 'Chave do projeto no SonarQube'
         required: true
         type: string
       organization:
-        description: 'Chave da organização (obrigatório para SonarQube Cloud)'
+        description: 'Chave da organização'
         required: false
         default: ''
         type: string
@@ -34,10 +34,10 @@ on:
         type: boolean
     secrets:
       SONAR_TOKEN:
-        description: 'Token de autenticação no SonarQube / SonarCloud'
+        description: 'Token de autenticação no SonarQube'
         required: true
       SONAR_HOST_URL:
-        description: 'URL do SonarQube (se definida como secret no repositório)'
+        description: 'URL do SonarQube'
         required: false
 
 permissions:

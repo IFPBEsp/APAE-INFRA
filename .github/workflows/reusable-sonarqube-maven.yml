@@ -29,10 +29,10 @@ on:
         type: string
     secrets:
       SONAR_TOKEN:
-        description: 'Token de autenticação no SonarQube / SonarCloud'
+        description: 'Token de autenticação no SonarQube'
         required: true
       SONAR_HOST_URL:
-        description: 'URL do SonarQube (se definida como secret no repositório)'
+        description: 'URL do SonarQube'
         required: false
 
 permissions:
