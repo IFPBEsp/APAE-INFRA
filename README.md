@@ -34,6 +34,7 @@ docker/           # Dockerfiles e configurações de containers
 docs/             # documentação de padrões e boas práticas do repositório
   argocd/         # documentação do fluxo do ArgoCD (GitOps)
   diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
+  docker/         # documentação de Docker, pipelines e assinatura de imagens
 kubernetes/       # manifests e configurações do cluster
 monitoring/
   grafana/          # dashboards
