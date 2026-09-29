@@ -19,6 +19,7 @@ jobs:
       manifests-path: "kubernetes"
       kustomize-paths: |
         kubernetes/apae-atendimento/base
+        kubernetes/apae-geral/base
 
   argocd:
     name: Lint Argo CD manifests
