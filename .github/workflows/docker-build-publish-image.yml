@@ -65,15 +65,14 @@ on:
         description: "Tag humana baseada no commit"
         value: ${{ jobs.publish.outputs.sha-tag }}
 
-permissions:
-  contents: read
-  packages: write
-  id-token: write
-
 jobs:
   build-and-scan:
     name: Build and scan (${{ matrix.platform }})
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
 
     strategy:
       fail-fast: false
@@ -95,6 +94,7 @@ jobs:
 
           owner="${OWNER,,}"
           image_name="${IMAGE_NAME,,}"
+
           echo "name=ghcr.io/${owner}/${image_name}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare platform metadata
@@ -106,6 +106,7 @@ jobs:
           set -euo pipefail
 
           normalized="${PLATFORM//\//-}"
+
           echo "name=${normalized}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare build metadata
@@ -117,6 +118,7 @@ jobs:
           set -euo pipefail
 
           short_sha="${COMMIT_SHA:0:7}"
+
           echo "short-sha=${short_sha}" >> "$GITHUB_OUTPUT"
           echo "version=sha-${short_sha}" >> "$GITHUB_OUTPUT"
 
@@ -210,6 +212,10 @@ jobs:
     needs: build-and-scan
     runs-on: ubuntu-latest
 
+    permissions:
+      packages: write
+      id-token: write
+
     outputs:
       image: ${{ steps.result.outputs.image }}
       digest: ${{ steps.result.outputs.digest }}
@@ -228,6 +234,7 @@ jobs:
 
           owner="${OWNER,,}"
           image_name="${IMAGE_NAME,,}"
+
           echo "name=ghcr.io/${owner}/${image_name}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
@@ -340,8 +347,8 @@ jobs:
           set -euo pipefail
 
           cosign sign --yes "${IMAGE}@${DIGEST}"
-          
-      - name: Inspect Cosign signature
+
+      - name: Verify Cosign signature
         shell: bash
         env:
           IMAGE: ${{ steps.image.outputs.name }}
@@ -349,16 +356,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "=== Verify signature ==="
-
           cosign verify "${IMAGE}@${DIGEST}" \
-            --certificate-identity-regexp='.*' \
-            --certificate-oidc-issuer-regexp='.*'
-
-          echo
-          echo "=== Download signature metadata ==="
-
-          cosign download signature "${IMAGE}@${DIGEST}" | jq .
+            --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/64-ci-adicionar-assinatura-de-imagens-docker-com-cosign" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
 
       - name: Export workflow outputs
         id: result
@@ -397,6 +397,7 @@ jobs:
             echo
             echo "### Published tags"
             echo
+
             while IFS= read -r tag; do
               [[ -z "$tag" ]] && continue
               echo "- \`${tag}\`"
