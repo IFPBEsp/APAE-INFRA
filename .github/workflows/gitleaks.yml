@@ -8,4 +8,5 @@ on:
 
 jobs:
   call-gitleaks:
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-gitleaks.yml@dev
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-gitleaks.yml@20-ci-criar-workflow-reutilizável-de-scanning-de-segredos-para-os-repositórios-da-apae
+    
