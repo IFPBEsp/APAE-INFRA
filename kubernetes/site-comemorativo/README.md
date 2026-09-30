@@ -11,6 +11,7 @@ O serviço representa a aplicação do repositório [`apae-site-comemorativo`](h
 O serviço **ainda não é implantável** no estado atual.
 
 No momento da criação destes manifests:
+
 - O repositório `apae-site-comemorativo` não possui workflows de CI (`.github/workflows/`) e **não publica imagem no GitHub Container Registry (GHCR)**.
 - O objetivo desta entrega é manter a especificação declarativa pronta e padronizada no repositório GitOps, aguardando a disponibilização da imagem.
 
