@@ -23,8 +23,10 @@ O workflow centraliza as seguintes responsabilidades:
 - bloqueio da promoção quando forem encontradas vulnerabilidades acima do limite configurado;
 - criação das tags finais somente após aprovação do security gate;
 - publicação da referência imutável da imagem;
+- assinatura keyless da imagem promovida com Cosign e Sigstore;
+- verificação da assinatura utilizando identidade OIDC e issuer esperados;
 - cache de build com GitHub Actions Cache;
-- geração de metadados OCI;
+- geração de tags finais conforme a política de versionamento;
 - exposição de outputs para workflows consumidores.
 
 A correção de vulnerabilidades encontradas nas aplicações consumidoras não faz parte do escopo deste workflow.
@@ -59,11 +61,27 @@ promoção
 criação das tags finais
    ↓
 digest OCI final
+   ↓
+assinatura keyless com Cosign
+   ↓
+verificação da assinatura
 ```
 
 A imagem é enviada ao registry antes do scan utilizando apenas seu digest, sem receber as tags finais de publicação.
 
 As tags oficiais são criadas apenas após todas as plataformas configuradas passarem pelo scan.
+
+Após a promoção, o digest OCI final é assinado e validado com Cosign utilizando a identidade OIDC do GitHub Actions.
+
+A assinatura e a verificação são realizadas sobre a referência imutável:
+
+```text
+ghcr.io/<owner>/<image>@sha256:<digest>
+```
+
+Os detalhes de identidade, issuer, assinatura keyless e verificação estão documentados em:
+
+[Assinatura e verificação de imagens Docker com Cosign](./cosign-assinatura-imagens.md)
 
 ## Identidade da imagem
 
@@ -78,16 +96,17 @@ Tags são tratadas como referências humanas e de conveniência.
 A política relacionada às tags e ao uso de digest é documentada separadamente em:
 
 ```text
-docker/docs/politica-tags-imagem-docker.md
+docs/boas-praticas/16-politica-tags-imagens-docker.md
 ```
 
 ### Tags geradas
 
-O workflow suporta:
+O workflow gera:
 
 - `sha-<short-sha>`: gerada para o commit que originou o build;
-- `vX.Y.Z`: gerada quando a execução é originada por uma tag semântica `v*`;
-- `latest`: opcional e permitida somente em execuções da branch `dev`.
+- `latest`: publicada automaticamente em todo push na branch `dev`.
+
+A tag `vX.Y.Z` não é gerada por este workflow. A publicação de uma release semântica deve reutilizar a imagem já existente e será tratada em um workflow específico de release.
 
 O uso de `latest` para deploy, rollback ou auditoria não é recomendado.
 
@@ -103,7 +122,6 @@ O workflow recebe os seguintes parâmetros através de `workflow_call`:
 | `build-args` | não | vazio | Build args adicionais, um por linha |
 | `platforms` | não | `["linux/amd64"]` | Lista JSON de plataformas |
 | `target` | não | vazio | Stage alvo do Dockerfile |
-| `publish-latest` | não | `false` | Permite publicar `latest` quando o caller executa em `dev` |
 | `scan-severity` | não | `HIGH,CRITICAL` | Severidades que bloqueiam a promoção |
 
 ## Outputs
@@ -219,7 +237,9 @@ Para builds multi-platform, o digest final corresponde ao OCI Image Index criado
 
 ### Permissões mínimas
 
-O workflow utiliza:
+As permissões são definidas por job para seguir o princípio de menor privilégio.
+
+O job `build-and-scan` utiliza:
 
 ```yaml
 permissions:
@@ -227,9 +247,53 @@ permissions:
   packages: write
 ```
 
+Essas permissões são necessárias para realizar checkout do código e publicar a imagem por digest no GHCR.
+
+O job `publish` utiliza:
+
+```yaml
+permissions:
+  packages: write
+  id-token: write
+```
+
+`packages: write` permite promover e publicar a imagem no GHCR.
+
+`id-token: write` permite solicitar a identidade OIDC utilizada pela assinatura keyless com Cosign e Sigstore.
+
 A autenticação no GHCR é realizada com o `GITHUB_TOKEN`.
 
-Não é necessário utilizar PAT de longa duração.
+Não é necessário utilizar PAT ou chave privada de assinatura de longa duração.
+
+### Assinatura e verificação
+
+A imagem promovida é assinada utilizando Cosign no modo keyless.
+
+A assinatura é realizada sobre:
+
+```text
+ghcr.io/<owner>/<image>@sha256:<digest>
+```
+
+A verificação valida a assinatura, a identidade do workflow autorizado e o issuer OIDC esperado.
+
+Os detalhes dessa política estão documentados em:
+
+[Assinatura e verificação de imagens Docker com Cosign](./cosign-assinatura-imagens.md)
+
+### Labels OCI
+
+Os metadados OCI específicos de cada imagem são definidos pelos próprios Dockerfiles padronizados.
+
+O reusable workflow disponibiliza `build-args` para que os callers forneçam os valores necessários, por exemplo:
+
+```yaml
+build-args: |
+  APP_VERSION=${{ github.sha }}
+  VCS_REF=${{ github.sha }}
+```
+
+Dessa forma, os `LABEL` definidos nos Dockerfiles permanecem como fonte dos metadados da aplicação, evitando que um conjunto genérico de labels seja aplicado indistintamente a imagens diferentes.
 
 ### Actions pinadas
 
@@ -278,6 +342,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   publish-backend:
@@ -287,12 +352,17 @@ jobs:
       dockerfile: ./apps/api/Dockerfile
       image-name: apae-geral-backend
       platforms: '["linux/amd64"]'
-      publish-latest: false
       scan-severity: HIGH,CRITICAL
       build-args: |
         APP_VERSION=${{ github.sha }}
         VCS_REF=${{ github.sha }}
 ```
+
+A permissão `id-token: write` deve ser concedida pelo caller para permitir a assinatura keyless com Cosign.
+
+Embora o reusable workflow restrinja essa permissão ao job `publish`, o caller precisa disponibilizá-la como limite superior da execução.
+
+O `latest` é publicado automaticamente quando a execução ocorre em `dev`.
 
 Durante desenvolvimento e validação, `<ref>` pode apontar para uma branch de feature.
 
@@ -310,7 +380,9 @@ Durante a validação, foram confirmados:
 - autenticação e publicação no GHCR;
 - publicação por digest;
 - scan da referência imutável;
-- bloqueio da promoção após findings de segurança.
+- bloqueio da promoção após findings de segurança;
+- assinatura keyless com Cosign;
+- verificação da assinatura com identidade OIDC e issuer esperados.
 
 O teste encontrou:
 
@@ -359,10 +431,11 @@ Antes de migrar um repositório para o reusable workflow, recomenda-se:
 
 1. validar o Dockerfile localmente;
 2. validar o workflow caller com `actionlint`;
-3. executar um primeiro build real;
-4. analisar os findings do Trivy;
-5. abrir issues específicas para vulnerabilidades pré-existentes;
-6. somente então substituir pipelines legados quando aplicável.
+3. garantir que o caller forneça `id-token: write` para a assinatura keyless;
+4. executar um primeiro build real;
+5. analisar os findings do Trivy;
+6. abrir issues específicas para vulnerabilidades pré-existentes;
+7. somente então substituir pipelines legados quando aplicável.
 
 Aplicações com vulnerabilidades `HIGH` ou `CRITICAL` serão bloqueadas pela configuração padrão.
 
@@ -394,7 +467,7 @@ Responsáveis por:
 
 ## Resultado
 
-A issue `#35` estabelece uma base comum e reutilizável para publicação de imagens Docker na organização.
+A issue `#35` estabelece uma base comum e reutilizável para publicação de imagens Docker na organização, posteriormente estendida com assinatura e verificação de imagens utilizando Cosign.
 
 O fluxo resultante garante que:
 
@@ -411,7 +484,19 @@ security gate aprovado
   ↓
 tags promovidas
   ↓
-digest OCI final disponível
+digest OCI final
+  ↓
+imagem assinada com Cosign
+  ↓
+assinatura verificada
+  ↓
+artefato disponível para consumo
 ```
 
 A referência por digest permanece como identidade canônica do artefato, enquanto as tags são utilizadas como referências auxiliares para rastreabilidade humana e releases.
+
+A assinatura Cosign adiciona uma camada de verificação da origem do artefato, permitindo confirmar que a imagem foi assinada pelo workflow autorizado através da identidade OIDC esperada.
+
+Os detalhes da política de assinatura estão disponíveis em:
+
+[Assinatura e verificação de imagens Docker com Cosign](./cosign-assinatura-imagens.md)

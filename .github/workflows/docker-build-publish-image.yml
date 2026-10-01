@@ -36,12 +36,6 @@ on:
         type: string
         default: ""
 
-      publish-latest:
-        description: "Publica latest somente quando o caller executa em dev"
-        required: false
-        type: boolean
-        default: false
-
       scan-severity:
         description: "Severidades que bloqueiam a promoção"
         required: false
@@ -133,16 +127,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Generate OCI metadata
-        id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
-        with:
-          images: ${{ steps.image.outputs.name }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.build-meta.outputs.version }}
-
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -151,7 +135,6 @@ jobs:
           file: ${{ inputs.dockerfile }}
           target: ${{ inputs.target }}
           platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ inputs.build-args }}
           outputs: >-
             type=image,
@@ -253,8 +236,7 @@ jobs:
           images: ${{ steps.image.outputs.name }}
           tags: |
             type=sha,format=short
-            type=semver,pattern=v{{version}},value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=latest,enable=${{ inputs.publish-latest && github.ref == 'refs/heads/dev' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/dev' }}
 
       - name: Promote digests to final tags
         id: promote
