@@ -1,0 +1,644 @@
+name: Reusable Flyway Migrations Validate
+
+on:
+  workflow_call:
+    inputs:
+      migrations-path:
+        description: "Diretório contendo as migrations do Flyway"
+        required: true
+        type: string
+
+      extra-migrations-paths:
+        description: "Arquivos ou diretórios SQL executados antes das migrations, um por linha"
+        required: false
+        type: string
+        default: ""
+
+      schemas:
+        description: "Schemas gerenciados pelo Flyway"
+        required: false
+        type: string
+        default: "public"
+
+      postgres-version:
+        description: "Versão do PostgreSQL usada no teste"
+        required: false
+        type: string
+        default: "15"
+
+      flyway-version:
+        description: "Versão exata da imagem CLI do Flyway"
+        required: false
+        type: string
+        default: "11.7.2"
+
+      check-upgrade-path:
+        description: "Valida migrations da branch base antes das novas migrations do PR"
+        required: false
+        type: boolean
+        default: true
+
+      fail-on-destructive:
+        description: "Falha quando uma migration nova possuir operação destrutiva sem o label de aprovação"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Validate Flyway migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:${{ inputs.postgres-version }}
+        env:
+          POSTGRES_DB: flyway
+          POSTGRES_USER: flyway
+          POSTGRES_PASSWORD: flyway
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flyway -d flyway"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Prepare migration snapshots
+        id: snapshot
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MIGRATIONS_PATH: ${{ inputs.migrations-path }}
+        run: |
+          set -euo pipefail
+
+          diff_file="$RUNNER_TEMP/flyway-diff.tsv"
+          new_files="$RUNNER_TEMP/flyway-new-files.txt"
+          base_root="$RUNNER_TEMP/flyway-base"
+
+          mkdir -p "$base_root"
+
+          git diff \
+            --name-status \
+            --find-renames \
+            "$BASE_SHA" \
+            "$HEAD_SHA" \
+            -- "$MIGRATIONS_PATH" \
+            > "$diff_file"
+
+          echo "Alterações detectadas:"
+          cat "$diff_file" || true
+
+          if awk -F '\t' '$1 !~ /^A$/ {found=1} END {exit !found}' "$diff_file"; then
+            echo "::error::Uma migration existente foi modificada, renomeada ou removida."
+            echo "Somente novas migrations podem ser adicionadas."
+            exit 1
+          fi
+
+          awk -F '\t' '$1 == "A" {print $2}' "$diff_file" > "$new_files"
+
+          if git ls-tree -r --name-only "$BASE_SHA" -- "$MIGRATIONS_PATH" | grep -q .; then
+            git archive "$BASE_SHA" "$MIGRATIONS_PATH" \
+              | tar -x -C "$base_root"
+          fi
+
+          echo "new-count=$(wc -l < "$new_files" | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Validate migration names and versions
+        id: migration-meta
+        shell: python
+        env:
+          MIGRATIONS_PATH: ${{ inputs.migrations-path }}
+          NEW_FILES_LIST: ${{ runner.temp }}/flyway-new-files.txt
+          BASE_ROOT: ${{ runner.temp }}/flyway-base
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          migrations_path = Path(os.environ["MIGRATIONS_PATH"])
+          head_root = Path(os.environ["GITHUB_WORKSPACE"]) / migrations_path
+          base_root = Path(os.environ["BASE_ROOT"]) / migrations_path
+          new_files_path = Path(os.environ["NEW_FILES_LIST"])
+
+          versioned_re = re.compile(
+              r"^V([0-9]+(?:[._-][0-9]+)*)__([^/]+)\.sql$"
+          )
+          repeatable_re = re.compile(
+              r"^R__([^/]+)\.sql$"
+          )
+
+          if not head_root.is_dir():
+              raise SystemExit(
+                  f"Diretório de migrations não encontrado: {head_root}"
+              )
+
+          def normalize_version(version: str) -> tuple[int, ...]:
+              parts = re.split(r"[._-]", version)
+              values = [int(part) for part in parts]
+
+              while len(values) > 1 and values[-1] == 0:
+                  values.pop()
+
+              return tuple(values)
+
+          def collect_versions(root: Path):
+              versions = {}
+              invalid = []
+
+              if not root.is_dir():
+                  return versions, invalid
+
+              for file in sorted(root.rglob("*.sql")):
+                  match = versioned_re.match(file.name)
+
+                  if match:
+                      raw_version = match.group(1)
+                      normalized = normalize_version(raw_version)
+
+                      if normalized in versions:
+                          invalid.append(
+                              f"versão duplicada: {raw_version} "
+                              f"(também usada em {versions[normalized]})"
+                          )
+                      else:
+                          versions[normalized] = str(file.relative_to(root))
+
+                      continue
+
+                  if repeatable_re.match(file.name):
+                      continue
+
+                  invalid.append(
+                      f"nome fora do padrão: {file.relative_to(root)}"
+                  )
+
+              return versions, invalid
+
+          head_versions, head_errors = collect_versions(head_root)
+          base_versions, _ = collect_versions(base_root)
+
+          if head_errors:
+              for error in head_errors:
+                  print(f"::error::{error}")
+
+              raise SystemExit(
+                  "Foram encontradas migrations com nome inválido ou "
+                  "versões duplicadas."
+              )
+
+          base_max = max(base_versions) if base_versions else None
+
+          new_files = []
+          if new_files_path.exists():
+              new_files = [
+                  line.strip()
+                  for line in new_files_path.read_text().splitlines()
+                  if line.strip()
+              ]
+
+          for relative_path in new_files:
+              file_name = Path(relative_path).name
+              match = versioned_re.match(file_name)
+
+              if not match:
+                  continue
+
+              new_version = normalize_version(match.group(1))
+
+              if base_max is not None and new_version <= base_max:
+                  raise SystemExit(
+                      f"Nova migration {relative_path} possui versão "
+                      f"{match.group(1)} menor ou igual à última versão "
+                      f"existente na branch base ({'.'.join(map(str, base_max))})."
+                  )
+
+          latest_version = max(head_versions) if head_versions else ()
+
+          latest_version_text = (
+              ".".join(map(str, latest_version))
+              if latest_version
+              else "none"
+          )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"latest-version={latest_version_text}\n")
+              output.write(f"new-count={len(new_files)}\n")
+
+      - name: Validate migrations from zero
+        shell: bash
+        env:
+          MIGRATIONS_PATH: ${{ inputs.migrations-path }}
+          EXTRA_PATHS: ${{ inputs.extra-migrations-paths }}
+          POSTGRES_VERSION: ${{ inputs.postgres-version }}
+          FLYWAY_VERSION: ${{ inputs.flyway-version }}
+          SCHEMAS: ${{ inputs.schemas }}
+        run: |
+          set -euo pipefail
+
+          run_psql_file() {
+            local sql_file="$1"
+
+            docker run \
+              --rm \
+              --network host \
+              -e PGPASSWORD=flyway \
+              -v "$GITHUB_WORKSPACE:/workspace:ro" \
+              "postgres:${POSTGRES_VERSION}" \
+              psql \
+                -h 127.0.0.1 \
+                -p 5432 \
+                -U flyway \
+                -d flyway \
+                -v ON_ERROR_STOP=1 \
+                -f "/workspace/${sql_file}"
+          }
+
+          run_extra_sql() {
+            [[ -z "${EXTRA_PATHS}" ]] && return 0
+
+            while IFS= read -r path; do
+              path="${path#"${path%%[![:space:]]*}"}"
+              path="${path%"${path##*[![:space:]]}"}"
+
+              [[ -z "$path" ]] && continue
+
+              full_path="$GITHUB_WORKSPACE/$path"
+
+              if [[ -f "$full_path" ]]; then
+                run_psql_file "$path"
+                continue
+              fi
+
+              if [[ -d "$full_path" ]]; then
+                mapfile -t sql_files < <(
+                  find "$full_path" \
+                    -type f \
+                    -name '*.sql' \
+                    -print \
+                    | sort
+                )
+
+                for sql_file in "${sql_files[@]}"; do
+                  relative="${sql_file#$GITHUB_WORKSPACE/}"
+                  run_psql_file "$relative"
+                done
+
+                continue
+              fi
+
+              echo "::error::Caminho SQL não encontrado: $path"
+              exit 1
+            done <<< "$EXTRA_PATHS"
+          }
+
+          flyway() {
+            local location="$1"
+            shift
+
+            docker run \
+              --rm \
+              --network host \
+              -e FLYWAY_URL="jdbc:postgresql://127.0.0.1:5432/flyway" \
+              -e FLYWAY_USER=flyway \
+              -e FLYWAY_PASSWORD=flyway \
+              -e FLYWAY_SCHEMAS="$SCHEMAS" \
+              -e FLYWAY_CREATE_SCHEMAS=true \
+              -e FLYWAY_CONNECT_RETRIES=30 \
+              -e FLYWAY_CLEAN_DISABLED=false \
+              -e FLYWAY_LOCATIONS="$location" \
+              -v "$GITHUB_WORKSPACE:/workspace:ro" \
+              "flyway/flyway:${FLYWAY_VERSION}" \
+              "$@"
+          }
+
+          echo "Aplicando SQL preparatório..."
+          run_extra_sql
+
+          echo "Executando flyway migrate..."
+          flyway \
+            "filesystem:/workspace/${MIGRATIONS_PATH}" \
+            migrate
+
+          echo "Executando flyway validate..."
+          flyway \
+            "filesystem:/workspace/${MIGRATIONS_PATH}" \
+            validate
+
+      - name: Validate upgrade path
+        if: inputs.check-upgrade-path
+        shell: bash
+        env:
+          MIGRATIONS_PATH: ${{ inputs.migrations-path }}
+          EXTRA_PATHS: ${{ inputs.extra-migrations-paths }}
+          POSTGRES_VERSION: ${{ inputs.postgres-version }}
+          FLYWAY_VERSION: ${{ inputs.flyway-version }}
+          SCHEMAS: ${{ inputs.schemas }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          base_root="$RUNNER_TEMP/flyway-base"
+
+          run_psql_file() {
+            local sql_file="$1"
+
+            docker run \
+              --rm \
+              --network host \
+              -e PGPASSWORD=flyway \
+              -v "$GITHUB_WORKSPACE:/workspace:ro" \
+              "postgres:${POSTGRES_VERSION}" \
+              psql \
+                -h 127.0.0.1 \
+                -p 5432 \
+                -U flyway \
+                -d flyway \
+                -v ON_ERROR_STOP=1 \
+                -f "/workspace/${sql_file}"
+          }
+
+          run_extra_sql() {
+            [[ -z "${EXTRA_PATHS}" ]] && return 0
+
+            while IFS= read -r path; do
+              path="${path#"${path%%[![:space:]]*}"}"
+              path="${path%"${path##*[![:space:]]}"}"
+
+              [[ -z "$path" ]] && continue
+
+              full_path="$GITHUB_WORKSPACE/$path"
+
+              if [[ -f "$full_path" ]]; then
+                run_psql_file "$path"
+                continue
+              fi
+
+              if [[ -d "$full_path" ]]; then
+                while IFS= read -r sql_file; do
+                  relative="${sql_file#$GITHUB_WORKSPACE/}"
+                  run_psql_file "$relative"
+                done < <(
+                  find "$full_path" \
+                    -type f \
+                    -name '*.sql' \
+                    -print \
+                    | sort
+                )
+
+                continue
+              fi
+
+              echo "::error::Caminho SQL não encontrado: $path"
+              exit 1
+            done <<< "$EXTRA_PATHS"
+          }
+
+          flyway() {
+            local location="$1"
+            shift
+
+            docker run \
+              --rm \
+              --network host \
+              -e FLYWAY_URL="jdbc:postgresql://127.0.0.1:5432/flyway" \
+              -e FLYWAY_USER=flyway \
+              -e FLYWAY_PASSWORD=flyway \
+              -e FLYWAY_SCHEMAS="$SCHEMAS" \
+              -e FLYWAY_CREATE_SCHEMAS=true \
+              -e FLYWAY_CONNECT_RETRIES=30 \
+              -e FLYWAY_CLEAN_DISABLED=false \
+              -e FLYWAY_LOCATIONS="$location" \
+              -v "$GITHUB_WORKSPACE:/workspace:ro" \
+              -v "$base_root:/base:ro" \
+              "flyway/flyway:${FLYWAY_VERSION}" \
+              "$@"
+          }
+
+          echo "Limpando banco descartável..."
+          flyway \
+            "filesystem:/workspace/${MIGRATIONS_PATH}" \
+            clean
+
+          echo "Aplicando SQL preparatório..."
+          run_extra_sql
+
+          if [[ -d "$base_root/$MIGRATIONS_PATH" ]]; then
+            echo "Aplicando migrations da branch base..."
+
+            flyway \
+              "filesystem:/base/${MIGRATIONS_PATH}" \
+              migrate
+          else
+            echo "A branch base não possui migrations nesse caminho."
+          fi
+
+          echo "Aplicando migrations novas do PR..."
+
+          flyway \
+            "filesystem:/workspace/${MIGRATIONS_PATH}" \
+            migrate
+
+          echo "Validando estado final..."
+
+          flyway \
+            "filesystem:/workspace/${MIGRATIONS_PATH}" \
+            validate
+
+      - name: Detect destructive operations
+        id: destructive
+        shell: python
+        env:
+          NEW_FILES_LIST: ${{ runner.temp }}/flyway-new-files.txt
+          FAIL_ON_DESTRUCTIVE: ${{ inputs.fail-on-destructive }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          new_files_path = Path(os.environ["NEW_FILES_LIST"])
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+
+          destructive_patterns = [
+              (r"\bDROP\s+(TABLE|VIEW|MATERIALIZED\s+VIEW|SCHEMA|TYPE|SEQUENCE|INDEX)\b",
+               "DROP"),
+              (r"\bTRUNCATE\b",
+               "TRUNCATE"),
+              (r"\bALTER\s+TABLE\b.*?\bDROP\s+COLUMN\b",
+               "ALTER TABLE ... DROP COLUMN"),
+          ]
+
+          findings = []
+
+          if new_files_path.exists():
+              new_files = [
+                  line.strip()
+                  for line in new_files_path.read_text().splitlines()
+                  if line.strip()
+              ]
+
+              for relative_path in new_files:
+                  path = workspace / relative_path
+
+                  if not path.is_file():
+                      continue
+
+                  sql = path.read_text(
+                      encoding="utf-8",
+                      errors="replace"
+                  )
+
+                  sql = re.sub(
+                      r"--.*?$",
+                      "",
+                      sql,
+                      flags=re.MULTILINE
+                  )
+
+                  sql = re.sub(
+                      r"/\*.*?\*/",
+                      "",
+                      sql,
+                      flags=re.DOTALL
+                  )
+
+                  for statement in sql.split(";"):
+                      normalized = " ".join(statement.split())
+
+                      if not normalized:
+                          continue
+
+                      for pattern, label in destructive_patterns:
+                          if re.search(pattern, normalized, flags=re.IGNORECASE | re.DOTALL):
+                              findings.append(
+                                  (relative_path, label)
+                              )
+
+                      if re.match(r"^(DELETE\s+FROM|UPDATE)\b",
+                                  normalized,
+                                  flags=re.IGNORECASE):
+                          if not re.search(r"\bWHERE\b",
+                                           normalized,
+                                           flags=re.IGNORECASE):
+                              findings.append(
+                                  (relative_path, "DELETE/UPDATE sem WHERE")
+                              )
+
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+
+          if not findings:
+              with summary.open("a", encoding="utf-8") as file:
+                  file.write("### Operações destrutivas\n\n")
+                  file.write("Nenhuma operação destrutiva detectada nas migrations novas.\n")
+
+              raise SystemExit(0)
+
+          unique_findings = sorted(set(findings))
+
+          with summary.open("a", encoding="utf-8") as file:
+              file.write("### ⚠️ Operações destrutivas detectadas\n\n")
+
+              for relative_path, label in unique_findings:
+                  file.write(
+                      f"- `{relative_path}` — `{label}`\n"
+                  )
+
+          for relative_path, label in unique_findings:
+              print(
+                  f"::warning file={relative_path}::"
+                  f"Operação potencialmente destrutiva detectada: {label}"
+              )
+
+          if os.environ["FAIL_ON_DESTRUCTIVE"].lower() != "true":
+              print("Modo aviso: migration destrutiva não bloqueia o job.")
+              raise SystemExit(0)
+
+          if os.environ["GITHUB_EVENT_NAME"] != "pull_request":
+              raise SystemExit(
+                  "fail-on-destructive=true exige execução em pull_request."
+              )
+
+          pr_number = os.environ["PR_NUMBER"]
+
+          labels = subprocess.check_output(
+              [
+                  "gh",
+                  "api",
+                  "--paginate",
+                  f"repos/{os.environ['GITHUB_REPOSITORY']}/issues/{pr_number}/labels",
+                  "--jq",
+                  ".[].name",
+              ],
+              text=True,
+          ).splitlines()
+
+          approval_label = "migration-destrutiva-aprovada"
+
+          if approval_label not in labels:
+              raise SystemExit(
+                  "Foram detectadas operações destrutivas e o PR não possui "
+                  f"o label `{approval_label}`."
+              )
+
+          print(
+              f"Label `{approval_label}` encontrado. "
+              "Operações destrutivas aprovadas."
+          )
+
+      - name: Publish summary
+        shell: bash
+        env:
+          MIGRATIONS_PATH: ${{ inputs.migrations-path }}
+          POSTGRES_VERSION: ${{ inputs.postgres-version }}
+          FLYWAY_VERSION: ${{ inputs.flyway-version }}
+          SCHEMAS: ${{ inputs.schemas }}
+          CHECK_UPGRADE: ${{ inputs.check-upgrade-path }}
+          FAIL_ON_DESTRUCTIVE: ${{ inputs.fail-on-destructive }}
+          NEW_COUNT: ${{ steps.migration-meta.outputs.new-count }}
+          LATEST_VERSION: ${{ steps.migration-meta.outputs.latest-version }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## Flyway validation"
+            echo
+            echo "| Item | Valor |"
+            echo "| --- | --- |"
+            echo "| Migrations | \`$MIGRATIONS_PATH\` |"
+            echo "| PostgreSQL | \`$POSTGRES_VERSION\` |"
+            echo "| Flyway | \`$FLYWAY_VERSION\` |"
+            echo "| Schemas | \`$SCHEMAS\` |"
+            echo "| Novas migrations | \`$NEW_COUNT\` |"
+            echo "| Versão final | \`$LATEST_VERSION\` |"
+            echo "| Upgrade path | \`$CHECK_UPGRADE\` |"
+            echo "| Falha destrutiva | \`$FAIL_ON_DESTRUCTIVE\` |"
+            echo
+            echo "### Migrations novas"
+            echo
+
+            if [[ -s "$RUNNER_TEMP/flyway-new-files.txt" ]]; then
+              while IFS= read -r migration; do
+                echo "- \`$migration\`"
+              done < "$RUNNER_TEMP/flyway-new-files.txt"
+            else
+              echo "Nenhuma migration nova."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
