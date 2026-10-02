@@ -24,10 +24,20 @@ jobs:
     uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-gitleaks.yml@dev
 ```
 
-## Exceções
+## Exceções (allowlist)
 
-Se precisar ignorar algum arquivo ou padrão específico, crie um `.gitleaksignore`
-na raiz do repositório com os paths a ignorar.
+Para ignorar paths ou padrões específicos, crie um arquivo `gitleaks.toml`
+na raiz do repositório com uma allowlist:
+
+```toml
+[allowlist]
+  paths = [
+    '''.env.example''',
+  ]
+```
+
+> Atenção: o `.gitleaksignore` ignora findings por fingerprint, não por path.
+> Para excluir arquivos ou padrões, use sempre o `gitleaks.toml`.
 
 ## O que fazer se um segredo real já foi commitado
 
