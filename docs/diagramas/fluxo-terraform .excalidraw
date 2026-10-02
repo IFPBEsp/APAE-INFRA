@@ -25,8 +25,8 @@
         "type": 3
       },
       "seed": 1122738527,
-      "version": 380,
-      "versionNonce": 2095258135,
+      "version": 383,
+      "versionNonce": 872981672,
       "isDeleted": false,
       "boundElements": [
         {
@@ -34,7 +34,7 @@
           "type": "arrow"
         }
       ],
-      "updated": 1790002107012,
+      "updated": 1790965339422,
       "link": null,
       "locked": false,
       "created": null
@@ -61,8 +61,8 @@
         "type": 3
       },
       "seed": 246990417,
-      "version": 483,
-      "versionNonce": 1810385567,
+      "version": 486,
+      "versionNonce": 1555313368,
       "isDeleted": false,
       "boundElements": [
         {
@@ -74,7 +74,7 @@
           "type": "arrow"
         }
       ],
-      "updated": 1789998394191,
+      "updated": 1790965339422,
       "link": null,
       "locked": false,
       "created": null
@@ -82,9 +82,9 @@
     {
       "id": "RKXmujBXGApGBLT14jen8",
       "type": "rectangle",
-      "x": 1297.967447916667,
-      "y": 71.296875,
-      "width": 449.39453125000006,
+      "x": 1304.1839657738099,
+      "y": 72.72544642857144,
+      "width": 298.9592633928571,
       "height": 242.17057291666674,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -101,20 +101,16 @@
         "type": 3
       },
       "seed": 225280785,
-      "version": 244,
-      "versionNonce": 156249311,
+      "version": 358,
+      "versionNonce": 1743045592,
       "isDeleted": false,
       "boundElements": [
         {
           "id": "xgLz6xwWv48k8Cw7wHGnr",
           "type": "arrow"
-        },
-        {
-          "id": "FPJWTu9Nq_2Clf_YVdBlN",
-          "type": "arrow"
         }
       ],
-      "updated": 1788903432674,
+      "updated": 1790965339422,
       "link": null,
       "locked": false,
       "created": null
@@ -141,8 +137,8 @@
         "type": 3
       },
       "seed": 1082009777,
-      "version": 347,
-      "versionNonce": 695600305,
+      "version": 350,
+      "versionNonce": 1002748840,
       "isDeleted": false,
       "boundElements": [
         {
@@ -158,7 +154,7 @@
           "type": "arrow"
         }
       ],
-      "updated": 1789998366486,
+      "updated": 1790965339422,
       "link": null,
       "locked": false,
       "created": null
@@ -183,11 +179,11 @@
       "index": "a4",
       "roundness": null,
       "seed": 635029393,
-      "version": 161,
-      "versionNonce": 422947135,
+      "version": 164,
+      "versionNonce": 609479336,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1788903222399,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "text": "Estrutura de Módulos",
@@ -223,11 +219,11 @@
       "index": "a5",
       "roundness": null,
       "seed": 826084881,
-      "version": 251,
-      "versionNonce": 1798448113,
+      "version": 254,
+      "versionNonce": 1798534104,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1788903227401,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "text": "Environments consumindo os módulos ",
@@ -263,8 +259,8 @@
       "index": "a6",
       "roundness": null,
       "seed": 2038654815,
-      "version": 340,
-      "versionNonce": 2079332465,
+      "version": 343,
+      "versionNonce": 1666091224,
       "isDeleted": false,
       "boundElements": [
         {
@@ -272,7 +268,7 @@
           "type": "arrow"
         }
       ],
-      "updated": 1789998996267,
+      "updated": 1790965339422,
       "link": null,
       "locked": false,
       "text": "Terraform State",
@@ -291,9 +287,9 @@
     {
       "id": "EbdgDJHuNj1ja0QZe39J2",
       "type": "text",
-      "x": 1411.436197916667,
-      "y": 40.53125,
-      "width": 156.09986877441406,
+      "x": 1350.5935639880956,
+      "y": 45.21875,
+      "width": 196.11984252929688,
       "height": 25,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -308,20 +304,20 @@
       "index": "a7",
       "roundness": null,
       "seed": 2062267039,
-      "version": 186,
-      "versionNonce": 144824671,
+      "version": 272,
+      "versionNonce": 1766275288,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1788903333170,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
-      "text": "Fluxo plan/apply",
+      "text": "CI em Pull Requests",
       "fontSize": 20,
       "fontFamily": 5,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Fluxo plan/apply",
+      "originalText": "CI em Pull Requests",
       "autoResize": true,
       "lineHeight": 1.25,
       "labelPosition": null,
@@ -348,11 +344,11 @@
       "index": "a8",
       "roundness": null,
       "seed": 1385131487,
-      "version": 325,
-      "versionNonce": 1050672441,
+      "version": 328,
+      "versionNonce": 478634152,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1790002108741,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "text": "/terraform/modules/\n├── kubernetes-cluster/  \n├── network/             \n├── compute/             \n└── object-storage/       ",
@@ -388,11 +384,11 @@
       "index": "a9",
       "roundness": null,
       "seed": 328563345,
-      "version": 146,
-      "versionNonce": 1711963601,
+      "version": 149,
+      "versionNonce": 1520066008,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1788903227401,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "text": "/terraform/environments/\n├── dev/    → chama os módulos com config menor\n├── hml/    → chama os módulos com config média  \n└── prod/   → chama os módulos com config completa",
@@ -428,11 +424,11 @@
       "index": "aA",
       "roundness": null,
       "seed": 213005457,
-      "version": 275,
-      "versionNonce": 2122488735,
+      "version": 278,
+      "versionNonce": 2032470952,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1789999003374,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "text": "State local na VPS\n└── terraform.tfstate\n    └── Armazenado diretamente na VPS Contabo",
@@ -451,9 +447,9 @@
     {
       "id": "9syefp9rk-L8bR0etwvTn",
       "type": "text",
-      "x": 1313.4232390873021,
-      "y": 94.2726469494047,
-      "width": 398.71966552734375,
+      "x": 1313.004712301588,
+      "y": 93.68112909226193,
+      "width": 251.03976440429688,
       "height": 175,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -468,20 +464,20 @@
       "index": "aB",
       "roundness": null,
       "seed": 1711008529,
-      "version": 233,
-      "versionNonce": 600618359,
+      "version": 342,
+      "versionNonce": 405549016,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1790001695453,
+      "updated": 1790965437551,
       "link": null,
       "locked": false,
-      "text": "Push no GitHub\n→ GitHub Actions dispara\n→ Executa Terraform na VPS Contabo\n→ terraform init\n→ terraform plan (exibe o que vai mudar)\n→ Aprovação manual\n→ terraform apply",
+      "text": "→ Push no Github\n→ GitHub Actions dispara\n→ terraform fmt\n→ terraform init\n→ terraform validate\n→ terraform plan\n→ Review/Merge",
       "fontSize": 20,
       "fontFamily": 5,
       "textAlign": "left",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "Push no GitHub\n→ GitHub Actions dispara\n→ Executa Terraform na VPS Contabo\n→ terraform init\n→ terraform plan (exibe o que vai mudar)\n→ Aprovação manual\n→ terraform apply",
+      "originalText": "→ Push no Github\n→ GitHub Actions dispara\n→ terraform fmt\n→ terraform init\n→ terraform validate\n→ terraform plan\n→ Review/Merge",
       "autoResize": true,
       "lineHeight": 1.25,
       "labelPosition": null,
@@ -491,10 +487,10 @@
     {
       "id": "EFFx6nnxOw0mIV0gOc5xu",
       "type": "rectangle",
-      "x": 1995.9027777777783,
-      "y": 91.21647135416663,
-      "width": 495.1953125,
-      "height": 122.99479166666657,
+      "x": 2166.944821281197,
+      "y": 136.35078868083505,
+      "width": 502.76524335030405,
+      "height": 124.87498326856954,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -510,16 +506,11 @@
         "type": 3
       },
       "seed": 2006236671,
-      "version": 165,
-      "versionNonce": 1651498847,
+      "version": 260,
+      "versionNonce": 163123160,
       "isDeleted": false,
-      "boundElements": [
-        {
-          "id": "FPJWTu9Nq_2Clf_YVdBlN",
-          "type": "arrow"
-        }
-      ],
-      "updated": 1789998311289,
+      "boundElements": [],
+      "updated": 1790965464462,
       "link": null,
       "locked": false,
       "created": null
@@ -527,10 +518,10 @@
     {
       "id": "_vXYlKYKnUS9JWrjjsgzT",
       "type": "text",
-      "x": 2043.9691840277783,
-      "y": 109.91438802083331,
-      "width": 333.02947998046875,
-      "height": 75,
+      "x": 2215.7460070461693,
+      "y": 155.33453587262696,
+      "width": 338.12042101106437,
+      "height": 76.14650684172784,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -544,15 +535,15 @@
       "index": "aE",
       "roundness": null,
       "seed": 1689363263,
-      "version": 120,
-      "versionNonce": 1874579473,
+      "version": 322,
+      "versionNonce": 1555649752,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1789998309005,
+      "updated": 1790965464462,
       "link": null,
       "locked": false,
       "text": "├── Cluster Kubernetes\n├── Configuração de rede/firewall\n└── VPS",
-      "fontSize": 20,
+      "fontSize": 20.30573515779409,
       "fontFamily": 5,
       "textAlign": "left",
       "verticalAlign": "top",
@@ -567,10 +558,10 @@
     {
       "id": "NYmJP9LfL06FizXKzqZ49",
       "type": "text",
-      "x": 2147.4001736111118,
-      "y": 54.68652343749994,
-      "width": 143.87986755371094,
-      "height": 25,
+      "x": 2320.7581211255556,
+      "y": 99.26241629464278,
+      "width": 146.07932425420725,
+      "height": 25.38216894724261,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -584,15 +575,15 @@
       "index": "aF",
       "roundness": null,
       "seed": 163403711,
-      "version": 109,
-      "versionNonce": 1160799889,
+      "version": 203,
+      "versionNonce": 1365834200,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1789998273132,
+      "updated": 1790965464462,
       "link": null,
       "locked": false,
       "text": "Contabo (VPS)",
-      "fontSize": 20,
+      "fontSize": 20.30573515779409,
       "fontFamily": 5,
       "textAlign": "left",
       "verticalAlign": "top",
@@ -626,11 +617,11 @@
         "type": 2
       },
       "seed": 880319665,
-      "version": 180,
-      "versionNonce": 1606795063,
+      "version": 183,
+      "versionNonce": 811076824,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1790002107012,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "points": [
@@ -669,9 +660,9 @@
       "id": "xgLz6xwWv48k8Cw7wHGnr",
       "type": "arrow",
       "x": 1190.6809895833335,
-      "y": 192.32226708649281,
-      "width": 101.28645833333348,
-      "height": 0.079407493680975,
+      "y": 192.39374803822307,
+      "width": 107.50297619047637,
+      "height": 1.365017018791832,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -687,11 +678,11 @@
         "type": 2
       },
       "seed": 1290624863,
-      "version": 105,
-      "versionNonce": 578902335,
+      "version": 181,
+      "versionNonce": 714984616,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1788903333170,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "points": [
@@ -700,8 +691,8 @@
           0
         ],
         [
-          101.28645833333348,
-          0.079407493680975
+          107.50297619047637,
+          1.365017018791832
         ]
       ],
       "startBinding": {
@@ -720,121 +711,6 @@
           0.5001
         ]
       },
-      "startArrowhead": null,
-      "endArrowhead": "arrow",
-      "elbowed": false,
-      "moveMidPointsWithElement": false,
-      "created": null
-    },
-    {
-      "id": "FPJWTu9Nq_2Clf_YVdBlN",
-      "type": "arrow",
-      "x": 1753.361979166667,
-      "y": 191.44846226032934,
-      "width": 236.5407986111113,
-      "height": 37.76437933836715,
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "index": "aJ",
-      "roundness": {
-        "type": 2
-      },
-      "seed": 1991609297,
-      "version": 98,
-      "versionNonce": 1897569151,
-      "isDeleted": false,
-      "boundElements": [],
-      "updated": 1789998311289,
-      "link": null,
-      "locked": false,
-      "points": [
-        [
-          0,
-          0
-        ],
-        [
-          236.5407986111113,
-          -37.76437933836715
-        ]
-      ],
-      "startBinding": {
-        "elementId": "RKXmujBXGApGBLT14jen8",
-        "mode": "orbit",
-        "fixedPoint": [
-          0.9999999999999999,
-          0.5001
-        ]
-      },
-      "endBinding": {
-        "elementId": "EFFx6nnxOw0mIV0gOc5xu",
-        "mode": "orbit",
-        "fixedPoint": [
-          0,
-          0.5001
-        ]
-      },
-      "startArrowhead": null,
-      "endArrowhead": "arrow",
-      "elbowed": false,
-      "moveMidPointsWithElement": false,
-      "created": null
-    },
-    {
-      "id": "wXWsfmiQDoQvL72qGm13_",
-      "type": "arrow",
-      "x": 1500.681846777988,
-      "y": 572.4285714285714,
-      "width": 11.171451833123228,
-      "height": 262.2602771577381,
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "index": "aK",
-      "roundness": {
-        "type": 2
-      },
-      "seed": 943069809,
-      "version": 212,
-      "versionNonce": 68543057,
-      "isDeleted": false,
-      "boundElements": [],
-      "updated": 1789998996267,
-      "link": null,
-      "locked": false,
-      "points": [
-        [
-          0,
-          0
-        ],
-        [
-          11.171451833123228,
-          -262.2602771577381
-        ]
-      ],
-      "startBinding": {
-        "elementId": "XpjBxMLgHSpGZcmuh0o0z",
-        "mode": "orbit",
-        "fixedPoint": [
-          0.5001,
-          1
-        ]
-      },
-      "endBinding": null,
       "startArrowhead": null,
       "endArrowhead": "arrow",
       "elbowed": false,
@@ -861,11 +737,11 @@
       "index": "aL",
       "roundness": null,
       "seed": 722242641,
-      "version": 44,
-      "versionNonce": 1171462847,
+      "version": 47,
+      "versionNonce": 1368258472,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1788903466504,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "text": "consulta/atualiza",
@@ -903,11 +779,11 @@
         "type": 2
       },
       "seed": 1426335249,
-      "version": 205,
-      "versionNonce": 1591975615,
+      "version": 208,
+      "versionNonce": 1345107672,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1789998394191,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "points": [
@@ -962,11 +838,11 @@
       "index": "aN",
       "roundness": null,
       "seed": 404140529,
-      "version": 126,
-      "versionNonce": 355662207,
+      "version": 129,
+      "versionNonce": 524337832,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1788904750802,
+      "updated": 1790965339421,
       "link": null,
       "locked": false,
       "text": "lê/escreve state por ambiente\n",
@@ -981,6 +857,298 @@
       "labelPosition": null,
       "created": null,
       "baseFontSize": null
+    },
+    {
+      "id": "9IiZYG7gf9RjL23ZujgHb",
+      "type": "rectangle",
+      "x": 1699.934585813492,
+      "y": 102.49065290178578,
+      "width": 325.16183035714266,
+      "height": 150.10602678571422,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "aO",
+      "roundness": {
+        "type": 3
+      },
+      "seed": 1690918872,
+      "version": 87,
+      "versionNonce": 703161000,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "id": "mWvbJT8nXovCM-zzW-dY1",
+          "type": "arrow"
+        },
+        {
+          "id": "8g7Qhzjbz4ZQ38eVJl19T",
+          "type": "arrow"
+        },
+        {
+          "id": "wXWsfmiQDoQvL72qGm13_",
+          "type": "arrow"
+        }
+      ],
+      "updated": 1790965484349,
+      "created": 1790965288688,
+      "link": null,
+      "locked": false
+    },
+    {
+      "id": "wXWsfmiQDoQvL72qGm13_",
+      "type": "arrow",
+      "x": 1530.09716509432,
+      "y": 572.4285714285716,
+      "width": 311.157431560933,
+      "height": 313.8318917410715,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "aOV",
+      "roundness": {
+        "type": 2
+      },
+      "seed": 943069809,
+      "version": 292,
+      "versionNonce": 751474600,
+      "isDeleted": false,
+      "boundElements": [],
+      "updated": 1790965484349,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          311.157431560933,
+          -313.8318917410715
+        ]
+      ],
+      "startBinding": {
+        "elementId": "XpjBxMLgHSpGZcmuh0o0z",
+        "mode": "orbit",
+        "fixedPoint": [
+          0.5001,
+          1
+        ]
+      },
+      "endBinding": {
+        "elementId": "9IiZYG7gf9RjL23ZujgHb",
+        "mode": "orbit",
+        "fixedPoint": [
+          0.6246894368644264,
+          0.6246894368644251
+        ]
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "elbowed": false,
+      "moveMidPointsWithElement": false,
+      "created": null
+    },
+    {
+      "id": "z8ygs3c6DBrKGMcuHa2Ht",
+      "type": "text",
+      "x": 1731.5272197420636,
+      "y": 70.78864397321416,
+      "width": 245.35977172851562,
+      "height": 25,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "aP",
+      "roundness": null,
+      "seed": 688320168,
+      "version": 123,
+      "versionNonce": 1650601384,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1790965339421,
+      "created": 1790965291394,
+      "link": null,
+      "locked": false,
+      "text": "Apply pós-merge (GitOps)",
+      "fontSize": 20,
+      "baseFontSize": null,
+      "fontFamily": 5,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "containerId": null,
+      "originalText": "Apply pós-merge (GitOps)",
+      "autoResize": true,
+      "lineHeight": 1.25,
+      "labelPosition": null
+    },
+    {
+      "id": "ZLtV3JqOjpWIHPD4fVVML",
+      "type": "text",
+      "x": 1705.7651500399152,
+      "y": 128.09333147321428,
+      "width": 293.979736328125,
+      "height": 100,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "aZ",
+      "roundness": null,
+      "seed": 1256747176,
+      "version": 476,
+      "versionNonce": 1609738664,
+      "isDeleted": false,
+      "boundElements": [],
+      "updated": 1790965394071,
+      "link": null,
+      "locked": false,
+      "text": "→ Merge na branch principal\n→ Mecanismo de reconciliação \n→ terraform apply\n→ Infraestrutura atualizada",
+      "fontSize": 20,
+      "fontFamily": 5,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "containerId": null,
+      "originalText": "→ Merge na branch principal\n→ Mecanismo de reconciliação \n→ terraform apply\n→ Infraestrutura atualizada",
+      "autoResize": true,
+      "lineHeight": 1.25,
+      "labelPosition": null,
+      "created": 1790965346569,
+      "baseFontSize": null
+    },
+    {
+      "id": "mWvbJT8nXovCM-zzW-dY1",
+      "type": "arrow",
+      "x": 1475.8218625992065,
+      "y": 262.8087332589285,
+      "width": 218.7982872444677,
+      "height": 33.03648832806593,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "aa",
+      "roundness": {
+        "type": 2
+      },
+      "seed": 1003200680,
+      "version": 388,
+      "versionNonce": 1678828760,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1790965448647,
+      "created": 1790965432415,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          218.7982872444677,
+          -33.03648832806593
+        ]
+      ],
+      "startBinding": null,
+      "endBinding": {
+        "elementId": "9IiZYG7gf9RjL23ZujgHb",
+        "mode": "orbit",
+        "fixedPoint": [
+          0.23388963086297332,
+          0.7661103691370253
+        ]
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "elbowed": false,
+      "moveMidPointsWithElement": false
+    },
+    {
+      "id": "8g7Qhzjbz4ZQ38eVJl19T",
+      "type": "arrow",
+      "x": 2031.0964161706347,
+      "y": 177.95449923179874,
+      "width": 138.71540178571468,
+      "height": 9.151109027129763,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "ab",
+      "roundness": {
+        "type": 2
+      },
+      "seed": 1772512216,
+      "version": 104,
+      "versionNonce": 1534166744,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1790965469259,
+      "created": 1790965467082,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          138.71540178571468,
+          9.151109027129763
+        ]
+      ],
+      "startBinding": {
+        "elementId": "9IiZYG7gf9RjL23ZujgHb",
+        "mode": "orbit",
+        "fixedPoint": [
+          1,
+          0.5001
+        ]
+      },
+      "endBinding": null,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "elbowed": false
     }
   ],
   "appState": {
