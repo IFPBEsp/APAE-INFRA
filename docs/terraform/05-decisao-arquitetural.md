@@ -115,7 +115,6 @@ conforme workflows que serão definidos posteriormente.
 
 Responsável pela reconciliação dos recursos Kubernetes depois que o cluster estiver disponível.
 
-
 Após sua instalação inicial, o ArgoCD deve ser gerenciado exclusivamente pelos manifests versionados no Git.
 
 O Terraform não deve continuar administrando os mesmos recursos Kubernetes que pertencem ao ArgoCD.
