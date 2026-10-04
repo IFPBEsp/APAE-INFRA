@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: atendimento-app
-          image: ghcr.io/ifpbesp/ape-atendimento-frontend:dev
+          image: ghcr.io/ifpbesp/apae-atendimento-frontend:dev
           imagePullPolicy: Always
 
           ports:
@@ -47,9 +47,9 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
 
-          securityContext:
-            runAsUser: 65532
-            runAsGroup: 65532
+          volumeMounts:
+            - name: next-cache
+              mountPath: /app/.next/cache
 
           resources:
             requests:
@@ -58,3 +58,7 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+
+      volumes:
+        - name: next-cache
+          emptyDir: { }

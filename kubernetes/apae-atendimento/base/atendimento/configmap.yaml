@@ -5,4 +5,5 @@ metadata:
 data:
   SPRING_PROFILES_ACTIVE: "prod"
   SERVER_PORT: "8080"
-  FRONT_END_URL: "http://atendimento-app:3000"
+  # TODO: definir a origem pública do frontend quando o domínio estiver disponível.
+  # FRONT_END_URL: "https://<dominio-do-frontend>"

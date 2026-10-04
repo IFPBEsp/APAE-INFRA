@@ -30,14 +30,14 @@ spec:
 
           startupProbe:
             httpGet:
-              path: /atendimento/actuator/health
+              path: /atendimento/actuator/health/liveness
               port: http
             periodSeconds: 10
             failureThreshold: 30
 
           readinessProbe:
             httpGet:
-              path: /atendimento/actuator/health
+              path: /atendimento/actuator/health/readiness
               port: http
             periodSeconds: 10
             timeoutSeconds: 3
@@ -45,15 +45,15 @@ spec:
 
           livenessProbe:
             httpGet:
-              path: /atendimento/actuator/health
+              path: /atendimento/actuator/health/liveness
               port: http
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
 
-          securityContext:
-            runAsUser: 65532
-            runAsGroup: 65532
+          volumeMounts:
+            - name: atendimento-tmp
+              mountPath: /tmp
 
           resources:
             requests:
@@ -62,3 +62,7 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+
+      volumes:
+        - name: atendimento-tmp
+          emptyDir: { }
