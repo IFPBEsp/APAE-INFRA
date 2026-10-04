@@ -157,9 +157,31 @@ destroy
 
 Mudanças destrutivas aumentam o risco do `apply`.
 
-Por isso, a arquitetura precisa preservar visibilidade sobre o plan antes de executar produção.
+Em uma infraestrutura baseada em uma única VPS, um destroy acidental pode afetar simultaneamente múltiplos sistemas hospedados no ambiente.
 
-Uma política automatizada detalhada para bloquear `destroy` fica fora da issue #59.
+Por isso, a arquitetura deve possuir uma proteção mínima contra destruição de recursos críticos.
+
+### prevent_destroy
+
+O Terraform possui o mecanismo nativo prevent_destroy através do bloco lifecycle:
+
+```text
+resource "..." "..." {
+  # ...
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+```
+
+Essa proteção deve ser considerada para recursos críticos da infraestrutura fundacional, especialmente aqueles cuja destruição possa comprometer todo o ambiente.
+
+O objetivo é impedir que um terraform plan ou terraform apply prossiga com a destruição acidental desses recursos enquanto a proteção estiver configurada.
+
+Além disso, o fluxo deve preservar a visibilidade do terraform plan antes de executar mudanças em produção.
+
+Uma política automatizada mais ampla para classificação, aprovação e bloqueio de todos os tipos de destroy fica fora da issue #59 e deverá ser tratada posteriormente.
 
 ---
 

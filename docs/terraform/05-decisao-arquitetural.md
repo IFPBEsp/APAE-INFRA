@@ -88,8 +88,12 @@ rede
 firewall externo
 bootstrap do host
 bootstrap Kubernetes
-bootstrap mínimo do ArgoCD
+instalação inicial do ArgoCD
 ```
+
+O Terraform é responsável apenas pela instalação inicial necessária para disponibilizar o ArgoCD.
+
+Após essa etapa, a configuração e o ciclo de vida do ArgoCD passam a ser gerenciados exclusivamente pelo Git através do próprio ArgoCD.
 
 O mecanismo exato de bootstrap não faz parte desta decisão.
 
@@ -110,6 +114,11 @@ conforme workflows que serão definidos posteriormente.
 ### ArgoCD
 
 Responsável pela reconciliação dos recursos Kubernetes depois que o cluster estiver disponível.
+
+
+Após sua instalação inicial, o ArgoCD deve ser gerenciado exclusivamente pelos manifests versionados no Git.
+
+O Terraform não deve continuar administrando os mesmos recursos Kubernetes que pertencem ao ArgoCD.
 
 ### Git
 

@@ -239,7 +239,7 @@ A alternativa híbrida mantém responsabilidades diferentes por domínio.
 
 A infraestrutura fundacional continua em Terraform.
 
-O cluster e os workloads permanecem no domínio do ArgoCD.
+Os recursos dentro do cluster e os workloads permanecem no domínio do ArgoCD.
 
 Em um cenário futuro, pode-se adicionar:
 
@@ -257,19 +257,19 @@ sem alterar a responsabilidade da camada de bootstrap.
 
 ## 5. Comparação
 
-| Critério | Actions + Terraform | ArgoCD + Terraform Operator | ArgoCD + Crossplane |
-| --- | --- | --- | --- |
-| Git como fonte da verdade | Sim | Sim | Sim |
-| Bootstrap independente do cluster | Sim | Não | Não |
-| Aproveita pipeline atual | Alto | Baixo | Baixo |
-| Mantém Terraform como IaC principal | Sim | Sim | Parcial/depende |
-| Integração direta com ArgoCD | Desnecessária | Alta | Alta |
-| Reconciliação contínua | Não por padrão | Sim | Sim |
-| Componentes adicionais | Poucos | Vários | Vários |
-| Complexidade | Baixa | Média/Alta | Alta |
-| Curva de aprendizado | Baixa | Média | Alta |
-| Aderência ao estágio atual | Alta | Média | Baixa |
-| Potencial para Platform Engineering | Médio | Alto | Muito alto |
+| Critério | Actions + Terraform | ArgoCD + Terraform Operator | ArgoCD + Crossplane | Híbrida |
+| --- | --- | --- | --- | --- |
+| Git como fonte da verdade | Sim | Sim | Sim | Sim |
+| Bootstrap independente do cluster | Sim | Não | Não | Sim |
+| Aproveita pipeline atual | Alto | Baixo | Baixo | Alto |
+| Mantém Terraform como IaC principal | Sim | Sim | Parcial/depende | Sim, na fundação |
+| Integração com ArgoCD | Desnecessária | Alta | Alta | Sim, para Kubernetes |
+| Reconciliação contínua | Não por padrão | Sim | Sim | Sim, para Kubernetes |
+| Componentes adicionais | Poucos | Vários | Vários | Poucos |
+| Complexidade | Baixa | Média/Alta | Alta | Baixa/Média |
+| Curva de aprendizado | Baixa | Média | Alta | Baixa/Média |
+| Aderência ao estágio atual | Alta | Média | Baixa | Alta |
+| Potencial para Platform Engineering | Médio | Alto | Muito alto | Médio/alto |
 
 ---
 
@@ -279,7 +279,16 @@ As três opções conseguem preservar Git como fonte da verdade.
 
 A principal diferença é **quem executa e reconcilia a infraestrutura**.
 
-A alternativa A resolve o problema atual com menos componentes.
+A decisão do estudo não é adotar a alternativa A de forma isolada. O desenho escolhido é a **arquitetura híbrida**, combinando:
+
+```text
+Alternativa A
+GitHub Actions + Terraform
+→ infraestrutura fundacional
+
+ArgoCD
+→ Kubernetes e workloads
+```
 
 As alternativas B e C passam a fazer mais sentido quando existir necessidade concreta de:
 
