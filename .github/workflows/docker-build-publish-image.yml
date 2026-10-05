@@ -65,6 +65,7 @@ permissions:
 
 jobs:
   build-and-scan:
+    if: github.event_name != 'pull_request'
     name: Build and scan (${{ matrix.platform }})
     runs-on: ubuntu-latest
 

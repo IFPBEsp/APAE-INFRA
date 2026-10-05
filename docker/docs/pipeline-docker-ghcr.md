@@ -237,9 +237,7 @@ Para builds multi-platform, o digest final corresponde ao OCI Image Index criado
 
 ### Permissões mínimas
 
-As permissões são definidas por job para seguir o princípio de menor privilégio.
-
-O job `build-and-scan` utiliza:
+Atualmente, as permissões do workflow são definidas de forma global:
 
 ```yaml
 permissions:
@@ -247,23 +245,9 @@ permissions:
   packages: write
 ```
 
-Essas permissões são necessárias para realizar checkout do código e publicar a imagem por digest no GHCR.
+Essas permissões são utilizadas pelos jobs do pipeline. `contents:` read permite o checkout e a leitura do código-fonte, enquanto `packages:` write permite publicar as imagens no GitHub Container Registry (GHCR).
 
-O job `publish` utiliza:
-
-```yaml
-permissions:
-  packages: write
-  id-token: write
-```
-
-`packages: write` permite promover e publicar a imagem no GHCR.
-
-`id-token: write` permite solicitar a identidade OIDC utilizada pela assinatura keyless com Cosign e Sigstore.
-
-A autenticação no GHCR é realizada com o `GITHUB_TOKEN`.
-
-Não é necessário utilizar PAT ou chave privada de assinatura de longa duração.
+A definição das permissões individualmente por job será adotada na evolução do pipeline com a integração do Cosign, permitindo aplicar o princípio de menor privilégio de forma mais granular.
 
 ### Assinatura e verificação
 
