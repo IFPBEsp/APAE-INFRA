@@ -95,8 +95,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          GEMINI_API_KEY: ${{ secrets.LLM_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.LLM_API_KEY }}
+          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.LLM_API_KEY }}
 
           config.model: ${{ inputs.model }}
           config.response_language: ${{ inputs.response-language }}
