@@ -20,7 +20,7 @@ O objetivo é definir como o Ansible deve participar do gerenciamento da VPS, qu
 
 A leitura foi dividida em documentos curtos para separar contexto, decisões e implementação:
 
-**01 → 02 → 03 → 04 → 05 → 06 → 07**
+01 → 02 → 03 → 04 → 05 → 06 → 07
 
 O documento 07 consolida a recomendação arquitetural resultante do estudo.
 
