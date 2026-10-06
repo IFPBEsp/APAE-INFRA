@@ -34,7 +34,7 @@ As portas, variáveis e configurações foram levantadas diretamente a partir do
 | **Porta interna** | `3000` | `Dockerfile` / `docker-compose.yml` | `Deployment` (`containerPort`) e `Service` (`port`/`targetPort`) |
 | **Roteamento de path** | `/site-comemorativo` | `next.config.ts` (`basePath`) | Probes (`startup`, `readiness`, `liveness`) |
 | **Usuário do container** | `65532:65532` | `Dockerfile` (Distroless non-root) | `securityContext` (`runAsUser`, `runAsGroup`) |
-| **Variáveis não sensíveis** | `NODE_ENV`, `PORT`, `HOSTNAME`, `NEXT_PUBLIC_BASE_PATH` | `Dockerfile` / `docker-compose.yml` | `ConfigMap` (`site-comemorativo-config`) |
+| **Variáveis não sensíveis** | `NODE_ENV`, `PORT`, `HOSTNAME` | `Dockerfile` / `docker-compose.yml` | `ConfigMap` (`site-comemorativo-config`) |
 
 ---
 
@@ -44,6 +44,9 @@ Para que este serviço possa ser ativado com réplicas ativas (`replicas: 1` ou 
 
 1. **Pipeline de CI e Publicação de Imagem**:
    - Criação de workflow no GitHub Actions do repositório `apae-site-comemorativo` para build e publicação da imagem em `ghcr.io/ifpbesp/apae-site-comemorativo`.
+   - Fornecimento dos build arguments (`--build-arg`) obrigatórios consumidos durante o `pnpm build`:
+     - `NEXT_PUBLIC_BASE_PATH`: caminho base da aplicação (ex.: `/site-comemorativo`);
+     - `NEXT_PUBLIC_URL_APAE`: URL base da aplicação principal da APAE.
 2. **Gestão de Segredos (Secrets)**:
    - Definição da estratégia de Secrets para injetar as credenciais sensíveis identificadas no `docker-compose.yml`:
      - `DATABASE_URL` (conexão com o PostgreSQL);
