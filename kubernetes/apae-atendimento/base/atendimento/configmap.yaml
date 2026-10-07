@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atendimento-config
+data:
+  SPRING_PROFILES_ACTIVE: "prod"
+  SERVER_PORT: "8080"
+  # TODO: definir a origem pública do frontend quando o domínio estiver disponível.
+  # FRONT_END_URL: "https://<dominio-do-frontend>"
