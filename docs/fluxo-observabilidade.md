@@ -12,18 +12,20 @@ A stack de observabilidade roda no mesmo cluster monitorado, gerenciada via GitO
 
 ## 1. Coleta de métricas
 
-Duas origens de métricas:
+Quatro origens de métricas:
 
-1. **Métricas do cluster** — via [`kube-state-metrics`](https://github.com/kubernetes/kube-state-metrics) (estado dos objetos Kubernetes: Deployments, Pods, réplicas) e `cAdvisor` (consumo de CPU/memória por container, já embutido no kubelet). O Prometheus faz scrape de ambos.
-2. **Métricas das aplicações** — conforme [boas práticas de observabilidade](boas-praticas/08-observabilidade.md#83-métricas), aplicações expõem métricas quando houver suporte. O backend Spring Boot já expõe `/apae-geral/actuator/health` (ver [ADR 001](adr/001-remocao-healthchecks.md)); o mesmo mecanismo (Actuator + Micrometer, endpoint `/actuator/prometheus`) pode ser reaproveitado para métricas de aplicação.
+1. **Estado dos objetos Kubernetes** — via [`kube-state-metrics`](https://github.com/kubernetes/kube-state-metrics) (Deployments, Pods, réplicas).
+2. **Recursos de containers e nós** — `cAdvisor` (consumo de CPU/memória por container, já embutido no kubelet) e [`node-exporter`](https://github.com/prometheus/node_exporter) (uso de CPU, memória, disco e rede por node, rodando como `DaemonSet`).
+3. **ArgoCD** — métricas expostas pelos componentes do próprio ArgoCD (application-controller, server e repo-server), que permitem acompanhar o estado das Applications (sincronização e saúde).
+4. **Aplicações** — conforme [boas práticas de observabilidade](boas-praticas/08-observabilidade.md#83-métricas), aplicações expõem métricas quando houver suporte. O backend Spring Boot já expõe `/apae-geral/actuator/health` (ver [ADR 001](adr/001-remocao-healthchecks.md)), pois usa o context path `/apae-geral`. A decisão é usar Actuator + Micrometer para expor as métricas de aplicação, e o caminho definitivo será registrado após a configuração da aplicação. Mantido o context path atual, o endpoint tende a ser `/apae-geral/actuator/prometheus`.
 
-O Prometheus descobre os alvos de scrape via `ServiceMonitor`/`PodMonitor` (padrão do Prometheus Operator) ou configuração estática de scrape — **decisão em aberto**, ver seção de pendências.
+O Prometheus descobre os alvos de scrape via **Prometheus Operator**, com recursos `ServiceMonitor` e `PodMonitor`. Essa abordagem é declarativa e combina com o GitOps já adotado: cada alvo é um manifesto versionado no repositório. Em contrapartida, o Operator traz CRDs e RBAC cluster-scoped, cujo impacto no `AppProject` está em [Onde a stack roda](#onde-a-stack-roda).
 
 ## 2. Coleta de logs
 
 Aplicações já seguem a diretriz de enviar logs para stdout/stderr ([boas práticas de observabilidade, 8.1](boas-praticas/08-observabilidade.md#81-logs)). A partir daí, um agente rodando como `DaemonSet` em cada nó do cluster lê os logs dos containers e envia ao Loki.
 
-**Decisão em aberto:** qual agente usar — `Promtail` (o coletor histórico do ecossistema Loki, hoje em modo de manutenção) ou `Grafana Alloy` (substituto recomendado atualmente pela Grafana Labs, mesmo binário usado para métricas e logs). Ver seção de pendências.
+**Decisão:** o agente é o **`Grafana Alloy`**, substituto recomendado atualmente pela Grafana Labs. O `Promtail`, coletor histórico do ecossistema Loki, foi descontinuado e não é mais uma opção real, e adotá-lo significaria começar uma implementação nova com um componente legado.
 
 ## 3. Grafana como camada de consumo
 
@@ -45,28 +47,52 @@ Dashboards por ambiente (dev/hml/prod) seguem a mesma separação já usada em `
 
 ## 5. Fluxo de alertas
 
-Quem dispara o alerta, os critérios e o canal de notificação ainda não foram decididos pela equipe. Duas abordagens possíveis:
+**Decisão:** os alertas são definidos e disparados pelo **Grafana Alerting**, com regras no próprio Grafana reaproveitando os datasources já provisionados (Prometheus e Loki). Para o tamanho atual da stack, isso evita adicionar e operar o Prometheus Alertmanager como outro componente.
 
-- **Prometheus Alertmanager** — regras de alerta definidas junto ao Prometheus, roteamento e agrupamento de notificações no Alertmanager;
-- **Grafana Alerting** — regras definidas no próprio Grafana, reaproveitando os mesmos datasources já provisionados, sem precisar de um componente adicional.
+O canal de notificação é o **Discord**.
 
-**Decisão em aberto**, ver seção de pendências.
+Se no futuro houver necessidade de roteamento e agrupamento de notificações mais complexos, o uso do Alertmanager pode ser reavaliado.
 
 ## Onde a stack roda
 
-Seguindo o padrão já estabelecido no `fluxo-argocd.md`, a stack de observabilidade seria mais uma Application (ou grupo de Applications) filha da raiz `apae-root`, com seus manifestos organizados em `kubernetes/base/monitoring/` e `kubernetes/overlays/{ambiente}/monitoring/`, do mesmo jeito que as 4 aplicações.
+Seguindo o padrão já estabelecido no [`fluxo-argocd.md`](argocd/fluxo-argocd.md), a stack de observabilidade é composta por Applications filhas da raiz `apae-root`, definidas em `argocd/` junto das demais.
 
-**Decisão em aberto:** namespace dedicado (`monitoring`, por exemplo) versus um namespace por componente. Ver seção de pendências.
+### Fonte dos manifestos: diretório `monitoring/`
 
-## Decisões em aberto (para validação da equipe)
+Os manifestos da stack ficam em `monitoring/`, estrutura já existente no repositório desde a organização inicial do APAE-INFRA:
 
-| Ponto | Opções | Observação |
+```text
+monitoring/
+  grafana/      # Grafana (datasources provisionados, dashboards, alertas)
+  prometheus/   # Prometheus Operator, ServiceMonitors/PodMonitors
+  loki/         # Loki e agente de coleta de logs (Grafana Alloy)
+```
+
+Diferente das aplicações, a stack **não** usa `kubernetes/base/` e `kubernetes/overlays/{ambiente}/`. Manter os artefatos em um único lugar evita duas fontes de verdade para a mesma stack. Cada Application de observabilidade aponta o `source.path` para o diretório do respectivo componente em `monitoring/`, a partir do mesmo repositório (`APAE-INFRA`), e é aplicada pelo ArgoCD como as demais.
+
+### Namespace
+
+A stack roda em um **namespace único, `monitoring`**. Para o tamanho atual do ambiente, separar Grafana, Loki e Prometheus em namespaces diferentes acrescentaria complexidade sem ganho relevante. Esse namespace não segue o padrão `apae-*` usado pelas aplicações.
+
+### Impacto no AppProject
+
+O `AppProject` `apae` ([fluxo do ArgoCD](argocd/fluxo-argocd.md#appproject-governança-compartilhada)) hoje só permite como destino os namespaces `apae-*` e `argocd`, e só libera o recurso cluster-scoped `Namespace`. Sem ajustes, o sync da stack de observabilidade falharia. É necessário:
+
+- adicionar o namespace `monitoring` em `destinations`;
+- avaliar e liberar em `clusterResourceWhitelist` os recursos cluster-scoped exigidos pelo Prometheus Operator, como `CustomResourceDefinition`, `ClusterRole` e `ClusterRoleBinding`.
+
+Como alternativa, a stack pode ter um `AppProject` próprio, isolando essas permissões mais amplas das Applications das aplicações. A decisão inicial é ajustar o `AppProject` atual, por ser a menor mudança.
+
+## Decisões tomadas
+
+| Ponto | Decisão | Motivo |
 | --- | --- | --- |
-| Agente de coleta de logs | Promtail / Grafana Alloy | Alloy é o caminho recomendado atualmente pela Grafana Labs |
-| Ferramenta de alertas | Prometheus Alertmanager / Grafana Alerting | Grafana Alerting evita um componente a mais no cluster |
-| Canal de notificação de alertas | A definir (ex: Slack, Discord, e-mail) | Depende de onde a equipe já centraliza avisos |
-| Descoberta de alvos do Prometheus | ServiceMonitor/PodMonitor (Prometheus Operator) / scrape config estático | Impacta se vamos adotar o Prometheus Operator ou instalação mais simples |
-| Namespace(s) da stack | Um namespace único `monitoring` / um por componente | Segue o mesmo raciocínio de `apae-*` já usado para as aplicações |
+| Agente de coleta de logs | Grafana Alloy | Promtail foi descontinuado; Alloy é o substituto recomendado pela Grafana Labs |
+| Ferramenta de alertas | Grafana Alerting | Evita operar o Alertmanager como componente adicional; pode ser reavaliado se o roteamento ficar mais complexo |
+| Canal de notificação de alertas | Discord | Definido pela equipe |
+| Descoberta de alvos do Prometheus | Prometheus Operator + ServiceMonitor/PodMonitor | Integração declarativa com Kubernetes, alinhada ao GitOps; exige CRDs/RBAC e ajuste no AppProject |
+| Namespace(s) da stack | Namespace único `monitoring` | Separar por componente acrescentaria complexidade sem ganho para o tamanho atual do ambiente |
+| Localização dos manifestos | Diretório `monitoring/` | Estrutura já existente; evita duas fontes de verdade (`kubernetes/base/monitoring` e `overlays`) |
 
 ## Diagrama
 
