@@ -89,7 +89,7 @@ Baseline:
 ```nginx
 proxy_set_header Host              $host;
 proxy_set_header X-Real-IP         $remote_addr;
-proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-For   $remote_addr;
 proxy_set_header X-Forwarded-Proto $scheme;
 proxy_set_header X-Forwarded-Host  $host;
 ```
@@ -100,6 +100,20 @@ Esses headers permitem que as camadas internas conheçam:
 - protocolo original;
 - IP do cliente;
 - cadeia de proxies.
+
+Como o NGINX Edge atua como primeiro proxy da arquitetura, o cabeçalho
+`X-Forwarded-For` deve ser sobrescrito com `$remote_addr`, evitando
+preservar endereços IP arbitrários enviados pelo cliente.
+
+O uso de `$proxy_add_x_forwarded_for` nessa camada poderia permitir
+IP spoofing em aplicações que interpretam o primeiro endereço da cadeia.
+
+Os proxies internos deverão confiar apenas nos cabeçalhos provenientes
+da borda autorizada, e as aplicações deverão configurar corretamente
+o processamento de forwarded headers.
+
+Caso seja introduzido um proxy ou CDN antes do NGINX Edge, a política
+de proxies confiáveis deverá ser reavaliada.
 
 ---
 

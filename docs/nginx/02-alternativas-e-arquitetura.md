@@ -389,16 +389,42 @@ para NodePorts.
 
 #### Requisito de segurança
 
-O NodePort não deverá ser exposto publicamente.
+O NodePort não deverá ficar acessível pela interface de rede pública da VPS.
 
-Externamente:
+Não é suficiente depender exclusivamente do UFW para bloquear as portas NodePort. O kube-proxy implementa esses serviços por meio de regras de rede, incluindo NAT e encaminhamento de pacotes, que podem seguir um caminho diferente da cadeia `INPUT` filtrada pelas regras usuais do firewall local.
+
+Como o NGINX Edge e o cluster Kubernetes estarão na mesma VPS, a abordagem recomendada é restringir os endereços pelos quais os NodePorts são disponibilizados ao loopback do host.
+
+A configuração deverá utilizar o recurso `nodePortAddresses` do kube-proxy, com `127.0.0.0/8` ou o valor equivalente `localhost`, desde que haja suporte no modo de proxy e na versão do Kubernetes utilizados pelo k3s.
+
+O NGINX Edge deverá encaminhar as requisições para o endereço local:
 
 ```text
-80  → permitido
-443 → permitido
+NGINX Edge
+    ↓
+127.0.0.1:<NodePort>
+    ↓
+NGINX Gateway Fabric
 ```
 
-O NodePort deverá ser acessível somente pelo caminho esperado entre NGINX e cluster.
+A compatibilidade com loopback deverá ser validada durante a implementação, considerando a versão do Kubernetes fornecida pelo k3s e o modo de proxy utilizado.
+
+No modo `iptables`, o acesso ao NodePort pelo loopback depende do suporte a localhost NodePorts e da configuração do parâmetro de kernel `route_localnet`, cuja habilitação pode ter efeitos colaterais de segurança que precisam ser avaliados.
+
+No modo `nftables`, o acesso por loopback depende da feature gate `KubeProxyNFTablesLocalhostNodePorts`, que deve estar habilitada, além da inclusão explícita dos endereços de loopback em `nodePortAddresses`.
+
+A configuração não deverá ser considerada válida apenas porque o serviço está acessível via `127.0.0.1`. Caso a combinação de versão, modo de proxy e configuração do k3s não permita restringir o NodePort ao loopback com segurança, deverá ser adotada e validada outra forma de comunicação local antes da exposição dos serviços.
+
+O firewall local e o firewall do provedor continuarão sendo utilizados como camadas adicionais de defesa. Nenhum deles deverá ser considerado, isoladamente, garantia de que o NodePort está inacessível externamente.
+
+#### Validações obrigatórias
+
+A implementação deverá comprovar que:
+
+- o NGINX consegue alcançar o NodePort por 127.0.0.1;
+- o NodePort não pode ser acessado pelo IP público da VPS;
+- as portas públicas necessárias continuam restritas a HTTP (80) e HTTPS (443);
+- a configuração permanece válida após reiniciar o k3s e a VPS.
 
 ---
 
@@ -439,5 +465,41 @@ Limitações:
 - dificulta portabilidade.
 
 Não foi selecionado como hipótese principal.
+
+---
+
+### 8.4 LoadBalancer local (K3s ServiceLB)
+
+O Kubernetes permite Services do tipo `LoadBalancer`, mas precisa de uma implementação de balanceador para disponibilizá-los.
+
+O k3s inclui o ServiceLB, que fornece essa funcionalidade sem depender de um balanceador externo. Para cada Service do tipo `LoadBalancer`, o ServiceLB cria Pods que utilizam `hostPort` nas portas do Service.
+
+#### Benefícios
+
+- implementação integrada ao k3s;
+- não exige um provedor de LoadBalancer externo;
+- permite disponibilizar Services do tipo `LoadBalancer` em um cluster single-node;
+- integração com os Services nativos do Kubernetes.
+
+#### Limitações no cenário da APAE
+
+O k3s instala o Traefik por padrão, e o ServiceLB utiliza as portas `80` e `443` para disponibilizar esse componente.
+
+Essas portas também precisam ficar disponíveis para o NGINX Edge, que será o ponto de entrada HTTP/HTTPS da VPS.
+
+Manter o Traefik e o ServiceLB com a configuração padrão pode causar conflito de portas e impedir que o NGINX Edge seja iniciado corretamente. Além disso, o NGINX Gateway Fabric cria um Service do tipo `LoadBalancer` por padrão quando um Gateway é criado.
+
+Portanto, adotar o ServiceLB sem ajustar os componentes e Services do cluster não é compatível com a arquitetura proposta.
+
+#### Decisão
+
+Não utilizaremos o ServiceLB do k3s como mecanismo de exposição do NGINX Gateway Fabric.
+
+Na instalação do k3s, os componentes padrão Traefik e ServiceLB deverão ser desabilitados:
+
+```text
+--disable=traefik
+--disable=servicelb
+```
 
 ---

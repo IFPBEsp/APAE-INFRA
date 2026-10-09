@@ -72,19 +72,67 @@ Gateway
 Aplicação
 ```
 
-Não deverá ser utilizado um `client_max_body_size` arbitrariamente elevado apenas para evitar problemas.
+### Estratégia de limites para uploads
 
-A estratégia recomendada é:
+A cadeia completa de proxies deverá aceitar limites compatíveis com as necessidades das aplicações.
 
-```text
-NGINX Edge
-→ limite global razoável da plataforma
+O NGINX Edge e o NGINX Gateway Fabric possuem, por padrão, limite de aproximadamente 1 MB para o corpo das requisições.
 
-Gateway/aplicação
-→ restrições específicas do produto
+Esse valor não atende aos requisitos atuais da APAE, pois existem funcionalidades que permitem uploads de até 50 MB.
+
+O backend do APAE Geral também define:
+
+```yaml
+max-request-size: 50MB
 ```
 
-Isso preserva o NGINX externo como componente genérico.
+Portanto, as duas camadas de proxy deverão ter seus limites configurados explicitamente para evitar respostas HTTP 413 Request Entity Too Large.
+
+#### NGINX Edge
+
+O limite global deverá ser de, no mínimo, 50 MB:
+
+```nginx
+client_max_body_size 50m;
+```
+
+Esse valor deverá ser aplicado no contexto adequado (http, server ou location), conforme a configuração final do proxy.
+
+#### NGINX Gateway Fabric
+
+O Gateway também deverá permitir requisições de pelo menos 50 MB.
+
+O ajuste deverá utilizar a configuração suportada pelo NGINX Gateway Fabric, como uma `ClientSettingsPolicy`, observando a versão e o schema instalados.
+
+#### Aplicações
+
+As aplicações poderão estabelecer limites específicos inferiores ao limite global, conforme seus requisitos.
+
+A estratégia adotada será:
+
+```text
+Cliente
+↓
+NGINX Edge → limite global: mínimo 50 MB
+↓
+NGINX Gateway Fabric → limite: mínimo 50 MB
+↓
+Aplicação → limite específico do produto
+```
+
+Os limites das camadas intermediárias não deverão ser inferiores ao tamanho máximo permitido pela aplicação.
+
+#### Validação
+
+Durante a implementação, deverão ser realizados testes de upload para verificar:
+
+- requisições pequenas, inferiores a 1 MB;
+- uploads próximos de 50 MB;
+- uploads que ultrapassem o limite permitido;
+- comportamento das respostas HTTP, especialmente `413`;
+- consistência entre NGINX Edge, Gateway e backend.
+
+Os valores finais deverão considerar também possíveis diferenças de interpretação das unidades de tamanho e o overhead de requisições multipart.
 
 ---
 

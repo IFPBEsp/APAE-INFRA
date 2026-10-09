@@ -257,24 +257,27 @@ O Gateway API será responsável pelo roteamento das aplicações.
 
 A primeira implementação deverá considerar:
 
-1. NGINX externo executado na VPS.
-2. NGINX atuando como edge proxy.
-3. TLS terminado no NGINX externo.
-4. HTTP entre NGINX externo e Gateway inicialmente.
-5. NGINX Gateway Fabric como primeira implementação de Gateway API a ser avaliada.
-6. Gateway API para roteamento interno.
-7. `HTTPRoute` para regras por produto.
-8. NodePort como interface inicial entre host e Gateway.
-9. NodePort protegido de acesso externo.
-10. workloads publicados através de `ClusterIP`.
-11. `X-Forwarded-*` para propagação do contexto original.
-12. trusted proxies configurados explicitamente.
-13. configuração do NGINX externo genérica e sem rotas por aplicação.
-14. roteamento baseado em paths como baseline de menor impacto.
-15. subdomínios mantidos como opção futura.
-16. observabilidade da borda preparada para Loki/Grafana.
-17. configuração versionada no `APAE-INFRA`.
-18. ArgoCD responsável exclusivamente pelos recursos Kubernetes.
+1. NGINX externo executado na VPS, responsável pela borda HTTP/HTTPS.
+2. k3s single-node com os componentes padrão Traefik e ServiceLB desabilitados.
+3. NGINX atuando como edge proxy.
+4. TLS terminado no NGINX externo.
+5. HTTP entre NGINX externo e Gateway inicialmente.
+6. NGINX Gateway Fabric como implementação de Gateway API.
+7. Service do NGINX Gateway Fabric configurado explicitamente como `NodePort`, sem depender do `LoadBalancer` padrão.
+8. Gateway API para roteamento interno.
+9. Portas públicas `80` e `443` reservadas para o NGINX externo.
+10. `HTTPRoute` para regras por produto.
+11. NodePort como interface inicial entre host e Gateway.
+12. NodePort protegido contra acesso externo e acessível somente pelo caminho local validado durante a implementação.
+13. workloads publicados através de `ClusterIP`.
+14. `X-Forwarded-*` para propagação do contexto original.
+15. trusted proxies configurados explicitamente.
+16. configuração do NGINX externo genérica e sem rotas por aplicação.
+17. roteamento baseado em paths como baseline de menor impacto.
+18. subdomínios mantidos como opção futura.
+19. observabilidade da borda preparada para Loki/Grafana.
+20. configuração versionada no `APAE-INFRA`.
+21. ArgoCD responsável exclusivamente pelos recursos Kubernetes.
 
 ---
 
