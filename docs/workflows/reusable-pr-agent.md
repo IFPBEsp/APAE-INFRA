@@ -4,7 +4,7 @@
 
 O workflow `.github/workflows/pr-agent-reusable.yml` centraliza a configuração do PR-Agent utilizada pelos repositórios da APAE.
 
-A proposta é evitar que cada repositório mantenha uma cópia completa da configuração do PR-Agent, concentrando no `APAE-INFRA`:
+A centralização evita que cada repositório mantenha uma cópia completa da configuração do PR-Agent, concentrando no `APAE-INFRA`:
 
 - versão da imagem utilizada pelo PR-Agent;
 - permissões do GitHub Actions;
@@ -95,8 +95,11 @@ Executa automaticamente a geração de sugestões de melhoria.
 Valor padrão:
 
 ```text
-true
+false
 ```
+
+O `/improve` permanece disponível sob demanda por comentário autorizado no Pull Request.
+A execução automática foi desativada para reduzir chamadas e consumo de tokens nos quatro produtos.
 
 ### `auto-describe`
 
@@ -118,7 +121,7 @@ Valor padrão:
 3
 ```
 
-O limite reduz ruído nos Pull Requests e segue a configuração validada durante a POC.
+Esse parâmetro limita a quantidade de sugestões apresentadas pelo `/improve` e reduz ruído nos Pull Requests. **Não limita a quantidade de chamadas ao modelo nem os tokens consumidos pelo `/review`.**
 
 ### `ignore-globs`
 
@@ -168,13 +171,13 @@ secrets:
   LLM_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 ```
 
-A configuração preferencial é manter `GEMINI_API_KEY` como secret da organização, liberado somente para os repositórios que utilizam o PR-Agent.
+A configuração atual utiliza **quatro projetos distintos no Google AI Studio**, um para cada produto, e uma chave `GEMINI_API_KEY` cadastrada como secret em cada repositório. Cada caller passa sua chave ao parâmetro `LLM_API_KEY` do reusable.
 
-Durante a implementação desta integração não havia acesso administrativo à organização para configurar esse secret globalmente.
+O cadastro por repositório permite isolar credenciais e acompanhar o uso individualmente. As cotas da API Gemini são aplicadas por projeto, mas a separação não garante maior disponibilidade do modelo nem elimina outras restrições do provedor.
 
-Por esse motivo, apenas repositórios que já possuem `GEMINI_API_KEY` conseguem executar efetivamente as chamadas ao modelo.
+Os quatro repositórios já tiveram o `/review` validado com suas respectivas chaves. Como utilizam chaves diferentes, **não substituir os quatro secrets por uma única chave compartilhada** sem reavaliar a estratégia de isolamento.
 
-Os repositórios sem o secret mantêm o caller configurado, mas a geração de reviews e sugestões permanece pendente até que a chave seja disponibilizada.
+As chaves não devem aparecer em logs, comentários ou arquivos versionados.
 
 Nunca adicionar a chave diretamente ao workflow ou a arquivos versionados no repositório.
 
@@ -221,12 +224,13 @@ on:
       - created
 ```
 
-Os eventos de Pull Request permitem executar automaticamente:
+Os eventos de Pull Request executam automaticamente **somente**:
 
 ```text
 /review
-/improve
 ```
+
+Os comandos `/improve` e `/ask` permanecem disponíveis sob demanda por `issue_comment` de usuário autorizado, após o caller estar presente na branch padrão.
 
 O reusable também configura explicitamente as ações consideradas pelo PR-Agent:
 
@@ -326,7 +330,7 @@ Configurações específicas por repositório devem ser adicionadas apenas quand
 
 ## Caller
 
-Exemplo de caller:
+Exemplo de caller simplificado, que utiliza os valores padrão de `model`, `response-language`, `auto-review`, `auto-improve`, `auto-describe`, `num-code-suggestions` e `ignore-globs` definidos no reusable. Substitua `<commit-sha>` pelo SHA fixo efetivamente validado:
 
 ```yaml
 name: PR-Agent
@@ -348,14 +352,6 @@ jobs:
     uses: IFPBEsp/APAE-INFRA/.github/workflows/pr-agent-reusable.yml@<commit-sha>
 
     with:
-      model: "gemini/gemini-3.6-flash"
-      response-language: "pt-BR"
-      auto-review: true
-      auto-improve: true
-      auto-describe: false
-      num-code-suggestions: 3
-      ignore-globs: '["*.lock", "pnpm-lock.yaml", "package-lock.json"]'
-
       extra-instructions: >
         Descrever aqui a stack e os pontos prioritarios
         para revisao deste repositorio.
@@ -383,14 +379,15 @@ Status da validação:
 ```text
 caller configurado
 workflow reutilizável executado
-auto_review validado
-auto_improve validado
+auto_review validado e publicado
+auto_improve automatico desativado
+fallback Gemini validado
 evento synchronize validado
 ```
 
-A validação foi realizada em um Pull Request real e o PR-Agent identificou problemas de código, incluindo tratamento de `null`.
+A POC inicial identificou problemas no código de teste Java, incluindo tratamento de `null`. A validação da integração definitiva ocorreu em um Pull Request real (APAE #1003), com publicação do `/review`; após um erro `503` no modelo principal, o fallback gerou a revisão e atualizou o comentário persistente.
 
-O teste de comandos por `issue_comment` permanece pendente até que o caller esteja disponível na branch padrão do repositório.
+O teste de comandos por `issue_comment` ainda não foi confirmado nesta atualização; para executá-lo, o caller precisa estar disponível na branch padrão do repositório.
 
 ### `IFPBEsp/APAE-atendimento`
 
@@ -405,8 +402,9 @@ Status:
 
 ```text
 caller configurado
-workflow disparado com sucesso
-geração de review pendente por ausência de GEMINI_API_KEY
+GEMINI_API_KEY individual configurada
+/review automatico validado e publicado
+/improve automatico desativado
 ```
 
 ### `IFPBEsp/APAE-gestao-escolar`
@@ -428,8 +426,9 @@ Status:
 
 ```text
 caller configurado
-workflow disparado
-geração de review pendente por ausência de GEMINI_API_KEY
+GEMINI_API_KEY individual configurada
+/review automatico validado e publicado
+/improve automatico desativado
 ```
 
 ### `IFPBEsp/apae-site-comemorativo`
@@ -446,8 +445,9 @@ Status:
 
 ```text
 caller configurado
-workflow disparado
-geração de review pendente por ausência de GEMINI_API_KEY
+GEMINI_API_KEY individual configurada
+/review automatico validado e publicado
+/improve automatico desativado
 ```
 
 ---
@@ -459,14 +459,16 @@ O piloto realizado no repositório `APAE` confirmou o funcionamento da configura
 Foram validados:
 
 ```text
-modelo Gemini
+/review automatico nos quatro repositorios
+chaves individuais de quatro projetos Google AI Studio
 respostas em pt-BR
-auto_review
-auto_improve
-limite de 3 sugestões
-evento synchronize
-publicação de comentários no Pull Request
+/improve automatico desativado
+evento synchronize no APAE Geral
+publicacao de comentarios de revisao
+fallback para outro modelo Gemini no APAE Geral
 ```
+
+O limite de três sugestões pertence ao comando `/improve`; como ele não é executado automaticamente na configuração atual, esse parâmetro não deve ser interpretado como limite de consumo de tokens. A POC original testou `/improve`, mas o comportamento atual é diferente.
 
 Durante a validação foi identificado que apenas habilitar o evento `synchronize` no caller não era suficiente.
 
@@ -488,31 +490,39 @@ Após a correção, a revisão passou a ser executada normalmente.
 
 ## Comportamento quando o modelo falha
 
-O PR-Agent pode capturar internamente falhas do provedor LLM sem fazer o job do GitHub Actions terminar com erro.
+O PR-Agent utiliza o modelo principal `gemini/gemini-3.6-flash` e está configurado para tentar `gemini/gemini-3.5-flash-lite` como fallback, sem recorrer ao fallback padrão para OpenAI que falhava com a chave fictícia `dummy_key`.
 
-Durante as validações em repositórios sem `GEMINI_API_KEY`, o workflow foi iniciado e o container foi executado, mas o PR-Agent publicou:
+Configuração aplicada no `env` do reusable:
 
-```text
-Failed to generate code suggestions for PR
+```yaml
+config.model: ${{ inputs.model }}
+config.fallback_models: '["gemini/gemini-3.5-flash-lite"]'
 ```
 
-mesmo com o job do GitHub Actions concluído como `success`.
+Durante a validação do APAE Geral, o Gemini principal retornou `503 UNAVAILABLE`, indicando alta demanda temporária. O PR-Agent tentou o fallback Gemini, gerou uma revisão válida e atualizou o comentário persistente no PR #1003.
 
-Por isso, um check verde do workflow indica que a execução do PR-Agent ocorreu, mas não deve ser usado isoladamente como confirmação de que o modelo gerou uma revisão válida.
+Esse erro **não é prova de esgotamento de cota**: `503` indica indisponibilidade do serviço/modelo; `429 RESOURCE_EXHAUSTED` é o erro típico de limite excedido. O fallback melhora a tolerância à indisponibilidade de um modelo, mas usa a cota do mesmo projeto e não garante execução bem-sucedida em todas as condições.
 
-A validação deve considerar também os logs da execução e os comentários publicados no Pull Request.
+O PR-Agent pode capturar internamente falhas de inferência sem fazer o job do GitHub Actions terminar com erro. Por isso, um check verde **não comprova**, isoladamente, que uma revisão foi gerada e publicada.
+
+Verificar sempre os logs, a resposta do modelo e a existência ou atualização do comentário do PR-Agent no Pull Request.
+
+### Acompanhamento de cotas
+
+A validação funcional nos quatro repositórios foi concluída, mas **a capacidade para muitos PRs abertos ou atualizados diariamente ainda não foi medida**. Durante o uso real, acompanhar no Google AI Studio, por projeto:
+
+- quantidade de revisões disparadas e efetivamente publicadas;
+- RPM, TPM e RPD disponíveis e utilizados;
+- ocorrências de `429`, `503` e acionamentos de fallback;
+- tamanho dos diffs e frequência de eventos `synchronize`.
+
+`auto-improve: false` reduz chamadas automáticas, mas `/review` ainda consome tokens e pode realizar mais de uma chamada por execução. O mecanismo de `concurrency` cancela execuções antigas ainda em andamento, sem recuperar cota já consumida. Não há garantia documentada de suporte a 15 PRs simultâneos.
 
 ---
 
 ## Uso de dados pelo provedor
 
-O modelo definido atualmente é:
-
-```text
-gemini/gemini-3.6-flash
-```
-
-utilizando uma chave do Google AI Studio.
+O modelo principal é `gemini/gemini-3.6-flash`, com fallback `gemini/gemini-3.5-flash-lite`, utilizando uma chave do respectivo projeto no Google AI Studio.
 
 Antes de liberar a configuração de forma definitiva para todos os repositórios, o time deve validar as condições de uso de dados aplicáveis ao plano utilizado.
 
@@ -541,12 +551,11 @@ Depois da remoção, o PR-Agent deve permanecer como a ferramenta automatizada d
 As seguintes pendências não impedem a configuração dos callers, mas ainda precisam ser concluídas para atender integralmente aos critérios de aceite da issue:
 
 ```text
-disponibilizar GEMINI_API_KEY nos repositórios sem o secret
-validar review real nos repositórios restantes
+monitorar cotas e confiabilidade com PRs reais dos quatro produtos
 testar pelo menos um comando via issue_comment
 validar com o time o uso de dados pelo provedor
 remover o CodeRabbit dos repositórios
-garantir que os callers estejam mergeados nas branches padrão
+confirmar que os callers estejam mergeados nas branches padrão
 ```
 
 ---
