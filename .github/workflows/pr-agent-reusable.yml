@@ -98,6 +98,7 @@ jobs:
           GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.LLM_API_KEY }}
 
           config.model: ${{ inputs.model }}
+          config.fallback_models: '["gemini/gemini-3.5-flash-lite"]'
           config.response_language: ${{ inputs.response-language }}
           config.restricted_mode: "true"
 
