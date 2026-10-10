@@ -137,10 +137,22 @@ jobs:
         if: inputs.config-file == ''
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          repository: IFPBEsp/APAE-INFRA
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           path: .infra-hadolint
           persist-credentials: false
+
+      - name: Verify shared configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Repository: ${{ job.workflow_repository }}"
+          echo "Reusable SHA: ${{ job.workflow_sha }}"
+
+          ls -la .infra-hadolint
+
+          test -f .infra-hadolint/.hadolint.yaml
 
       - name: Resolve Hadolint configuration
         id: config
