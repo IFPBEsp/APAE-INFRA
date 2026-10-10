@@ -123,7 +123,7 @@ A configuração deve ser compatível com a revisão exata do reusable utilizada
 ## 4. Contrato do `workflow_call`
 
 | Input | Tipo | Obrigatório | Padrão | Comportamento |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `dockerfiles` | `string` | **Sim** | — | Um caminho de Dockerfile por linha, relativo à raiz do repositório chamador. |
 | `failure-threshold` | `string` | Não | `warning` | Severidade mínima que torna a análise bloqueante. |
 | `config-file` | `string` | Não | `""` | Caminho relativo para configuração própria no repositório chamador; vazio utiliza a configuração central. |
@@ -210,7 +210,7 @@ override:
 - `override.error`: **eleva as regras listadas à severidade `error`**; não as ignora.
 
 | Regra | Descrição resumida | Tratamento central |
-|---|---|---|
+| --- | --- | --- |
 | `DL3002` | Evitar executar a imagem como `root` quando desnecessário. | Elevada para `error`. |
 | `DL3006` | Evitar imagem-base sem tag ou digest explícito. | Elevada para `error`. |
 | `DL3007` | Evitar imagem-base com tag `latest`. | Elevada para `error`. |
@@ -437,7 +437,7 @@ A correção realizada no Dockerfile adicionou `--no-install-recommends` e vers�
 ## 8. Evidências consolidadas da issue #70
 
 | Produto | PR de integração | Dockerfiles verificados | Execução Hadolint | Resultado |
-|---|---|---:|---|---|
+| --- | --- | ---: | --- | --- |
 | APAE Geral | [#1050](https://github.com/IFPBEsp/APAE/pull/1050) | 2 | [#38009826734](https://github.com/IFPBEsp/APAE/actions/runs/38009826734) | **Success** |
 | APAE Atendimento | [#446](https://github.com/IFPBEsp/APAE-atendimento/pull/446) | 2 | [#38011770413](https://github.com/IFPBEsp/APAE-atendimento/actions/runs/38011770413) | **Success** |
 | APAE Gestão Escolar | [#459](https://github.com/IFPBEsp/APAE-gestao-escolar/pull/459) | 2 | [#38012687230](https://github.com/IFPBEsp/APAE-gestao-escolar/actions/runs/38012687230) | **Success** |
@@ -595,7 +595,7 @@ O workflow não recebe segredos explicitamente e opera em PRs. Mantenha permiss�
 ## 12. Critérios de aceite e verificações
 
 | Critério | Evidência / situação |
-|---|---|
+| --- | --- |
 | Reusable disponível por `workflow_call` | Implementado em `.github/workflows/hadolint-reusable.yml`. |
 | Hadolint e checkout fixados por SHA | Confirmado na implementação validada. |
 | Permissões mínimas | `contents: read`; checkouts sem persistência de credenciais. |
@@ -605,7 +605,6 @@ O workflow não recebe segredos explicitamente e opera em PRs. Mantenha permiss�
 | Findings e bloqueio por severidade | Demonstrados por `DL3008` no primeiro teste do Site Comemorativo. |
 | Documentação dos inputs e adoção | Este documento. |
 | Override `config-file` opcional | **Limitação conhecida** nesta revisão, descrita na seção 4.3; necessita ajuste e validação específica. |
-
 
 ## 13. Referências
 
