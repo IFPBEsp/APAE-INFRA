@@ -142,18 +142,6 @@ jobs:
           path: .infra-hadolint
           persist-credentials: false
 
-      - name: Verify shared configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Repository: ${{ job.workflow_repository }}"
-          echo "Reusable SHA: ${{ job.workflow_sha }}"
-
-          ls -la .infra-hadolint
-
-          test -f .infra-hadolint/.hadolint.yaml
-
       - name: Resolve Hadolint configuration
         id: config
         shell: bash
