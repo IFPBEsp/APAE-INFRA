@@ -1,0 +1,9 @@
+failure-threshold: warning
+
+ignored: []
+
+override:
+  error:
+    - DL3002
+    - DL3006
+    - DL3007

@@ -1,0 +1,177 @@
+
+name: Reusable Dockerfile Lint
+
+on:
+  workflow_call:
+    inputs:
+      dockerfiles:
+        description: "Caminhos dos Dockerfiles, um por linha"
+        required: true
+        type: string
+
+      failure-threshold:
+        description: "Severidade minima que bloqueia o check"
+        required: false
+        type: string
+        default: "warning"
+
+      config-file:
+        description: "Configuracao alternativa no repositorio caller; vazio usa APAE-INFRA"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare Dockerfiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      dockerfiles: ${{ steps.prepare.outputs.dockerfiles }}
+
+    steps:
+      - name: Checkout application repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate inputs and Dockerfile paths
+        id: prepare
+        shell: bash
+        env:
+          DOCKERFILES: ${{ inputs.dockerfiles }}
+          FAILURE_THRESHOLD: ${{ inputs.failure-threshold }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          valid_thresholds = {
+              "error", "warning", "info",
+              "style", "ignore", "none"
+          }
+
+          threshold = os.environ["FAILURE_THRESHOLD"]
+          if threshold not in valid_thresholds:
+              raise SystemExit(
+                  f"::error::failure-threshold invalido: {threshold}"
+              )
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          dockerfiles = []
+          seen = set()
+
+          for raw in os.environ["DOCKERFILES"].splitlines():
+              name = raw.strip()
+
+              if not name:
+                  continue
+
+              relative = Path(name)
+
+              if relative.is_absolute() or ".." in relative.parts:
+                  raise SystemExit(
+                      f"::error::Caminho nao permitido: {name}"
+                  )
+
+              target = (workspace / relative).resolve()
+
+              if not target.is_relative_to(workspace):
+                  raise SystemExit(
+                      f"::error::Arquivo fora do workspace: {name}"
+                  )
+
+              if not target.is_file():
+                  raise SystemExit(
+                      f"::error::Dockerfile nao encontrado: {name}"
+                  )
+
+              normalized = target.relative_to(workspace).as_posix()
+
+              if normalized not in seen:
+                  seen.add(normalized)
+                  dockerfiles.append(normalized)
+
+          if not dockerfiles:
+              raise SystemExit(
+                  "::error::Nenhum Dockerfile foi informado."
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(
+                  "dockerfiles="
+                  + json.dumps(dockerfiles, separators=(",", ":"))
+                  + "\n"
+              )
+
+          print(f"Dockerfiles para analise: {len(dockerfiles)}")
+          for item in dockerfiles:
+              print(f" - {item}")
+          PY
+
+  lint:
+    name: Hadolint (${{ matrix.dockerfile }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJSON(needs.prepare.outputs.dockerfiles) }}
+
+    steps:
+      - name: Checkout application repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout shared configuration
+        if: inputs.config-file == ''
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .infra-hadolint
+          persist-credentials: false
+
+      - name: Resolve Hadolint configuration
+        id: config
+        shell: bash
+        env:
+          CUSTOM_CONFIG: ${{ inputs.config-file }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$CUSTOM_CONFIG" ]]; then
+            config="$CUSTOM_CONFIG"
+          else
+            config=".infra-hadolint/.hadolint.yaml"
+          fi
+
+          if [[ "$config" = /* || "$config" == *".."* ]]; then
+            echo "::error::Caminho de configuracao invalido."
+            exit 1
+          fi
+
+          if [[ ! -f "$config" ]]; then
+            echo "::error::Configuracao nao encontrada: $config"
+            exit 1
+          fi
+
+          echo "path=$config" >> "$GITHUB_OUTPUT"
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          config: ${{ steps.config.outputs.path }}
+          failure-threshold: ${{ inputs.failure-threshold }}
+          no-color: true
