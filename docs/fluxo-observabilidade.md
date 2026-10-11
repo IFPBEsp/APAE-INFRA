@@ -10,6 +10,8 @@ A stack de observabilidade roda no mesmo cluster monitorado, gerenciada via GitO
 - **Loki** centraliza os logs de todos os Pods;
 - **Grafana** consome Prometheus e Loki como datasources e concentra dashboards e alertas.
 
+![Diagrama do Fluxo de Observabilidade](diagramas/fluxo-observabilidade.svg)
+
 ## 1. Coleta de métricas
 
 Quatro origens de métricas:
@@ -96,6 +98,7 @@ Como alternativa, a stack pode ter um `AppProject` próprio, isolando essas perm
 
 ## Diagrama
 
-O diagrama Excalidraw será produzido depois que este texto for validado pela equipe, seguindo o mesmo fluxo usado na issue #10 (texto primeiro, diagrama depois, para reduzir retrabalho).
+- [Diagrama do Fluxo de Observabilidade (SVG)](diagramas/fluxo-observabilidade.svg)
+- [Diagrama editável no Excalidraw](diagramas/fluxo-observabilidade.excalidraw)
 
 Issue relacionada: `APAE-INFRA#13`
