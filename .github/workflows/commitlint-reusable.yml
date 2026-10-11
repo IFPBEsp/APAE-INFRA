@@ -1,0 +1,149 @@
+name: Reusable Commitlint
+
+on:
+  workflow_call:
+    inputs:
+      config-file:
+        description: "Caminho, relativo à raiz do repositório chamador, de uma configuração própria do commitlint. Vazio usa a configuração compartilhada do APAE-INFRA"
+        required: false
+        type: string
+        default: ""
+
+      validate-pr-title:
+        description: "Habilita a validação do título do Pull Request"
+        required: false
+        type: boolean
+        default: true
+
+      pr-title-pattern:
+        description: "Expressão regular (ERE) aplicada ao título do Pull Request"
+        required: false
+        type: string
+        default: '^\[(FEAT|FIX|DOCS|CHORE|CI|REFACTOR|TEST|BUILD)\] .+'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  commitlint:
+    name: Validate commits and PR title
+    runs-on: ubuntu-latest
+    # Commits e títulos de bots (ex.: Renovate) não são validados.
+    if: github.event.pull_request.user.type != 'Bot'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout shared commitlint config
+        if: inputs.config-file == ''
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .apae-infra
+          sparse-checkout: commitlint.config.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Install commitlint
+        id: commitlint
+        shell: bash
+        env:
+          COMMITLINT_VERSION: "19.8.1"
+          CONFIG_FILE: ${{ inputs.config-file }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$CONFIG_FILE" ]]; then
+            source_config="$GITHUB_WORKSPACE/$CONFIG_FILE"
+          else
+            source_config="$GITHUB_WORKSPACE/.apae-infra/commitlint.config.js"
+          fi
+
+          if [[ ! -f "$source_config" ]]; then
+            echo "::error::Configuração do commitlint não encontrada: ${CONFIG_FILE:-commitlint.config.js do APAE-INFRA}"
+            exit 1
+          fi
+
+          tools="$RUNNER_TEMP/commitlint"
+          mkdir -p "$tools"
+
+          npm install \
+            --prefix "$tools" \
+            --no-audit \
+            --no-fund \
+            --ignore-scripts \
+            "@commitlint/cli@${COMMITLINT_VERSION}" \
+            "@commitlint/config-conventional@${COMMITLINT_VERSION}"
+
+          # A configuração fica ao lado de node_modules para que o "extends" seja resolvido.
+          config="$tools/$(basename "$source_config")"
+          cp "$source_config" "$config"
+
+          echo "bin=$tools/node_modules/.bin/commitlint" >> "$GITHUB_OUTPUT"
+          echo "config=$config" >> "$GITHUB_OUTPUT"
+
+      - name: Validate PR commits
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          COMMITLINT_BIN: ${{ steps.commitlint.outputs.bin }}
+          COMMITLINT_CONFIG: ${{ steps.commitlint.outputs.config }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$BASE_SHA" || -z "$HEAD_SHA" ]]; then
+            echo "::error::Este workflow deve ser executado em eventos de pull_request."
+            exit 1
+          fi
+
+          # Apenas os commits do PR, sem commits de merge.
+          mapfile -t commits < <(git rev-list --no-merges --reverse "${BASE_SHA}..${HEAD_SHA}")
+
+          if [[ ${#commits[@]} -eq 0 ]]; then
+            echo "::notice::Nenhum commit para validar neste Pull Request."
+            exit 0
+          fi
+
+          failed=0
+
+          for sha in "${commits[@]}"; do
+            short_sha="$(git rev-parse --short "$sha")"
+            echo "::group::Commit ${short_sha}: $(git log -1 --format=%s "$sha")"
+
+            if ! git log -1 --format=%B "$sha" | "$COMMITLINT_BIN" --config "$COMMITLINT_CONFIG"; then
+              echo "::error::Commit ${short_sha} fora do padrão de mensagens de commit."
+              failed=1
+            fi
+
+            echo "::endgroup::"
+          done
+
+          exit "$failed"
+
+      - name: Validate PR title
+        if: ${{ !cancelled() && inputs.validate-pr-title }}
+        shell: bash
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_TITLE_PATTERN: ${{ inputs.pr-title-pattern }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$PR_TITLE" ]]; then
+            echo "::error::Este workflow deve ser executado em eventos de pull_request."
+            exit 1
+          fi
+
+          if [[ ! "$PR_TITLE" =~ $PR_TITLE_PATTERN ]]; then
+            echo "::error::Título do PR fora do padrão: \"${PR_TITLE}\". Esperado: ${PR_TITLE_PATTERN}"
+            exit 1
+          fi
+
+          echo "Título do PR válido: ${PR_TITLE}"

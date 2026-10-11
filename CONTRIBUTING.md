@@ -54,7 +54,7 @@ tipo: descrição
 ### Validação automática (commitlint)
 
 A adesão a este padrão passou a ser **verificada automaticamente** em cada Pull Request, usando o [commitlint](https://commitlint.js.org/) com o preset `@commitlint/config-conventional`.
-A validação **não** roda localmente por padrão (nenhum hook obrigatório é instalado). Ela roda em um workflow dedicado do GitHub Actions (`.github/workflows/commitlint.yml`), disparado nos eventos `opened`, `synchronize` e `reopened` de Pull Requests.
+A validação **não** roda localmente por padrão (nenhum hook obrigatório é instalado). Ela roda em um workflow dedicado do GitHub Actions (`.github/workflows/commitlint.yml`), disparado nos eventos `opened`, `edited`, `synchronize` e `reopened` de Pull Requests. Esse workflow chama o [workflow reutilizável de commitlint](docs/workflows/reusable-commitlint.md), que também valida o título do PR e pode ser usado pelos demais repositórios da APAE.
 
 #### Regras configuradas
 
