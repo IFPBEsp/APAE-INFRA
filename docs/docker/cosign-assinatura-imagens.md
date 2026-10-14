@@ -15,7 +15,7 @@ O objetivo é garantir que as imagens publicadas possam ser verificadas quanto �
 
 ## Visão geral do fluxo
 
-A assinatura ocorre somente depois que a imagem passa pelo build, scan de vulnerabilidades e promoção.
+A assinatura ocorre depois do build, scan de vulnerabilidades e criação do manifest candidato. As tags finais são publicadas somente após a verificação da assinatura.
 
 ```text
 código
@@ -28,13 +28,15 @@ scan com Trivy
   ↓
 security gate
   ↓
-promoção dos digests aprovados
+criação do manifest candidato com os digests aprovados
   ↓
 digest OCI final
   ↓
 assinatura keyless com Cosign
   ↓
 verificação da assinatura
+  ↓
+promoção para as tags finais
 ```
 
 A referência assinada é sempre imutável:
@@ -102,13 +104,15 @@ O job responsável pela assinatura é o job de publicação e promoção da imag
 A sequência relevante é:
 
 ```text
-Promote digests to final tags
+Create candidate manifest
   ↓
-Verify promoted image
+Verify candidate image
   ↓
-Sign promoted image with Cosign
+Sign candidate image with Cosign
   ↓
 Verify Cosign signature
+  ↓
+Promote verified image to final tags
 ```
 
 ## Permissões necessárias
@@ -158,7 +162,7 @@ Exemplo de referência:
 ghcr.io/ifpbesp/apae-geral-backend@sha256:a8e30f0971bc2e81cd5e3f868866b3e860788c08bd038d3392fa1d84d7e902d1
 ```
 
-A assinatura ocorre somente após a promoção dos digests aprovados.
+A assinatura ocorre sobre o digest do manifest candidato, antes da promoção para as tags finais.
 
 Se a assinatura falhar, o job também falha.
 
@@ -166,10 +170,10 @@ Não é utilizado `continue-on-error` na etapa de assinatura.
 
 ## Identidade confiável
 
-Durante a validação da implementação, o certificado emitido pelo fluxo keyless apresentou como identidade:
+A referência adotada nesta implementação para os callers é `@main`. A identidade exata exigida na verificação é:
 
 ```text
-https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/64-ci-adicionar-assinatura-de-imagens-docker-com-cosign
+https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main
 ```
 
 O issuer OIDC esperado é:
@@ -186,11 +190,13 @@ Exemplo:
 
 ```bash
 cosign verify "${IMAGE}@${DIGEST}" \
-  --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/64-ci-adicionar-assinatura-de-imagens-docker-com-cosign" \
+  --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
 ```
 
-> Após a estabilização da implementação, a identidade deve apontar para a referência estável adotada pelo `APAE-INFRA`, como uma branch estável, tag ou outra referência definida pela política da organização.
+O consumidor deve chamar `IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main` para corresponder à identidade exigida. Essa referência identifica o workflow reutilizável; a branch ou tag que dispara o consumidor pode ser diferente.
+
+Se a chamada passar a usar uma tag ou commit SHA, a identidade exigida na verificação também deverá ser atualizada para corresponder à nova referência.
 
 ## Verificação da assinatura
 
@@ -206,7 +212,7 @@ Exemplo:
 
 ```bash
 cosign verify \
-  --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/dev" \
+  --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
   ghcr.io/ifpbesp/<imagem>@sha256:<digest>
 ```
@@ -252,7 +258,11 @@ cosign verify
 
 não confirmar a assinatura, identidade ou issuer esperados, o job também falha.
 
-Consequentemente, a publicação não é considerada concluída com sucesso sem uma assinatura válida e verificável.
+Consequentemente, as tags finais não são criadas ou atualizadas quando a assinatura ou sua verificação falha. Os digests do build e a tag candidata podem permanecer no GHCR e não devem ser usados como sinal de aprovação para consumo.
+
+Uma falha em `cosign sign` pode deixar o candidato sem assinatura. Esse artefato não deve ser consumido sem uma assinatura válida para o digest, a identidade e o issuer exigidos.
+
+O GHCR não bloqueia o pull desses artefatos por causa da falha do workflow. O bloqueio no deploy depende de uma etapa obrigatória de verificação ou de uma admission policy; essa integração ainda não está implementada nesta issue.
 
 ## Validação realizada
 
@@ -300,7 +310,7 @@ Exemplo:
 
 ```bash
 cosign verify \
-  --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/dev" \
+  --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
   ghcr.io/ifpbesp/<imagem>@sha256:<digest>
 ```
@@ -380,7 +390,6 @@ A implementação dessa política no cluster não faz parte do escopo atual.
 
 Após a integração inicial, recomenda-se evoluir a solução com:
 
-- adoção de uma referência estável para a identidade do workflow;
 - documentação da política oficial de confiança da organização;
 - validação automática no processo GitOps;
 - admission policy no cluster;

@@ -23,10 +23,9 @@ O workflow centraliza as seguintes responsabilidades:
 - bloqueio da promoção quando forem encontradas vulnerabilidades acima do limite configurado;
 - criação das tags finais somente após aprovação do security gate;
 - publicação da referência imutável da imagem;
-- assinatura keyless da imagem promovida com Cosign e Sigstore;
+- assinatura keyless do manifest candidato com Cosign e Sigstore;
 - verificação da assinatura utilizando identidade OIDC e issuer esperados;
 - cache de build com GitHub Actions Cache;
-- geração de metadados OCI;
 - exposição de outputs para workflows consumidores.
 
 A correção de vulnerabilidades encontradas nas aplicações consumidoras não faz parte do escopo deste workflow.
@@ -56,22 +55,22 @@ security gate
    ↓
 persistência dos digests aprovados
    ↓
-promoção
-   ↓
-criação das tags finais
+criação do manifest candidato
    ↓
 digest OCI final
    ↓
 assinatura keyless com Cosign
    ↓
 verificação da assinatura
+   ↓
+promoção para as tags finais
 ```
 
 A imagem é enviada ao registry antes do scan utilizando apenas seu digest, sem receber as tags finais de publicação.
 
-As tags oficiais são criadas apenas após todas as plataformas configuradas passarem pelo scan.
+As tags oficiais são criadas apenas após todas as plataformas configuradas passarem pelo scan e a assinatura do digest final ser verificada.
 
-Após a promoção, o digest OCI final é assinado e validado com Cosign utilizando identidade OIDC do GitHub Actions.
+Antes da promoção, o digest OCI final é assinado e validado com Cosign utilizando identidade OIDC do GitHub Actions.
 
 A assinatura e a verificação são realizadas sobre a referência imutável:
 
@@ -99,11 +98,12 @@ A política relacionada às tags e ao uso de digest é documentada separadamente
 
 ### Tags geradas
 
-O workflow suporta:
+O workflow gera:
 
 - `sha-<short-sha>`: gerada para o commit que originou o build;
-- `vX.Y.Z`: gerada quando a execução é originada por uma tag semântica `v*`;
-- `latest`: opcional e permitida somente em execuções da branch `dev`.
+- `latest`: publicada automaticamente quando o consumidor executa em `dev`, após verificar a assinatura.
+
+A tag `vX.Y.Z` não é gerada por este workflow. A publicação de uma release semântica deve reutilizar a imagem já existente e será tratada em um workflow específico de release.
 
 O uso de `latest` para deploy, rollback ou auditoria não é recomendado.
 
@@ -119,7 +119,6 @@ O workflow recebe os seguintes parâmetros através de `workflow_call`:
 | `build-args` | não | vazio | Build args adicionais, um por linha |
 | `platforms` | não | `["linux/amd64"]` | Lista JSON de plataformas |
 | `target` | não | vazio | Stage alvo do Dockerfile |
-| `publish-latest` | não | `false` | Permite publicar `latest` quando o caller executa em `dev` |
 | `scan-severity` | não | `HIGH,CRITICAL` | Severidades que bloqueiam a promoção |
 
 ## Outputs
@@ -228,11 +227,15 @@ A promoção utiliza:
 docker buildx imagetools create
 ```
 
-Os digests individuais são usados para montar a imagem final e aplicar as tags geradas pelo `docker/metadata-action`.
+Os digests individuais são usados para montar o manifest candidato com a tag `candidate-<run-id>-<run-attempt>`, exclusiva da execução e tentativa para aquela imagem. Essa tag é auxiliar e não representa uma imagem aprovada para consumo.
 
 Para builds multi-platform, o digest final corresponde ao OCI Image Index criado durante essa etapa.
 
-Após a promoção, esse digest final é utilizado como referência para a assinatura e a verificação com Cosign.
+Esse digest final é assinado e verificado com Cosign. Somente então as tags geradas pelo `docker/metadata-action` são aplicadas a ele, usando `--prefer-index=false` para preservar o manifest. O workflow confere que o digest promovido é o mesmo digest assinado antes de exportar os outputs.
+
+Se a assinatura ou sua verificação falhar, as tags finais não são criadas ou atualizadas. Os digests do build e a tag candidata podem permanecer no GHCR; sua remoção deve seguir a política de retenção do registry.
+
+O job `build-and-scan` não executa quando o consumidor é disparado por `pull_request`. Como o job `publish` depende dele, o workflow não publica imagens ou assinaturas nesse evento.
 
 ## Segurança
 
@@ -268,7 +271,7 @@ Não é necessário utilizar PAT ou chave privada de assinatura de longa duraç�
 
 ### Assinatura e verificação
 
-A imagem promovida é assinada utilizando Cosign no modo keyless.
+O manifest candidato é assinado utilizando Cosign no modo keyless antes da promoção para as tags finais.
 
 A assinatura é realizada sobre:
 
@@ -278,9 +281,30 @@ ghcr.io/<owner>/<image>@sha256:<digest>
 
 A verificação valida a assinatura, a identidade do workflow autorizado e o issuer OIDC esperado.
 
+A referência adotada para os callers é `IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main`. A verificação exige exatamente:
+
+```text
+certificate-identity: https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main
+certificate-oidc-issuer: https://token.actions.githubusercontent.com
+```
+
 Os detalhes dessa política estão documentados em:
 
 [Assinatura e verificação de imagens Docker com Cosign](./cosign-assinatura-imagens.md)
+
+### Labels OCI
+
+Os metadados OCI específicos de cada imagem são definidos pelos próprios Dockerfiles padronizados.
+
+O reusable workflow disponibiliza `build-args` para que os callers forneçam os valores necessários, por exemplo:
+
+```yaml
+build-args: |
+  APP_VERSION=${{ github.sha }}
+  VCS_REF=${{ github.sha }}
+```
+
+Dessa forma, os `LABEL` definidos nos Dockerfiles permanecem como fonte dos metadados da aplicação, evitando que um conjunto genérico de labels seja aplicado indistintamente a imagens diferentes.
 
 ### Actions pinadas
 
@@ -333,13 +357,12 @@ permissions:
 
 jobs:
   publish-backend:
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@<ref>
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main
     with:
       context: ./apps/api
       dockerfile: ./apps/api/Dockerfile
       image-name: apae-geral-backend
       platforms: '["linux/amd64"]'
-      publish-latest: false
       scan-severity: HIGH,CRITICAL
       build-args: |
         APP_VERSION=${{ github.sha }}
@@ -350,9 +373,11 @@ A permissão `id-token: write` deve ser concedida pelo caller para permitir a as
 
 Embora o reusable workflow restrinja essa permissão ao job `publish`, o caller precisa disponibilizá-la como limite superior da execução.
 
-Durante desenvolvimento e validação, `<ref>` pode apontar para uma branch de feature.
+O gatilho `push` em `dev` refere-se à branch do repositório consumidor. A chamada com `@main` seleciona a referência do workflow reutilizável no `APAE-INFRA`, correspondente à identidade exigida pela verificação Cosign.
 
-Após estabilização, os repositórios consumidores devem utilizar uma referência estável, preferencialmente uma versão ou commit SHA aprovado.
+Os gatilhos são definidos no consumidor; o workflow reutilizável recebe a execução via `workflow_call`. O `latest` é publicado automaticamente quando a execução ocorre em `dev`, após verificar a assinatura. A publicação de tags semânticas pertence ao workflow específico de release e não exige adicionar um gatilho de tags a este caller.
+
+Caso a chamada seja alterada para uma branch de feature, versão ou commit SHA aprovado, a identidade exigida na verificação Cosign também deverá corresponder à referência adotada.
 
 ## Validação realizada
 
@@ -483,13 +508,15 @@ imagem analisada
   ↓
 security gate aprovado
   ↓
-tags promovidas
+manifest candidato criado
   ↓
 digest OCI final
   ↓
 imagem assinada com Cosign
   ↓
 assinatura verificada
+  ↓
+tags promovidas
   ↓
 artefato disponível para consumo
 ```
