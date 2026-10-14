@@ -26,12 +26,16 @@ Manter em um único lugar tudo que é infraestrutura como código, pipelines de 
 
 ## Estrutura de diretórios
 
+O esquema abaixo representa a organização pretendida do repositório; nem todos os ambientes e componentes listados já possuem implementação. O estado observado e as decisões propostas para a VPS estão no [estudo de Ansible](docs/ansible/07-arquitetura-proposta-e-proximos-passos.md).
+
 ```text
 .github/
   workflows/      # pipelines de CI/CD (GitHub Actions)
 argocd/           # manifests de aplicação para o ArgoCD
 docker/           # Dockerfiles e configurações de containers
 docs/             # documentação de padrões e boas práticas do repositório
+  ansible/        # estudo de gerenciamento declarativo da VPS
+  boas-praticas/  # padrões técnicos e operacionais
   argocd/         # documentação do fluxo do ArgoCD (GitOps)
   diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
 kubernetes/       # manifests e configurações do cluster
@@ -46,6 +50,8 @@ terraform/
 ```
 
 > Estrutura sujeita a evolução conforme surgirem novas necessidades de infraestrutura e de cada aplicação.
+
+Índices: [documentação](docs/README.md) · [estudo de Ansible para VPS](docs/ansible/README.md).
 
 ## Organização por ambiente
 
