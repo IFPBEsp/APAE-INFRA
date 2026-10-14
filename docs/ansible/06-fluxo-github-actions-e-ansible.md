@@ -69,6 +69,7 @@ O job de apply:
 Definir `concurrency` por ambiente/host para serializar aplicações e não cancelar execução que já possa estar alterando a VPS. As permissões GitHub devem ser declaradas por job no menor nível possível. Fixar actions externas por SHA conforme as boas práticas do projeto.
 
 ### Exemplo de gatilhos para o futuro ansible-apply.yml
+
 ```yaml
 on:
 push:
