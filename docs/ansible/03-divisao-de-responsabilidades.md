@@ -13,13 +13,15 @@ Cada recurso deve ter uma ferramenta proprietária para seu estado declarado. Gi
 | VPS, rede, IP, volumes, DNS e firewall do provedor | Terraform, quando houver integração suportada | Na HostGator, confirmar disponibilidade de API ou provider. Sem suporte, registrar o provisionamento externo como exceção. |
 | cloud-init | Terraform e cloud-init, se suportados | Terraform fornece user-data; cloud-init executa apenas o bootstrap inicial de uma nova VPS. |
 | SO, usuários, SSH, pacotes e firewall local | Ansible | Configuração e manutenção do sistema operacional da VPS. |
-| NGINX externo, Certbot, systemd e diretórios do host | Ansible | Gerencia o proxy reverso externo, a terminação TLS e as portas públicas 80/443. |
+| Serviços e agentes instalados no host | Ansible | Gerencia unidades systemd, diretórios e demais serviços do Ubuntu; NGINX externo e Certbot não fazem parte da arquitetura inicial selecionada. |
 | Cluster Kubernetes k3s single-node | Ansible | Instalação, configuração, versionamento e manutenção do k3s na VPS, conforme a issue #90. |
 | Instalação inicial do ArgoCD | Ansible | Bootstrap do ArgoCD após a disponibilização do cluster k3s. |
 | AppProject e Application raiz | Ansible | Mantidos pelo playbook enquanto estiverem excluídos da reconciliação do ArgoCD. |
-| CRDs do Gateway API | ArgoCD | Instalação e atualização declarativa, garantindo sua disponibilização antes dos recursos dependentes. |
-| NGINX Gateway Fabric | ArgoCD | Instalação, configuração e manutenção do controller no cluster após a disponibilização dos CRDs necessários. |
-| GatewayClass, Gateway e HTTPRoute | ArgoCD | Recursos declarativos de entrada e roteamento, versionados no Git e reconciliados no cluster. |
+| CRDs do Gateway API | ArgoCD, em Application de infraestrutura | Instalação e atualização declarativa, com permissões para recursos de cluster e sincronização antes dos recursos dependentes. |
+| NGINX Gateway Fabric e data plane | ArgoCD, em Application de infraestrutura | Instalação e atualização do controller e data plane, após disponibilização dos CRDs necessários. |
+| GatewayClass, Gateway e HTTPRoute | ArgoCD | Recursos declarativos de entrada e roteamento; GatewayClass é de escopo de cluster e exige permissões específicas. |
+| cert-manager e certificados TLS Kubernetes | ArgoCD, em Application de infraestrutura | Instalação e manutenção do cert-manager, seus CRDs e configurações; certificados e Secrets TLS reconciliados conforme a solução ACME adotada. |
+| Exposição do Gateway nas portas 80/443 | Ansible e ArgoCD, por recursos distintos | Ansible prepara host, k3s e rede local; ArgoCD gerencia os recursos Kubernetes do Gateway. Não há um segundo proxy HTTP no host. |
 | Namespaces, Deployments, Services e workloads Kubernetes | ArgoCD | Reconciliação dos recursos atribuídos às Applications gerenciadas pelo ArgoCD. |
 | Agentes e serviços de observabilidade do host | Ansible | Instalação e configuração dos componentes executados diretamente na VPS. |
 | Componentes de observabilidade Kubernetes | ArgoCD | Gerenciamento declarativo dos workloads e recursos de monitoramento executados dentro do cluster. |
@@ -34,8 +36,8 @@ Na VPS atual (HostGator simples, sem painel), o firewall a gerenciar é o do Ubu
 A role de firewall do Ansible deverá considerar os requisitos de rede do
 k3s single-node, conforme a issue #90.
 
-A documentação oficial do k3s recomenda desabilitar o UFW para evitar
-conflitos com a rede Kubernetes. Caso o UFW seja mantido habilitado,
+A documentação do k3s alerta para conflitos do UFW com a rede Kubernetes e
+recomenda desabilitá-lo como opção mais simples. Caso o UFW seja mantido habilitado,
 a configuração deverá contemplar, no mínimo:
 
 - Comunicação dos pods na rede `10.42.0.0/16`, por padrão.
@@ -56,7 +58,7 @@ a exposição de Services do tipo NodePort. Dependendo do modo de
 funcionamento do kube-proxy, regras de iptables/nftables podem
 interagir com o processamento das regras do firewall local.
 
-A implementação deverá:
+Caso sejam utilizados Services NodePort, a implementação deverá:
 
 - Restringir a exposição dos NodePorts às interfaces e origens
   estritamente necessárias.
@@ -74,31 +76,33 @@ Referência:
 ## Fluxo
 
 ```text
-PR/merge no APAE-INFRA
-        |
-        |-- Terraform
-        |     Recursos do provedor, se houver integração suportada
-        |
-        |-- Ansible
-        |     Sistema operacional, SSH e firewall local
-        |     NGINX externo e Certbot
-        |     Instalação e configuração do k3s single-node
-        |     Bootstrap do ArgoCD, AppProject e Application raiz
-        |
-        `-- ArgoCD
-              CRDs do Gateway API
-              NGINX Gateway Fabric
-              GatewayClass, Gateway e HTTPRoute
-              Applications filhas e workloads Kubernetes
-
-GitHub Actions valida e orquestra Terraform e Ansible.
+Mudança versionada no APAE-INFRA
+       |
+       +-- Pull Request para dev: lint e validações sem acesso à produção
+       |
+       +-- Merge em main: apply Ansible controlado pelo
+       |   GitHub Environment production e aprovação autorizada
+       |        |
+       |        +-- Terraform (se houver integração com o provedor)
+       |        |     Recursos externos à VPS
+       |        |
+       |        `-- Ansible
+       |              SO, usuários, SSH e firewall local
+       |              Instalação e manutenção do k3s single-node
+       |              Bootstrap do ArgoCD, AppProject e Application raiz
+       |
+       `-- ArgoCD (após bootstrap e conforme política de sync)
+             CRDs do Gateway API e cert-manager
+             NGINX Gateway Fabric e data plane
+             GatewayClass, Gateway, HTTPRoute e certificados
+             Applications filhas e workloads Kubernetes
 ```
 
-O Ansible instala e configura o k3s single-node, conforme a [issue #90](https://github.com/IFPBEsp/APAE-INFRA/issues/90).
+GitHub Actions valida e orquestra as execuções aprovadas de Terraform e Ansible. O merge em `dev` **não aplica mudanças na VPS de produção**. O ArgoCD reconcilia recursos Kubernetes conforme as políticas de sincronização de cada Application; a instalação de componentes de infraestrutura exige Applications dedicadas, permissões compatíveis e ordenação de dependências.
 
-O bootstrap do ArgoCD também pertence ao Ansible, incluindo sua instalação, o AppProject e a Application raiz. Enquanto `project.yaml` e`app-of-apps.yaml` estiverem excluídos do caminho reconciliado, suas alterações deverão ser realizadas pelo playbook.
+O Ansible instala e configura o k3s single-node conforme a [issue #90](https://github.com/IFPBEsp/APAE-INFRA/issues/90). Também executa o bootstrap do ArgoCD, incluindo instalação, AppProject e Application raiz. Enquanto `project.yaml` e `app-of-apps.yaml` estiverem excluídos do caminho reconciliado, suas alterações deverão ser realizadas pelo playbook.
 
-Após o bootstrap, o ArgoCD reconcilia as Applications filhas e os recursos Kubernetes atribuídos a elas, evitando que duas ferramentas administrem o mesmo objeto.
+Após o bootstrap, o ArgoCD reconcilia as Applications filhas e os recursos atribuídos a elas, sem que duas ferramentas administrem o mesmo objeto. A recuperação do bootstrap deve contemplar reinstalação do k3s e do ArgoCD, reaplicação dos objetos de bootstrap, validação dos CRDs e restauração de dados persistentes a partir de backups independentes.
 
 ## Compatibilidade com a decisão anterior de Terraform
 
@@ -120,7 +124,7 @@ A divisão proposta para esse ambiente é:
 - **ArgoCD:** reconciliação das Applications filhas e dos recursos Kubernetes
   atribuídos a elas após o bootstrap.
 
-O AppProject e a Application raiz permanecem sob responsabilidade do Ansible
+O AppProject de bootstrap e a Application raiz permanecem sob responsabilidade do Ansible
 enquanto estiverem excluídos do caminho reconciliado pelo ArgoCD. Portanto,
 o autogerenciamento integral previsto na decisão anterior não se aplica a
 esses objetos na arquitetura aqui proposta.
@@ -130,44 +134,47 @@ o Terraform**. A delimitação definitiva do seu escopo, bem como a atualizaçã
 dos documentos anteriores, deverá ser validada com o time na
 [issue #86](https://github.com/IFPBEsp/APAE-INFRA/issues/86).
 
-## NGINX, TLS e Kubernetes
+## Gateway API, TLS e Kubernetes
 
-A arquitetura proposta utiliza um cluster Kubernetes k3s single-node na VPS HostGator, conforme a [issue #90](https://github.com/IFPBEsp/APAE-INFRA/issues/90).
+A arquitetura selecionada no estudo da [issue #60](https://github.com/IFPBEsp/APAE-INFRA/issues/60) utiliza **Gateway API exposto diretamente com NGINX Gateway Fabric** sobre o **k3s single-node** previsto na [issue #90](https://github.com/IFPBEsp/APAE-INFRA/issues/90). Não haverá NGINX externo ao cluster nem Certbot como componentes obrigatórios da primeira implementação.
 
-O NGINX externo, instalado e gerenciado pelo Ansible, será a borda pública da infraestrutura e o responsável pela terminação TLS. Ele será o único componente da VPS a utilizar publicamente as portas 80/443.
-
-O tráfego será encaminhado do NGINX externo para um endpoint interno do NGINX Gateway Fabric, responsável por implementar o Gateway API dentro do cluster.
-
-Fluxo proposto:
+Fluxo lógico selecionado:
 
 ```text
-Internet
-   |
-   v
-NGINX externo (Ansible)
-   | TLS / portas 80 e 443
-   v
+Internet / DNS
+      |
+      | HTTP :80 / HTTPS :443
+      v
+IP público da VPS
+      |
+      v
 NGINX Gateway Fabric (ArgoCD)
-   |
-   v
+      | Terminação TLS e entrada HTTP/HTTPS
+      v
 Gateway / HTTPRoute (ArgoCD)
-   |
-   v
-Services Kubernetes
-   |
-   v
+      |
+      v
+Services ClusterIP
+      |
+      v
 Aplicações APAE
 ```
 
+O diagrama é lógico: o mecanismo real que publica o data plane nas portas 80/443 — por exemplo, ServiceLB do k3s ou configuração de rede adequada — deverá ser selecionado e testado na implementação. Não pressupõe um NGINX ou um NodePort privado intermediário.
+
 A divisão de responsabilidades será:
 
-- **Ansible:** instalação e manutenção do NGINX externo, Certbot, certificados e configuração do proxy no host.
-- **ArgoCD:** instalação declarativa dos CRDs do Gateway API, do NGINX Gateway Fabric e gerenciamento dos recursos GatewayClass, Gateway e HTTPRoute.
-- **Ansible:** instalação e configuração do k3s single-node, incluindo a decisão operacional de desabilitar ou manter o Traefik integrado.
+- **Ansible:** instalação e manutenção do k3s, configuração do host, SSH e firewall local, e bootstrap do ArgoCD; preparação das condições de rede e prevenção de conflitos de porta.
+- **ArgoCD (infraestrutura):** instalação e atualização dos CRDs do Gateway API, do NGINX Gateway Fabric e do cert-manager, com Applications, permissões e ordem de sincronização adequadas.
+- **ArgoCD (roteamento):** reconciliação de GatewayClass, Gateway, HTTPRoute e demais recursos declarativos, com Services das aplicações preferencialmente em `ClusterIP`.
+- **NGINX Gateway Fabric:** implementação efetiva do proxy de entrada e terminação TLS dentro do Kubernetes.
+- **cert-manager:** emissão e renovação automatizada dos certificados TLS, após definição de emissores e método de validação ACME; o uso de um certificado para hostname compartilhado é suficiente no roteamento inicial por path.
 
-A instalação dos CRDs deverá ocorrer antes da reconciliação dos recursos Kubernetes que dependem deles.
+Os CRDs deverão estar disponíveis antes de controllers e recursos dependentes. O AppProject dedicado à infraestrutura deverá permitir os namespaces e recursos de escopo de cluster necessários sem ampliar indiscriminadamente as permissões do AppProject das aplicações.
 
-O endpoint interno entre o NGINX externo e o Gateway Fabric, assim como a estratégia de exposição do controller e a configuração do Traefik, deverão ser definidos na implementação.
+A instalação do k3s deverá resolver conflitos com o Traefik integrado. O ServiceLB poderá ser mantido ou desabilitado de acordo com a estratégia de exposição selecionada: **não desabilitá-lo automaticamente sem justificar o mecanismo alternativo**. Validar as portas públicas 80/443, preservação do IP real, HTTPS, renovação TLS, acesso administrativo e recuperação após reinicializações.
+
+A alternativa **NGINX externo + Gateway API** permanece documentada no estudo de NGINX apenas para reavaliação mediante requisito operacional concreto, não como padrão a provisionar pelo Ansible.
 
 ## Observabilidade
 

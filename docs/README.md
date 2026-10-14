@@ -8,3 +8,4 @@
 - [Boas práticas do repositório](boas-praticas/README.md)
 - [Workflows reutilizáveis de validação Kubernetes](workflows/reusable-k8s-lint.md)
 - [ADRs](adr/)
+  - [ADR 004 — Adoção de Ansible com GitHub Actions](adr/004-adocao-ansible-github-actions.md)
