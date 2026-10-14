@@ -1,6 +1,6 @@
 # Parte 1 — Contexto, requisitos e estado atual
 
-> Este documento faz parte do estudo de arquitetura de NGINX e proxy reverso para os serviços APAE.
+> Este documento faz parte do estudo de arquitetura de entrada HTTP/HTTPS e roteamento para os serviços APAE.
 
 ## 1. Contexto
 
@@ -12,80 +12,108 @@ Os principais produtos considerados neste estudo são:
 - APAE Atendimento;
 - APAE Gestão Escolar;
 - Site Comemorativo;
-- novos serviços que venham a ser incorporados à plataforma.
+- novos serviços incorporados futuramente.
 
-O objetivo deste documento é definir uma arquitetura de entrada HTTP/HTTPS que seja:
+O objetivo é definir uma arquitetura de entrada HTTP/HTTPS segura, simples de operar, auditável, reproduzível e compatível com GitOps, sem acoplar a configuração da VPS às rotas de cada aplicação.
 
-- segura;
-- simples de operar;
-- compatível com Kubernetes;
-- compatível com o modelo GitOps adotado no `APAE-INFRA`;
-- desacoplada das aplicações;
-- preparada para crescimento futuro;
-- auditável e reproduzível.
+A arquitetura selecionada no estudo é **Gateway API com NGINX Gateway Fabric exposto diretamente**, dentro de um **cluster k3s single-node** na VPS HostGator, conforme o escopo da [issue #90](https://github.com/IFPBEsp/APAE-INFRA/issues/90). Os recursos Kubernetes serão declarados no Git e reconciliados pelo ArgoCD, após o bootstrap necessário.
 
-A questão central analisada foi:
+Fluxo lógico previsto:
 
-> **Como o tráfego externo deve entrar na infraestrutura da APAE, qual deve ser o papel do NGINX e onde deve ficar o roteamento específico de cada aplicação?**
+```text
+Internet / DNS
+      |
+      v
+IP público da VPS HostGator
+      | HTTP/HTTPS (80/443)
+      v
+NGINX Gateway Fabric (data plane no k3s)
+      | TLS e processamento HTTP
+      v
+Gateway / HTTPRoute
+      |
+      v
+Services ClusterIP
+      |
+      v
+Pods das aplicações APAE
+```
+
+O diagrama é conceitual: os recursos `Gateway` e `HTTPRoute` descrevem a configuração aplicada pelo controller e não representam proxies adicionais no caminho de rede.
+
+**Não está prevista uma segunda instância obrigatória de NGINX no host.** O NGINX externo foi avaliado como alternativa, mas não selecionado para o cenário atual por adicionar outra camada de proxy sem requisito operacional comprovado. A comparação e a justificativa estão em [Alternativas e arquitetura](02-alternativas-e-arquitetura.md).
+
+A decisão arquitetural não equivale a uma implantação concluída. A forma de expor o data plane nas portas 80/443, a configuração dos componentes padrão do k3s, a emissão de certificados e os procedimentos de recuperação ainda exigem implementação e validação.
+
+A questão central do estudo é:
+
+> **Como expor os produtos APAE com segurança, mantendo o roteamento específico de cada aplicação declarado no Kubernetes e gerenciado por GitOps?**
 
 ---
 
 ## 2. Requisitos arquiteturais
 
-A solução deve permitir:
+A solução deverá atender aos seguintes requisitos:
 
-- exposição controlada dos serviços públicos;
-- manutenção de bancos, storage e serviços auxiliares fora da Internet;
-- terminação TLS;
-- redirecionamento HTTP para HTTPS;
-- preservação do IP e contexto da requisição original;
-- roteamento por host e/ou path;
-- integração com Kubernetes;
-- integração com ArgoCD;
-- configuração versionada em Git;
-- escalabilidade para novos serviços;
-- observabilidade da camada de entrada;
-- políticas básicas de segurança de borda;
-- suporte a uploads e timeouts compatíveis com os produtos;
-- evolução futura para múltiplos nodes sem redesenhar toda a arquitetura.
+- expor somente os serviços públicos autorizados;
+- manter bancos de dados, storage e serviços auxiliares sem exposição pública direta;
+- disponibilizar entrada HTTP/HTTPS nas portas 80/443, com terminação TLS no Gateway;
+- automatizar emissão e renovação de certificados, com cert-manager como solução prevista, sujeita à validação da integração;
+- redirecionar HTTP para HTTPS de acordo com os recursos suportados pela implementação;
+- preservar corretamente o host, o protocolo e o IP de origem, considerando SNAT/DNAT e sem confiar em headers enviados arbitrariamente por clientes;
+- declarar roteamento por host e/ou path usando `Gateway` e `HTTPRoute`;
+- manter os Services das aplicações preferencialmente como `ClusterIP`;
+- versionar os manifests e reconciliá-los via ArgoCD;
+- evitar regras específicas de cada produto na configuração do host;
+- prever logs, métricas, limites de requisições, uploads e timeouts compatíveis com as aplicações;
+- evitar conflitos de portas e controllers com Traefik e outros componentes do k3s;
+- validar acessibilidade pública, comportamento das rotas e mecanismos de recuperação;
+- permitir evolução futura para mais serviços e, se necessário, múltiplos nós, mediante revisão das premissas de infraestrutura.
+
+A compatibilidade das aplicações com os prefixos públicos é um requisito próprio: uma `HTTPRoute` não corrige automaticamente `basePath`, URLs de API, assets, cookies ou redirecionamentos inadequados.
 
 ---
 
 ## 3. Levantamento do estado atual
 
+Os caminhos descritos abaixo representam o comportamento e as configurações identificados nos projetos, não uma confirmação de que todos já estejam publicados no k3s. O roteamento definitivo deverá ser testado com as aplicações reais.
+
 ### 3.1 APAE Geral
 
-O frontend utiliza Next.js com:
+O frontend Next.js utiliza:
 
 ```text
 basePath: /apae-geral
 ```
 
-O backend Spring também trabalha abaixo do prefixo:
+O backend Spring utiliza o contexto:
 
 ```text
 /apae-geral
 ```
 
-A API pública atualmente é consumida pelo frontend através de:
+As rotas `/apae-geral/api/*` são **Route Handlers do Next.js**, implementados em `apps/apae/src/app/api/`. Portanto, requisições a esse prefixo devem chegar ao **frontend**, e não diretamente ao Spring.
 
-```text
-/apae-geral/api
-```
-
-O modelo atual favorece roteamento baseado em path.
+O Spring disponibiliza endpoints sob seu próprio contexto, como `/apae-geral/patients` e `/apae-geral/auth`, sem o prefixo `/api`. Na arquitetura selecionada, o backend permanece acessível pelo **Service interno** do Kubernetes; suas chamadas devem seguir a configuração de comunicação adotada pelo frontend.
 
 Fluxo conceitual:
 
 ```text
-/apae-geral
-      ↓
-frontend
-
-/apae-geral/api
-      ↓
-backend
+Internet
+   |
+   v
+HTTPRoute: PathPrefix /apae-geral
+   |
+   v
+Service frontend Next.js (ClusterIP)
+   |-- páginas e recursos estáticos
+   |-- /apae-geral/api/* (Route Handlers)
+   `-- chamadas ao Service interno do Spring
+          |-- /apae-geral/patients
+          `-- /apae-geral/auth
 ```
+
+**Não criar uma regra pública específica para encaminhar `/apae-geral/api/*` ao Spring**, pois isso direcionaria os Route Handlers ao serviço incorreto e poderia provocar erros HTTP 404.
 
 ---
 
@@ -103,25 +131,29 @@ O backend Spring utiliza:
 server.servlet.context-path=/gestao-escolar
 ```
 
-O frontend também possui configuração de rewrite para comunicação com o backend.
+O frontend também possui configuração de rewrite para comunicação com o backend. Diferentemente do APAE Geral, a rota `/gestao-escolar/api` corresponde ao caminho de acesso ao backend no modelo estudado.
 
 Fluxo conceitual:
 
 ```text
 /gestao-escolar
-      ↓
-frontend
+      |
+      v
+Service frontend
 
 /gestao-escolar/api
-      ↓
-backend
+      |
+      v
+Service backend
 ```
+
+A configuração definitiva da `HTTPRoute` deverá respeitar os paths efetivamente atendidos pela aplicação e os rewrites existentes, sem presumir que uma regra de `PathPrefix` deva reescrever a URL.
 
 ---
 
 ### 3.3 Site Comemorativo
 
-O Site Comemorativo utiliza Next.js e já possui suporte a:
+O Site Comemorativo utiliza Next.js e possui configuração de base path via:
 
 ```text
 NEXT_PUBLIC_BASE_PATH
@@ -137,9 +169,12 @@ Fluxo conceitual:
 
 ```text
 /site-comemorativo
-      ↓
-Next.js
+       |
+       v
+Service Next.js
 ```
+
+Antes da publicação, é necessário garantir que o valor usado no build corresponda ao prefixo configurado na `HTTPRoute` e validar recursos estáticos e redirecionamentos.
 
 ---
 
@@ -153,17 +188,24 @@ O backend utiliza:
 
 como context path.
 
-O frontend atualmente não possui um `basePath` equivalente, mas utiliza `NEXT_PUBLIC_API_URL` em build-time para definir a URL da API.
+O frontend Next.js **ainda não está preparado para ser publicado sob `/atendimento`**: não possui `basePath` correspondente, e a configuração observada de `NEXT_PUBLIC_API_URL` utiliza `http://localhost:8080` durante o build.
 
-Esse produto precisará de atenção especial na definição final de URL externa, principalmente se for mantido o modelo baseado em paths.
+Antes da primeira implantação por roteamento baseado em path, será necessário:
+
+- adequar o `basePath` do frontend para `/atendimento` ou revisar formalmente a estratégia de URL pública;
+- configurar `NEXT_PUBLIC_API_URL` para um endereço alcançável pelo cliente no ambiente de produção, sem depender de `localhost` do navegador;
+- validar chamadas à API, recursos estáticos, navegação, autenticação, cookies e redirecionamentos;
+- verificar o comportamento de HTTPRoute e dos paths realmente servidos pelo frontend e pelo backend.
+
+**Essa adequação é um pré-requisito para publicar o APAE Atendimento em `/atendimento`**, não uma funcionalidade já implementada pelo Gateway API.
 
 ---
 
 ### 3.5 NGINX já existente
 
-O `apae-site-comemorativo` possui atualmente um experimento integrado via Docker Compose com NGINX atuando como reverse proxy.
+O repositório `apae-site-comemorativo` possui um experimento integrado via Docker Compose com NGINX atuando como proxy reverso.
 
-A configuração existente possui regras para:
+A configuração contém referências a caminhos como:
 
 ```text
 /apae-geral
@@ -172,10 +214,18 @@ A configuração existente possui regras para:
 /gestao-escolar/api
 ```
 
-Esse experimento demonstra que o roteamento baseado em paths é viável para os produtos atuais.
+Esse experimento oferece referências úteis sobre os prefixes e sobre a integração dos produtos, mas corresponde a um ambiente Docker Compose e **não representa a arquitetura selecionada para produção no Kubernetes**.
 
-Entretanto, essa configuração foi criada para um ambiente baseado em Docker Compose e não deverá ser transportada diretamente como arquitetura de produção Kubernetes.
+Para o k3s, o roteamento das aplicações será declarado em recursos `HTTPRoute`, implementados pelo NGINX Gateway Fabric e reconciliados por GitOps. Não será necessário transportar as regras específicas do `nginx.conf` para um NGINX externo obrigatório.
 
-Ela deve ser tratada como **baseline histórica e prova de conceito**.
+A configuração existente deve ser tratada como **referência histórica e prova de conceito**, sujeita à validação do comportamento das aplicações.
 
 ---
+
+## Referências relacionadas
+
+- [Alternativas e arquitetura](02-alternativas-e-arquitetura.md)
+- [TLS, segurança de borda e acesso](03-tls-seguranca-e-acesso.md)
+- [GitOps, operação, riscos e próximos passos](05-gitops-operacao-riscos-e-proximos-passos.md)
+- [Issue #60 — Arquitetura de entrada HTTP/HTTPS](https://github.com/IFPBEsp/APAE-INFRA/issues/60)
+- [Issue #90 — Cluster k3s single-node](https://github.com/IFPBEsp/APAE-INFRA/issues/90)
