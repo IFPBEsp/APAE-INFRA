@@ -26,6 +26,7 @@ O workflow centraliza as seguintes responsabilidades:
 - assinatura keyless do manifest candidato com Cosign e Sigstore;
 - verificação da assinatura utilizando identidade OIDC e issuer esperados;
 - cache de build com GitHub Actions Cache;
+- geração de tags finais conforme a política de versionamento;
 - exposição de outputs para workflows consumidores.
 
 A correção de vulnerabilidades encontradas nas aplicações consumidoras não faz parte do escopo deste workflow.
@@ -391,7 +392,9 @@ Durante a validação, foram confirmados:
 - autenticação e publicação no GHCR;
 - publicação por digest;
 - scan da referência imutável;
-- bloqueio da promoção após findings de segurança.
+- bloqueio da promoção após findings de segurança;
+- assinatura keyless com Cosign;
+- verificação da assinatura com identidade OIDC e issuer esperados.
 
 O teste encontrou:
 
@@ -454,10 +457,10 @@ Antes de migrar um repositório para o reusable workflow, recomenda-se:
 
 1. validar o Dockerfile localmente;
 2. validar o workflow caller com `actionlint`;
-3. executar um primeiro build real;
-4. analisar os findings do Trivy;
-5. abrir issues específicas para vulnerabilidades pré-existentes;
-6. garantir que o caller forneça `id-token: write` para a assinatura keyless;
+3. garantir que o caller forneça `id-token: write` para a assinatura keyless;
+4. executar um primeiro build real;
+5. analisar os findings do Trivy;
+6. abrir issues específicas para vulnerabilidades pré-existentes;
 7. somente então substituir pipelines legados quando aplicável.
 
 Aplicações com vulnerabilidades `HIGH` ou `CRITICAL` serão bloqueadas pela configuração padrão.
