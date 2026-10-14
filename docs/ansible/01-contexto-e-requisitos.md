@@ -19,10 +19,16 @@ O Ansible deverá manter o estado do host e dos serviços externos ao cluster:
 - firewall local, em coordenação com as regras de rede do provedor;
 - NGINX externo, configuração de proxy e serviço `systemd`;
 - Certbot, renovação de certificados e reload validado do NGINX;
-- pré-requisitos e instalação da distribuição Kubernetes, depois de decididas distribuição e topologia;
+- pré-requisitos, instalação, configuração e manutenção do cluster Kubernetes k3s single-node, conforme a issue #90, incluindo versionamento, configuração de rede e definição sobre o Traefik integrado;
 - ferramentas auxiliares e agentes de observabilidade instalados no host.
 
-O Ansible não deve gerenciar os workloads Kubernetes que pertencem ao ArgoCD. Uma ferramenta deve ser definida como proprietária de cada recurso; recursos de rede do provedor são Terraform, enquanto regras locais do host são Ansible.
+O Ansible é responsável pela configuração da VPS, pela instalação e manutenção do k3s single-node e pelo bootstrap inicial do ArgoCD, incluindo o AppProject e a Application raiz enquanto esses objetos permanecerem fora do caminho reconciliado.
+
+O ArgoCD é responsável pelas Applications filhas e pelos recursos Kubernetes atribuídos a elas. A arquitetura proposta também atribui ao ArgoCD a instalação declarativa dos CRDs do Gateway API, do NGINX Gateway Fabric e dos recursos GatewayClass, Gateway e HTTPRoute, respeitando a ordem de instalação das dependências.
+
+O NGINX externo e o Certbot permanecem sob responsabilidade do Ansible. O NGINX do host será responsável pelas portas públicas 80/443 e encaminhará o tráfego para o endpoint interno do Gateway.
+
+Cada recurso deve possuir uma ferramenta proprietária, evitando sobreposição entre Terraform, Ansible e ArgoCD. O Terraform gerencia recursos do provedor somente quando existir integração suportada, enquanto o Ansible mantém as configurações locais do host.
 
 ## Requisitos de qualidade
 
@@ -40,20 +46,36 @@ Ubuntu 22.04 LTS está no ciclo de suporte padrão até maio de 2027. O plano de
 ## Fluxo esperado
 
 ```text
-Terraform → provisiona recursos do provedor somente onde existir integração suportada
-cloud-init → prepara acesso inicial em novas instâncias somente se user-data estiver disponível
-Ansible → configura o host e os serviços externos ao cluster
-ArgoCD → reconcilia recursos dentro do Kubernetes
-GitHub Actions → valida e orquestra Terraform e Ansible
+Terraform → recursos externos com integração suportada
+cloud-init → acesso inicial em novas VPS, se suportado
+Ansible → host, NGINX externo, Certbot, k3s e bootstrap ArgoCD
+ArgoCD → Gateway API, NGINX Gateway Fabric e workloads Kubernetes
+GitHub Actions → validação, aprovação e orquestração
 ```
 
 ## Decisões ainda necessárias para implementação
 
-HostGator, plano VPS simples sem painel e Ubuntu 22.04 LTS são conhecidos para a VPS atual. Ainda precisam ser confirmados disponibilidade de API de provisionamento e user-data/cloud-init, existência de firewall de rede externo ao host, conectividade privada, topologia do cluster e distribuição Kubernetes. Para a instância atual, o firewall do Ubuntu é o escopo de Ansible. Esses pontos restantes condicionam Terraform, reconstrução, inventários, portas e conectividade do runner. Preferir VPN/bastion/rede privada quando disponível; não abrir SSH irrestrito nem instalar o runner de produção na própria VPS alvo.
+A VPS atual utiliza a HostGator, em plano simples sem painel, com Ubuntu 22.04 LTS. A arquitetura prevista para o cluster é k3s single-node, conforme a [issue #90](https://github.com/IFPBEsp/APAE-INFRA/issues/90).
 
-Referências do provedor: [sistemas operacionais e acesso root da VPS](https://suporte.hostgator.com.br/hc/pt-br/articles/30816739471123-Como-come%C3%A7ar-a-usar-a-VPS-na-HostGator) e [acesso SSH em VPS Linux](https://suporte.hostgator.com.br/hc/pt-br/articles/30812824748051-Como-acessar-um-servidor-via-SSH).
+Ainda precisam ser confirmados os seguintes aspectos operacionais:
 
-Referência de suporte Ubuntu: [ciclo de vida do Ubuntu 22.04 LTS](https://ubuntu.com/about/release-cycle?product=ubuntu&release=ubuntu&version=22.04+LTS).
+- disponibilidade de API de provisionamento e suporte a user-data/cloud-init;
+- existência de firewall de rede externo ao host;
+- conectividade privada entre o GitHub Actions e a VPS;
+- versão fixa do k3s e seus parâmetros de instalação;
+- política de manutenção ou desabilitação do Traefik integrado ao k3s;
+- endpoint interno entre o NGINX externo e o Gateway no cluster;
+- instalação e ordenação dos CRDs do Gateway API e do NGINX Gateway Fabric;
+- configuração de inventários, portas e acesso administrativo;
+- mecanismos de backup, recuperação e atualização do sistema operacional.
+
+Para a VPS atual, o firewall local do Ubuntu pertence ao Ansible.
+
+A arquitetura de entrada proposta considera NGINX externo e Gateway API dentro do cluster, conforme o estudo da [issue #60](https://github.com/IFPBEsp/APAE-INFRA/issues/60).
+
+A divisão definitiva entre Terraform, Ansible e ArgoCD deverá ser consolidada com o time, conforme a [issue #86](https://github.com/IFPBEsp/APAE-INFRA/issues/86).
+
+Preferir VPN, bastion ou rede privada quando disponíveis. Não abrir SSH irrestrito à Internet nem executar o runner privilegiado de produção na própria VPS administrada.
 
 ## Referências
 

@@ -5,18 +5,43 @@
 ## Fluxo aprovado
 
 ```text
-Pull Request
+Pull Request para dev
   └── validação estática, sem acesso à VPS ou secrets de produção
-        ↓ revisão e merge
-Apply disparado após merge
-  └── aguarda aprovação no GitHub Environment de produção
-        ↓ aprovação
+        ↓
+Revisão e merge em dev
+  └── nenhuma aplicação automática em produção
+        ↓
+Pull Request de dev para main
+  └── revisão e validações obrigatórias
+        ↓
+Merge em main
+  └── filtro de paths para arquivos Ansible
+        ↓
+GitHub Environment production
+  └── aprovação obrigatória de responsável autorizado
+        ↓
 Ansible aplica o commit aprovado na VPS
         ↓
 Verificação de saúde e registro do resultado
 ```
 
-O workflow pode também ser iniciado por `workflow_dispatch` para uma operação controlada. Inputs devem selecionar somente playbooks, tags e inventários previamente permitidos; não aceitar comandos arbitrários. Execuções que atingem produção passam pelo mesmo Environment protegido. O Environment protege o job de apply: disparo após merge não significa execução sem aprovação.
+A branch `dev` é utilizada para integração e validação das mudanças. O merge em `dev` não deve iniciar um apply de produção.
+
+A aplicação automática em produção somente poderá ser iniciada por um push na branch `main`, decorrente de uma alteração aprovada, e quando houver modificações nos caminhos monitorados pelo workflow Ansible.
+
+Também será permitido `workflow_dispatch` para operações controladas. Entretanto, **qualquer execução destinada à produção deverá utilizar exclusivamente código da branch `main`, previamente revisado e integrado por Pull Request**.
+
+Para garantir essa restrição, o GitHub Environment `production` deverá ser configurado com:
+
+- **Deployment branches and tags:** permitir exclusivamente a branch `main`.
+- **Required reviewers:** exigir aprovação de um responsável autorizado antes da execução.
+- **Environment secrets:** disponibilizar as credenciais de produção apenas aos jobs vinculados ao Environment protegido.
+
+O job de aplicação deverá possuir uma validação adicional da referência Git (`github.ref == 'refs/heads/main'`), inclusive para execuções iniciadas por `workflow_dispatch`.
+
+Os inputs do disparo manual deverão permitir somente playbooks, tags e inventários previamente autorizados, sem aceitar comandos arbitrários ou referências Git fornecidas pelo usuário.
+
+**A aprovação do Environment não substitui a revisão de código.** O fluxo de produção exige tanto a integração prévia na `main` quanto a aprovação da execução. Essas restrições deverão ser validadas antes de habilitar a automação na VPS.
 
 ## Validação em Pull Request
 
@@ -42,6 +67,19 @@ O job de apply:
 7. verifica serviços e informa commit, ambiente e resultado sem revelar dados sensíveis.
 
 Definir `concurrency` por ambiente/host para serializar aplicações e não cancelar execução que já possa estar alterando a VPS. As permissões GitHub devem ser declaradas por job no menor nível possível. Fixar actions externas por SHA conforme as boas práticas do projeto.
+
+### Exemplo de gatilhos para o futuro ansible-apply.yml
+```yaml
+on:
+push:
+branches:
+- main
+paths:
+- "ansible/**"
+- ".github/workflows/ansible-apply.yml"
+
+workflow_dispatch:
+```
 
 ## Acesso de rede do runner
 
