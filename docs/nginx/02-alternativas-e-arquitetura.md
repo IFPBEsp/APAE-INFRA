@@ -2,7 +2,6 @@
 
 > Este documento faz parte do estudo de arquitetura de NGINX e proxy reverso para os serviços APAE.
 
-
 ## 4. Alternativas estudadas
 
 O estudo considera a utilização de uma VPS HostGator com um cluster Kubernetes k3s single-node, conforme a issue #90.
@@ -298,7 +297,6 @@ A decisão definitiva sobre manter ou não o NGINX externo deverá ser tomada an
 O roteamento das aplicações continuará sendo responsabilidade dos recursos Gateway API, independentemente da alternativa de entrada pública escolhida.
 
 ---
-
 
 ## 5. Arquitetura recomendada
 
