@@ -191,6 +191,8 @@ Até lá, cada Application filha permanece com `syncPolicy: {}` (sem `automated`
 
 ## Image Updater: GitHub Actions (não o ArgoCD Image Updater)
 
+A implementação da issue #82 está documentada em [Atualização de imagens nos overlays GitOps](../workflows/update-image-overlay.md). O workflow propõe PRs para `main`, fixa a imagem por digest e preserva tag e commit de origem no PR. Os overlays e as Applications são pré-requisitos da #92; a aprovação do PR é seguida pelo sync manual previsto abaixo.
+
 A responsabilidade de identificar uma nova imagem e atualizar a tag no APAE-INFRA fica em um **job dentro do próprio pipeline de GitHub Actions** dos repositórios de aplicação — não no componente separado "ArgoCD Image Updater". Motivo: evita rodar mais um controller com credenciais de escrita dentro do cluster, mantém rastreabilidade direta entre o commit de infra e o run de CI que o gerou, e reage imediatamente ao push (sem espera de polling).
 
 ## Como uma mudança se propaga até o cluster
@@ -210,7 +212,7 @@ Duas origens de mudança, dois fluxos — mas **ambos terminam exigindo aprovaç
 
 1. Um push/merge em um dos repositórios de aplicação (APAE, APAE-gestão escolar, APAE-atendimento ou APAE-site-comemorativo) dispara o pipeline de **CI** (GitHub Actions);
 2. O CI builda a imagem e faz o **push da imagem** para o **GHCR** (Container Registry);
-3. Um **job do próprio GitHub Actions (Image Updater)** identifica que uma nova imagem foi publicada e atualiza a tag no `kustomization.yaml` do overlay correspondente do APAE-INFRA (ex.: `kubernetes/overlays/dev/apae`), via PR para revisão adicional antes do commit;
+3. Um **job do próprio GitHub Actions (Image Updater)** identifica que uma nova imagem foi publicada e atualiza o digest no `kustomization.yaml` do overlay correspondente do APAE-INFRA (ex.: `kubernetes/overlays/dev/apae`), via PR para revisão adicional antes do commit;
 4. A partir daqui o fluxo é o mesmo do caso 1: o ArgoCD Controller detecta que **a Application filha daquele repositório** está Out-of-Sync (a raiz não é afetada, pois a definição das Applications em `argocd/` não mudou — apenas o conteúdo do overlay que a Application filha já apontava);
 5. Alguém aprova o sync manualmente no ArgoCD;
 6. O ArgoCD sincroniza a Application filha: normalmente isso é um **rolling update** do Deployment já existente (novos Pods sobem com a imagem nova do GHCR e os antigos são removidos gradualmente) — só no primeiro deploy daquela aplicação/ambiente é que os Pods são criados do zero.

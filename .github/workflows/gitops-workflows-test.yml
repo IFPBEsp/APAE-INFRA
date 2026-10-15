@@ -1,0 +1,28 @@
+name: GitOps Workflow Tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/update-image-overlay-*.yml'
+      - '.github/workflows/gitops-workflows-test.yml'
+      - 'tests/test_update_image_overlay.py'
+      - '.github/actions/setup-kustomize/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up approved Kustomize
+        uses: ./.github/actions/setup-kustomize
+      - name: Test validation and Kustomize image updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/gitops-tests"
+          "$RUNNER_TEMP/gitops-tests/bin/pip" install --disable-pip-version-check 'PyYAML==6.0.3'
+          "$RUNNER_TEMP/gitops-tests/bin/python" -m unittest discover -s tests -v
