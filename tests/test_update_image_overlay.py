@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,7 +25,12 @@ WORKFLOW = yaml.safe_load(
 )
 STEPS = WORKFLOW["jobs"]["update-image"]["steps"]
 VALIDATE = next(step["run"] for step in STEPS if step["name"] == "Validate workflow inputs")
-UPDATE = next(step["run"] for step in STEPS if step.get("id") == "image-update")
+AUTOMATION = next(step for step in STEPS if step.get("id") == "automation")
+MANIFESTS = next(step for step in STEPS if step.get("id") == "manifests")
+OVERLAY_STEP = next(step for step in STEPS if step.get("id") == "overlay")
+UPDATE_STEP = next(step for step in STEPS if step.get("id") == "image-update")
+PULL_REQUEST = next(step for step in STEPS if step.get("id") == "pull-request")
+UPDATE = UPDATE_STEP["run"]
 # Execute the Python embedded in the actual workflow, without its virtualenv wrapper.
 EDITOR = UPDATE.split("<<'PYTHON'\n", 1)[1].rsplit("\nPYTHON", 1)[0]
 REGISTRY_SCRIPT = next(step["run"] for step in STEPS if step.get("id") == "registry")
@@ -107,7 +113,9 @@ class InputsTest(unittest.TestCase):
     def test_missing_overlay_reports_issue_92(self):
         script = next(step["run"] for step in STEPS if step.get("id") == "overlay")
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run(["bash", "-c", script], cwd=directory,
+            manifests = Path(directory) / OVERLAY_STEP["working-directory"]
+            manifests.mkdir()
+            result = subprocess.run(["bash", "-c", script], cwd=manifests,
                                     env={**os.environ, **ENV}, text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("issue #92", result.stdout)
@@ -299,7 +307,12 @@ class OverlayTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.path = Path(self.temp.name)
+        self.workspace = Path(self.temp.name)
+        self.relative_overlay = Path("kubernetes/overlays/dev/apae")
+        self.manifests = self.workspace / MANIFESTS["with"]["path"]
+        self.path = self.manifests / self.relative_overlay
+        self.path.mkdir(parents=True)
+        self.output = self.workspace / "step-output"
         self.kustomization = self.path / "kustomization.yaml"
         self.kustomization.write_text(
             "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"
@@ -315,12 +328,19 @@ class OverlayTest(unittest.TestCase):
                 },
             }},
         }))
+        # The automation checkout has the same logical overlay and the local
+        # action, while main deliberately has no .github/actions directory.
+        shutil.copytree(self.path, self.workspace / self.relative_overlay)
+        self.local_action = self.workspace / ".github/actions/setup-kustomize/action.yml"
+        self.local_action.parent.mkdir(parents=True)
+        self.local_action.write_text((ROOT / ".github/actions/setup-kustomize/action.yml").read_text())
 
     def edit(self, **overrides):
         return subprocess.run(
             [sys.executable, "-c", EDITOR], text=True, capture_output=True,
-            env={**os.environ, **ENV, "OVERLAY": str(self.path),
-                 "GITHUB_OUTPUT": str(self.path / "output"), **overrides},
+            cwd=self.workspace / UPDATE_STEP["working-directory"],
+            env={**os.environ, **ENV, "OVERLAY": str(self.relative_overlay),
+                 "GITHUB_OUTPUT": str(self.output), **overrides},
         )
 
     def assert_success(self, result):
@@ -334,7 +354,51 @@ class OverlayTest(unittest.TestCase):
         first = self.kustomization.read_bytes()
         self.assert_success(self.edit())
         self.assertEqual(first, self.kustomization.read_bytes())
-        self.assertIn("gitops/apae-geral/dev/apae-geral-backend", (self.path / "output").read_text())
+        self.assertIn("gitops/apae-geral/dev/apae-geral-backend", self.output.read_text())
+
+    def test_separate_checkouts_preserve_local_action_and_scope_updates(self):
+        self.assertEqual(AUTOMATION["with"].get("path", "."), ".")
+        self.assertEqual(AUTOMATION["with"]["ref"], "${{ github.sha }}")
+        self.assertEqual(AUTOMATION["with"]["token"], "${{ github.token }}")
+        self.assertFalse(AUTOMATION["with"]["persist-credentials"])
+        self.assertEqual(WORKFLOW["jobs"]["update-image"]["permissions"]["contents"], "read")
+        self.assertEqual(MANIFESTS["with"]["ref"], "main")
+        self.assertEqual(MANIFESTS["with"]["path"], "infra")
+        self.assertEqual(MANIFESTS["with"]["token"], "${{ steps.app-token.outputs.token }}")
+        self.assertFalse(MANIFESTS["with"]["persist-credentials"])
+        local_step = next(step for step in STEPS if step.get("uses") == "./.github/actions/setup-kustomize")
+        self.assertTrue((self.workspace / local_step["uses"] / "action.yml").is_file())
+        self.assertFalse((self.manifests / ".github/actions/setup-kustomize").exists())
+        self.assertLess(STEPS.index(AUTOMATION), STEPS.index(MANIFESTS))
+        self.assertLess(STEPS.index(MANIFESTS), STEPS.index(local_step))
+
+        before = {path.relative_to(self.workspace): path.read_bytes()
+                  for path in self.workspace.rglob("*") if path.is_file()}
+        self.assert_success(self.edit())
+        after = {path.relative_to(self.workspace): path.read_bytes()
+                 for path in self.workspace.rglob("*") if path.is_file() and path != self.output}
+        changed = {path for path in before.keys() | after.keys() if before.get(path) != after.get(path)}
+        self.assertEqual(changed, {self.kustomization.relative_to(self.workspace)})
+
+    def test_overlay_resolution_and_pr_paths_are_relative_to_main(self):
+        result = subprocess.run(
+            ["bash", "-c", OVERLAY_STEP["run"]], text=True, capture_output=True,
+            cwd=self.workspace / OVERLAY_STEP["working-directory"],
+            env={**os.environ, **ENV, "GITHUB_OUTPUT": str(self.output)},
+        )
+        self.assert_success(result)
+        overlay = self.output.read_text().strip().removeprefix("path=")
+        self.assertEqual(overlay, str(self.relative_overlay))
+        config = PULL_REQUEST["with"]
+        self.assertEqual(config["path"], MANIFESTS["with"]["path"])
+        self.assertEqual(config["base"], "main")
+        self.assertEqual(config["token"], "${{ steps.app-token.outputs.token }}")
+        self.assertEqual(config["branch"], "${{ steps.image-update.outputs.branch }}")
+        # This is a single literal pathspec, relative to the action's repo path;
+        # neither the automation checkout nor sibling overlays can be staged.
+        add_path = config["add-paths"].replace("${{ steps.overlay.outputs.path }}", overlay)
+        self.assertEqual(add_path, str(self.relative_overlay / "kustomization.yaml"))
+        self.assertEqual(self.workspace / config["path"] / add_path, self.kustomization)
 
     def test_replaces_tag_and_previous_digest(self):
         data = yaml.safe_load(self.kustomization.read_text())

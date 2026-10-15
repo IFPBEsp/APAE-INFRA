@@ -36,6 +36,15 @@ após o merge, o sync no ArgoCD continua manual.
 4. Após checkout de `main`, exige o overlay existente e renderizável. Só então
    edita seu `kustomization.yaml`, renderiza novamente e verifica o resultado.
 
+Os checkouts são separados: a raiz contém a automação na revisão da execução
+(`github.sha`, compartilhada pelo dispatcher e sua chamada local ao reutilizável),
+obtida com `GITHUB_TOKEN` de leitura e sem persistir credenciais. A `main` é
+obtida em `infra/`, com o token do App e também sem persistir credenciais.
+A action local do Kustomize é carregada da raiz; ela não precisa existir na `main`.
+Resolução e edição dos overlays usam `working-directory: infra`. A criação do PR
+usa `path: infra`, com `add-paths` relativo a esse checkout e limitado ao
+`kustomization.yaml` autorizado. Os caminhos lógicos da tabela abaixo não mudam.
+
 A edição usa PyYAML 6.0.3 como equivalente a `kustomize edit set image`: altera
 somente a lista `images`, remove `newTag`, grava `digest` e preserva `newName`
 quando houver alias. A operação falha se a imagem não existir nos workloads,
@@ -205,8 +214,9 @@ O workflow não habilita auto-merge e não faz push na branch de destino.
 Nos produtos (#44), use os outputs do workflow da #35. O exemplo completo abaixo
 é para o backend do APAE; adapte aplicação, contexto e Dockerfile para o serviço.
 Substitua `<commit-sha>` pelo SHA completo aprovado no APAE-INFRA. O dispatcher
-deve estar na branch padrão para receber eventos; o código e os assets de
-execução também precisam estar em `main`, fonte dos manifests e destino dos PRs.
+deve estar na branch padrão para receber eventos. O código e a action local
+precisam existir na revisão executada pelo dispatcher; somente os manifests
+precisam estar em `main`, destino dos PRs.
 
 ```yaml
 name: Publish backend and notify GitOps
@@ -284,6 +294,8 @@ sem credenciais reais, acesso ao registro ou criação de PRs. Casos cobertos:
 - Allowlist incluindo Gestão Escolar, rejeição de `hml`/`prod` e caminhos arbitrários.
 - Overlay inexistente, erro de renderização, alias, idempotência e preservação
   das imagens de outros serviços.
+- Isolamento dos checkouts, acesso à action local sem ela existir na `main` e
+  caminhos da atualização e do PR limitados ao overlay em `infra/`.
 
 `gitops-workflows-test.yml` roda essa suíte em PRs, com o mesmo instalador de
 Kustomize do fluxo principal e apenas `contents: read`. Não usa secrets de
