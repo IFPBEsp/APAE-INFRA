@@ -22,7 +22,7 @@ e remover comentários do arquivo editado; as demais propriedades são preservad
 
 Somente o arquivo do overlay é incluído no commit. A branch é estável por
 aplicação, ambiente e imagem, por exemplo:
-`codex/gitops/apae-geral/dev/apae-geral-backend`. Novas publicações da mesma imagem
+`gitops/apae-geral/dev/apae-geral-backend`. Novas publicações da mesma imagem
 atualizam o mesmo PR aberto. Backend e frontend usam branches diferentes.
 Se o digest já estiver em `main`, não é necessário criar novo PR.
 
@@ -89,8 +89,8 @@ ao terminar o job. A chave privada permanece em secrets, e o checkout usa
 
 | Secret do reutilizável | Conteúdo | Secret usado pelo dispatcher no APAE-INFRA |
 | --- | --- | --- |
-| `APP_ID` | ID do GitHub App. | `GITOPS_APP_ID` |
-| `APP_PRIVATE_KEY` | Chave privada PEM do GitHub App. | `GITOPS_APP_PRIVATE_KEY` |
+| `IMAGE_UPDATER_APP_ID` | ID do GitHub App. | `IMAGE_UPDATER_APP_ID` |
+| `IMAGE_UPDATER_APP_PRIVATE_KEY` | Chave privada PEM do GitHub App. | `IMAGE_UPDATER_APP_PRIVATE_KEY` |
 
 Configure a proteção/ruleset de `main` para exigir revisão humana e checks
 obrigatórios, invalidar aprovações após novos commits e impedir bypass pelo App.
@@ -100,6 +100,11 @@ Após revisão e merge, o sync das Applications filhas no ArgoCD continua manual
 conforme a política atual.
 
 ## Integração direta após o publish
+
+Os repositórios de produtos possuem `UPDATER_IMAGE_DISPATCH_TOKEN`; para usar
+essa credencial existente, siga a integração por `repository_dispatch` da seção
+seguinte. A chamada direta abaixo é uma alternativa que exige disponibilizar
+também os secrets do App no repositório chamador.
 
 Nos repositórios de aplicação (#44), encadeie o novo job ao reusable de publicação.
 Este exemplo para o backend do APAE usa os outputs já existentes da #35:
@@ -135,8 +140,8 @@ jobs:
       source-repository: ${{ github.repository }}
       source-commit: ${{ github.sha }}
     secrets:
-      APP_ID: ${{ secrets.GITOPS_APP_ID }}
-      APP_PRIVATE_KEY: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+      IMAGE_UPDATER_APP_ID: ${{ secrets.IMAGE_UPDATER_APP_ID }}
+      IMAGE_UPDATER_APP_PRIVATE_KEY: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
 ```
 
 Substitua `<commit-sha>` pelo SHA completo aprovado no APAE-INFRA e ajuste contexto
@@ -166,7 +171,7 @@ No consumidor, em vez de chamar diretamente o reutilizável, use este job após
     steps:
       - name: Notify APAE-INFRA
         env:
-          GH_TOKEN: ${{ secrets.GITOPS_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ secrets.UPDATER_IMAGE_DISPATCH_TOKEN }}
           IMAGE: ${{ needs.publish.outputs.image }}
           IMAGE_TAG: ${{ needs.publish.outputs.sha-tag }}
           IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
@@ -189,7 +194,7 @@ No consumidor, em vez de chamar diretamente o reutilizável, use este job após
             --input "$RUNNER_TEMP/gitops-dispatch.json"
 ```
 
-`GITOPS_DISPATCH_TOKEN` pode ser um fine-grained PAT restrito ao APAE-INFRA com
+`UPDATER_IMAGE_DISPATCH_TOKEN` pode ser um fine-grained PAT restrito ao APAE-INFRA com
 `Contents: write`, exigido pelo endpoint de dispatch, com expiração e rotação.
 Outra opção é um token de instalação de um App remetente separado, instalado
 somente no APAE-INFRA, também com `Contents: write`. Não conceda `Pull requests:

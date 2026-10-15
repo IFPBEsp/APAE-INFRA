@@ -124,7 +124,7 @@ class OverlayTest(unittest.TestCase):
         first = self.kustomization.read_bytes()
         self.assert_success(self.edit())
         self.assertEqual(first, self.kustomization.read_bytes())
-        self.assertIn("codex/gitops/apae-geral/dev/apae-geral-backend", (self.path / "output").read_text())
+        self.assertIn("gitops/apae-geral/dev/apae-geral-backend", (self.path / "output").read_text())
 
     def test_replaces_tag_and_previous_digest(self):
         data = yaml.safe_load(self.kustomization.read_text())

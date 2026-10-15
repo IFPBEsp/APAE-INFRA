@@ -45,10 +45,10 @@ on:
         value: ${{ jobs.update-image.outputs.pull-request-url }}
 
     secrets:
-      APP_ID:
+      IMAGE_UPDATER_APP_ID:
         required: true
 
-      APP_PRIVATE_KEY:
+      IMAGE_UPDATER_APP_PRIVATE_KEY:
         required: true
 
 jobs:
@@ -141,8 +141,8 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.IMAGE_UPDATER_APP_ID }}
+          private-key: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
           owner: IFPBEsp
           repositories: APAE-INFRA
           permission-contents: write
@@ -283,7 +283,7 @@ jobs:
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               image_id = image.rsplit("/", 1)[-1]
-              branch = f"codex/gitops/{os.environ['APPLICATION']}/{os.environ['ENVIRONMENT']}/{image_id}"
+              branch = f"gitops/{os.environ['APPLICATION']}/{os.environ['ENVIRONMENT']}/{image_id}"
               output.write(f"branch={branch}\n")
           PYTHON
 

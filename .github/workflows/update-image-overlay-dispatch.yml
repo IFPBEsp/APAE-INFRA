@@ -21,5 +21,5 @@ jobs:
       source-repository: ${{ github.event.client_payload.source_repository }}
       source-commit: ${{ github.event.client_payload.source_commit }}
     secrets:
-      APP_ID: ${{ secrets.GITOPS_APP_ID }}
-      APP_PRIVATE_KEY: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+      IMAGE_UPDATER_APP_ID: ${{ secrets.IMAGE_UPDATER_APP_ID }}
+      IMAGE_UPDATER_APP_PRIVATE_KEY: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
