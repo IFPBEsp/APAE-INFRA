@@ -1,0 +1,38 @@
+name: Test Image Updater App
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-app:
+    name: Validate GitHub App Authentication
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.IMAGE_UPDATER_APP_ID }}
+          private-key: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
+          owner: IFPBEsp
+          repositories: APAE-INFRA
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Verify App access to APAE-INFRA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          gh api \
+            repos/IFPBEsp/APAE-INFRA \
+            --jq '{repository: .full_name, private: .private}'
+
+          echo "GitHub App autenticado com sucesso."
