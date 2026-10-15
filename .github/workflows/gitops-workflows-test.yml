@@ -6,16 +6,19 @@ on:
       - '.github/workflows/update-image-overlay-*.yml'
       - '.github/workflows/gitops-workflows-test.yml'
       - 'tests/test_update_image_overlay.py'
+      - '.github/actions/setup-kustomize/**'
 
 permissions:
   contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up approved Kustomize
+        uses: ./.github/actions/setup-kustomize
       - name: Test validation and Kustomize image updates
         shell: bash
         run: |

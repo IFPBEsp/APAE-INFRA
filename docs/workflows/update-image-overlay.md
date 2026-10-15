@@ -1,116 +1,215 @@
 # Atualização de imagens nos overlays GitOps
 
-## Objetivo e decisões
+## Arquitetura e decisões
 
-O workflow `update-image-overlay-reusable.yml` implementa a issue #82: recebe os
-outputs de uma publicação bem-sucedida e abre ou atualiza um PR para `main` no
-APAE-INFRA. Apenas o ambiente `dev` é aceito. Ambiente e branch Git são conceitos
-independentes: os overlays de desenvolvimento são versionados em `main`.
+A integração recomendada da issue #82 é `repository_dispatch`. Depois de um
+publish bem-sucedido, o produto envia `gitops-image-published` ao APAE-INFRA.
+O dispatcher valida o payload e chama internamente
+`update-image-overlay-reusable.yml`, que valida as combinações autorizadas,
+consulta o GHCR e propõe um PR para `main`.
 
-A atualização é feita por GitHub Actions com GitHub App, sem instalar ArgoCD
-Image Updater no cluster. A referência gravada é `image@sha256:<digest>`; a tag
-`sha-*` e o commit completo ficam no PR para rastreabilidade humana. Isso segue a
-[política de imagens](../boas-praticas/16-politica-tags-imagens-docker.md).
+O reutilizável exige execução no próprio `IFPBEsp/APAE-INFRA`: chamadas vindas
+de outro repositório são rejeitadas. A chave privada do App de PRs fica
+**exclusivamente no APAE-INFRA**, sem distribuição aos produtos.
+Não há ArgoCD Image Updater instalado no cluster.
 
-O workflow edita exclusivamente a lista `images` do `kustomization.yaml` do
-overlay, usando PyYAML 6.0.3 como equivalente a `kustomize edit set image`.
-Substitui `newTag` por `digest`, preserva `newName` quando há alias e renderiza
-o overlay com `kubectl kustomize` antes e depois da alteração. A operação falha
-se a imagem não existir nos workloads, se houver regras ambíguas ou se imagens
-de outros serviços forem alteradas. O editor pode normalizar a formatação YAML
-e remover comentários do arquivo editado; as demais propriedades são preservadas.
+Apenas overlays de `dev` são atualizados, sempre por digest
+`image@sha256:<digest>`. O ambiente `dev` não determina a branch Git: a base dos
+PRs continua sendo `main`. Tag `sha-*`, commit, produto e run são registrados
+no PR, seguindo a [política de imagens](../boas-praticas/16-politica-tags-imagens-docker.md).
+Não há auto-merge nem promoção para `hml` ou `prod`. Revisão humana é obrigatória;
+após o merge, o sync no ArgoCD continua manual.
 
-Somente o arquivo do overlay é incluído no commit. A branch é estável por
-aplicação, ambiente e imagem, por exemplo:
-`gitops/apae-geral/dev/apae-geral-backend`. Novas publicações da mesma imagem
-atualizam o mesmo PR aberto. Backend e frontend usam branches diferentes.
-Se o digest já estiver em `main`, não é necessário criar novo PR.
+## Validações antes da escrita
 
-O job serializa execuções da mesma imagem dentro do repositório chamador e não
-cancela uma execução em andamento. Para centralizar essa coordenação entre os
-repositórios, prefira o dispatcher no APAE-INFRA. Eventos devem ser enviados na
-ordem de publicação: o workflow não determina a ordem cronológica dos commits.
-PRs de imagens distintas podem alterar o mesmo arquivo; conflitos devem ser
-resolvidos e os checks reexecutados antes do merge.
+1. O dispatcher exige um objeto JSON com os campos obrigatórios, todos strings
+   não vazias de até 255 caracteres e sem quebras de linha. Campos desconhecidos
+   são rejeitados. `environment` assume `dev` **somente quando ausente**; valores
+   como `null`, `false`, `0`, vazio, `hml` e `prod` são rejeitados.
+2. O reutilizável verifica ambiente, formatos, allowlist exata de repositório,
+   aplicação e imagem, e se a tag é um prefixo do SHA completo informado.
+   Inputs são tratados como dados, via variáveis de ambiente, sem interpolação
+   em comandos. Os caminhos são definidos por uma tabela interna; não existe
+   input para informar caminho arbitrário.
+3. Consulta o GHCR para verificar existência da tag e correspondência do digest.
+   Uma falha impede até a geração do token de escrita do App.
+4. Após checkout de `main`, exige o overlay existente e renderizável. Só então
+   edita seu `kustomization.yaml`, renderiza novamente e verifica o resultado.
 
-## Inputs
+A edição usa PyYAML 6.0.3 como equivalente a `kustomize edit set image`: altera
+somente a lista `images`, remove `newTag`, grava `digest` e preserva `newName`
+quando houver alias. A operação falha se a imagem não existir nos workloads,
+se houver regras ambíguas ou se outras imagens forem alteradas. A formatação
+YAML pode ser normalizada e comentários podem ser removidos; demais propriedades
+são preservadas. Somente o arquivo do overlay entra no commit.
 
-Todos os inputs são strings.
+A branch é estável por aplicação, ambiente e imagem, por exemplo:
+`gitops/apae-geral/dev/apae-geral-backend`. Novas notificações da mesma imagem
+atualizam o mesmo PR aberto. Backend e frontend usam branches separadas.
+Se o digest já estiver em `main`, não é necessário novo PR.
+
+A concorrência serializa execuções da mesma imagem, sem cancelar o job em
+andamento. Envie eventos na ordem de publicação: o workflow não ordena commits
+cronologicamente. PRs de imagens diferentes podem alterar o mesmo arquivo;
+resolva conflitos e reexecute checks antes do merge.
+
+## Conferência do GHCR e imagens privadas
+
+A consulta usa HTTPS nos endpoints fixos `ghcr.io/token` e
+`ghcr.io/v2/<imagem>/manifests/<tag>`, com escopo de token `repository:<imagem>:pull`.
+São aceitos manifests e índices OCI, além de Docker schema 2 e manifest lists.
+O SHA-256 é calculado sobre os **bytes originais** recebidos para a tag; o
+cabeçalho `Docker-Content-Digest`, quando presente, também deve corresponder.
+
+Para multiarch, compara o digest do índice/lista completo apontado pela tag,
+sem selecionar uma arquitetura nem comparar apenas um manifest filho. Passe
+sempre `publish.outputs.digest`, o digest final exposto pelo workflow da #35.
+
+A consulta tenta acesso anônimo primeiro. Se o GHCR retornar `401` ou `403`,
+tenta autenticação de leitura. Tag inexistente, falha HTTP, timeout, resposta
+inválida ou digest divergente interrompem a execução. Há limites de tamanho e
+timeout, redirects são recusados e corpos, headers de autenticação e tokens
+não são registrados nos logs. Não é feito `docker login` nem gravado arquivo
+local de credenciais.
+
+Por padrão, o retry autenticado usa `github.actor` e o `GITHUB_TOKEN` do
+APAE-INFRA, com `packages: read`. Para imagens privadas, conceda explicitamente
+acesso de leitura ao APAE-INFRA nas configurações de Actions de cada package.
+O token de instalação do App que abre PRs **não** é usado para acessar packages.
+
+Se esse acesso não for possível, configure no APAE-INFRA ambos os secrets
+opcionais abaixo. Informar apenas um é erro, mesmo se a imagem for pública.
+
+| Secret | Uso |
+| --- | --- |
+| `GHCR_READ_USERNAME` | Usuário proprietário da credencial de leitura. |
+| `GHCR_READ_TOKEN` | PAT classic com somente `read:packages`, de conta com acesso aos packages necessários; autorizar SSO quando exigido. |
+
+O PAT de packages é separado tanto do App de PRs quanto do token de dispatch.
+Seu alcance depende dos packages acessíveis à conta; prefira `GITHUB_TOKEN`
+com concessões explícitas por package. Não conceda escrita ou exclusão de packages.
+
+**Limite de confiança:** existência da tag e correspondência do digest não
+comprovam quem produziu a imagem, se o commit declarado originou o build ou
+se o pipeline era confiável. `source_repository`, `source_commit` e a tag são
+declarações do remetente; a consistência entre eles não é prova de proveniência.
+A assinatura/verificação com Cosign depende da #64 e não é presumida disponível.
+A revisão humana do PR permanece obrigatória.
+
+## Kustomize reproduzível
+
+O workflow principal e o de testes usam a mesma action local
+`.github/actions/setup-kustomize/action.yml`, que instala **Kustomize v5.8.1**
+Linux x86_64 e verifica o SHA-256 do arquivo oficial:
+
+```text
+029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d
+```
+
+O checksum foi conferido no `checksums.txt` da release oficial. Ambos executam
+em `ubuntu-24.04` e usam `kustomize build`, independentemente da versão de
+`kubectl` fornecida pelo runner. Os testes conferem a versão instalada antes
+de executar os casos. Uma atualização da ferramenta deve alterar a versão e
+o checksum nessa action e passar novamente pela suíte e revisão do PR.
+
+## Inputs e outputs
+
+Todos os inputs do reutilizável são strings. No dispatch, os nomes separados
+por hífen são enviados com underscore, conforme o exemplo de integração.
 
 | Input | Obrigatório | Padrão | Descrição |
 | --- | --- | --- | --- |
-| `image` | Sim | — | Nome completo da imagem GHCR, sem tag ou digest, presente na allowlist. |
-| `image-tag` | Sim | — | `sha-` seguido de 7 a 40 caracteres hexadecimais, prefixo do commit de origem. |
-| `image-digest` | Sim | — | Digest final publicado, no formato `sha256:` e 64 caracteres hexadecimais. |
-| `application` | Sim | — | Identificador da aplicação conforme tabela abaixo. |
-| `environment` | Não | `dev` | Ambiente do overlay. Somente `dev` é permitido. |
-| `source-repository` | Sim | — | Repositório de origem no formato `IFPBEsp/nome`. |
-| `source-commit` | Sim | — | SHA completo de 40 caracteres do commit usado no build. |
+| `image` | Sim | — | Nome GHCR completo, sem tag/digest, presente na allowlist. |
+| `image-tag` | Sim | — | `sha-` e 7 a 40 caracteres hexadecimais, prefixo de `source-commit`. |
+| `image-digest` | Sim | — | Digest final: `sha256:` e 64 caracteres hexadecimais. |
+| `application` | Sim | — | Identificador da aplicação da tabela abaixo. |
+| `environment` | Não | `dev` | Somente `dev` é aceito. |
+| `source-repository` | Sim | — | Repositório declarado no formato `IFPBEsp/nome`. |
+| `source-commit` | Sim | — | SHA completo de 40 caracteres do build declarado. |
 
 | Output | Descrição |
 | --- | --- |
-| `pull-request-url` | URL do PR criado ou atualizado; pode ser vazio quando não há diferença. |
+| `pull-request-url` | URL do PR criado/atualizado; pode ser vazio quando não há diferença. |
 
-## Aplicações e dependência da issue #92
+## Aplicações e dependência da #92
 
-| Repositório de origem | `application` | Imagens autorizadas em `ghcr.io/ifpbesp/` | Overlay |
+Todas as imagens abaixo têm prefixo `ghcr.io/ifpbesp/`.
+
+| Repositório declarado | `application` | Imagens autorizadas | Overlay |
 | --- | --- | --- | --- |
 | `IFPBEsp/APAE` | `apae-geral` | `apae-geral-backend`, `apae-geral-frontend` | `kubernetes/overlays/dev/apae` |
 | `IFPBEsp/APAE-atendimento` | `apae-atendimento` | `apae-atendimento-backend`, `apae-atendimento-frontend` | `kubernetes/overlays/dev/apae-atendimento` |
+| `IFPBEsp/APAE-gestao-escolar` | `apae-gestao-escolar` | `apae-gestao-escolar-backend`, `apae-gestao-escolar-frontend` | `kubernetes/overlays/dev/apae-gestao-escolar` |
 | `IFPBEsp/apae-site-comemorativo` | `site-comemorativo` | `apae-site-comemorativo` | `kubernetes/overlays/dev/apae-site-comemorativo` |
 
-Os overlays e as Applications ainda dependem da #92. O workflow exige que o
-overlay já exista em `main`; não cria estrutura de deploy, não modifica bases e
-não aplica manifests no cluster. Os caminhos seguem o contrato do
-[fluxo do ArgoCD](../argocd/fluxo-argocd.md).
+Os nomes de Gestão Escolar foram confirmados no
+[workflow do produto](https://github.com/IFPBEsp/APAE-gestao-escolar/blob/dev/.github/workflows/docker-publish.yml)
+(blob `5531a48f9aa138ffaec03635b01578801fde5d4d`, consultado em 15/10/2026).
+O workflow consultado publica somente `latest`. A allowlist aceita as duas
+imagens, mas o fluxo só poderá ser usado após a adoção de publicação com tags
+`sha-*`, digest final e notificação ao APAE-INFRA (#44). `latest` continua
+proibida como input deste fluxo.
 
-Gestão escolar tem caminho reservado no resolvedor, mas ainda não tem manifests
-base nesta implementação. Sua ativação exige definir as imagens publicadas,
-adicionar os pares exatos à allowlist do reutilizável e criar o overlay na #92.
-`management-app:unpublished` também permanece fora da allowlist até existir uma
-imagem publicada e um contrato de atualização definido.
+Overlays e Applications dependem da #92 e precisam existir em `main`. Esta issue
+não cria overlays definitivos, não altera bases e não acessa o cluster. Os
+caminhos seguem o [contrato do ArgoCD](../argocd/fluxo-argocd.md).
+`management-app:unpublished` permanece fora da allowlist enquanto não houver
+contrato de publicação definido.
 
-## Credenciais e aprovação humana
+## Credenciais, permissões e revisão humana
 
-Crie um GitHub App instalado **somente no APAE-INFRA**, com estas permissões de
-repositório:
+Use um GitHub App instalado **somente no APAE-INFRA**:
 
-| Permissão | Acesso | Uso |
+| Permissão do App de PRs | Acesso | Uso |
 | --- | --- | --- |
-| Contents | Read and write | Checkout e escrita na branch do PR. |
-| Pull requests | Read and write | Criar e atualizar o PR. |
-| Metadata | Read | Permissão implícita do GitHub App. |
+| Contents | Read and write | Checkout e branch do PR. |
+| Pull requests | Read and write | Criar/atualizar PR. |
+| Metadata | Read | Permissão implícita. |
 
-Não são necessárias permissões de administração, Actions, packages nem acesso
-ao Kubernetes. O token de instalação é gerado com escopo explícito para
-`IFPBEsp/APAE-INFRA` e essas duas permissões de escrita; a action revoga o token
-ao terminar o job. A chave privada permanece em secrets, e o checkout usa
-`persist-credentials: false`. As actions são fixadas por SHA.
+| Secret exclusivo do APAE-INFRA | Conteúdo |
+| --- | --- |
+| `IMAGE_UPDATER_APP_ID` | ID do App de PRs. |
+| `IMAGE_UPDATER_APP_PRIVATE_KEY` | Chave PEM do App de PRs. |
 
-| Secret do reutilizável | Conteúdo | Secret usado pelo dispatcher no APAE-INFRA |
-| --- | --- | --- |
-| `IMAGE_UPDATER_APP_ID` | ID do GitHub App. | `IMAGE_UPDATER_APP_ID` |
-| `IMAGE_UPDATER_APP_PRIVATE_KEY` | Chave privada PEM do GitHub App. | `IMAGE_UPDATER_APP_PRIVATE_KEY` |
+O token de instalação solicita explicitamente somente esse repositório e as
+permissões de escrita acima. A action revoga o token ao terminar o job; o
+checkout não persiste credenciais. Actions externas são fixadas por SHA.
+O App não precisa de administração, Actions, packages ou acesso ao cluster.
+A permissão `packages: read` do job pertence ao `GITHUB_TOKEN`, para consulta
+privada ao GHCR, e não amplia o App.
 
-Configure a proteção/ruleset de `main` para exigir revisão humana e checks
-obrigatórios, invalidar aprovações após novos commits e impedir bypass pelo App.
-O workflow abre PRs e não habilita auto-merge. A credencial tem escrita em nível
-de repositório; a proteção de `main` é o controle que impede escrita direta.
-Após revisão e merge, o sync das Applications filhas no ArgoCD continua manual,
-conforme a política atual.
+Nos produtos, mantenha `UPDATER_IMAGE_DISPATCH_TOKEN` separado das credenciais
+acima. O endpoint de dispatch exige `Contents: write` no APAE-INFRA: um
+fine-grained PAT deve selecionar **somente o APAE-INFRA**, ter expiração curta,
+rotação e um proprietário com o menor acesso necessário. Não conceda `Pull
+requests: write`. Alternativamente, use token temporário de um App remetente
+separado e restrito ao mesmo repositório, com `Contents: write`.
 
-## Integração direta após o publish
+**Risco do token de dispatch:** `Contents: write` também permite escrever
+conteúdo no repositório; não existe uma permissão isolada de “apenas enviar
+repository_dispatch”. O código do dispatcher não restringe o que alguém pode
+fazer diretamente com essa credencial. Proteja `main`, `dev` e demais branches
+sensíveis com rulesets, sem bypass para o remetente ou App de PRs. A política de
+branches deve exigir revisão humana, checks obrigatórios e invalidar aprovações
+após novos commits. Limite onde o secret é disponibilizado, não o use em código
+de PRs não confiáveis e revogue-o se houver exposição. Essas proteções são
+configurações administrativas externas ao workflow.
 
-Os repositórios de produtos possuem `UPDATER_IMAGE_DISPATCH_TOKEN`; para usar
-essa credencial existente, siga a integração por `repository_dispatch` da seção
-seguinte. A chamada direta abaixo é uma alternativa que exige disponibilizar
-também os secrets do App no repositório chamador.
+`source_repository` é uma declaração, não uma prova de identidade. Nem a
+allowlist nem `github.event.sender` comprovam o repositório que produziu a
+imagem. Somente pipelines confiáveis devem possuir a credencial de dispatch.
+O workflow não habilita auto-merge e não faz push na branch de destino.
 
-Nos repositórios de aplicação (#44), encadeie o novo job ao reusable de publicação.
-Este exemplo para o backend do APAE usa os outputs já existentes da #35:
+## Integração recomendada após o publish
+
+Nos produtos (#44), use os outputs do workflow da #35. O exemplo completo abaixo
+é para o backend do APAE; adapte aplicação, contexto e Dockerfile para o serviço.
+Substitua `<commit-sha>` pelo SHA completo aprovado no APAE-INFRA. O dispatcher
+deve estar na branch padrão para receber eventos; o código e os assets de
+execução também precisam estar em `main`, fonte dos manifests e destino dos PRs.
 
 ```yaml
-name: Publish backend and propose GitOps update
+name: Publish backend and notify GitOps
 
 on:
   push:
@@ -128,45 +227,9 @@ jobs:
       dockerfile: Dockerfile
       image-name: apae-geral-backend
 
-  update-overlay:
-    needs: publish
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/update-image-overlay-reusable.yml@<commit-sha>
-    with:
-      application: apae-geral
-      environment: dev
-      image: ${{ needs.publish.outputs.image }}
-      image-tag: ${{ needs.publish.outputs.sha-tag }}
-      image-digest: ${{ needs.publish.outputs.digest }}
-      source-repository: ${{ github.repository }}
-      source-commit: ${{ github.sha }}
-    secrets:
-      IMAGE_UPDATER_APP_ID: ${{ secrets.IMAGE_UPDATER_APP_ID }}
-      IMAGE_UPDATER_APP_PRIVATE_KEY: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
-```
-
-Substitua `<commit-sha>` pelo SHA completo aprovado no APAE-INFRA e ajuste contexto
-e Dockerfile ao serviço. O `needs` impede a atualização quando a publicação
-falhar ou for ignorada. Para cada imagem, use os outputs do respectivo job de
-publicação; não reconstrua tag nem digest no consumidor.
-
-Na chamada direta, os secrets do App precisam estar disponíveis no repositório
-chamador. A identidade `github.repository` deve coincidir com `source-repository`.
-O `GITHUB_TOKEN` do consumidor não substitui a credencial de escrita no APAE-INFRA.
-
-## Integração por repository_dispatch
-
-Para manter a chave privada do App de PRs somente no APAE-INFRA, use o workflow
-`update-image-overlay-dispatch.yml`. Ele recebe `gitops-image-published` e delega
-toda a validação ao reutilizável. O dispatcher deve estar na branch padrão do
-APAE-INFRA para receber eventos.
-
-No consumidor, em vez de chamar diretamente o reutilizável, use este job após
-`publish`:
-
-```yaml
   notify-infra:
     needs: publish
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - name: Notify APAE-INFRA
@@ -194,53 +257,58 @@ No consumidor, em vez de chamar diretamente o reutilizável, use este job após
             --input "$RUNNER_TEMP/gitops-dispatch.json"
 ```
 
-`UPDATER_IMAGE_DISPATCH_TOKEN` pode ser um fine-grained PAT restrito ao APAE-INFRA com
-`Contents: write`, exigido pelo endpoint de dispatch, com expiração e rotação.
-Outra opção é um token de instalação de um App remetente separado, instalado
-somente no APAE-INFRA, também com `Contents: write`. Não conceda `Pull requests:
-write` ao remetente. O App que abre PRs fica separado e sua chave não é enviada
-ao consumidor. A proteção de `main` também deve impedir bypass pelo remetente.
+`needs: publish` impede notificações se a publicação falhar ou for ignorada.
+Para cada imagem, encaminhe os outputs do respectivo job; não reconstrua digest
+ou tag. A API aceitar o evento não comprova sucesso da atualização: acompanhe
+o run do APAE-INFRA e o PR resultante.
 
-No payload, `environment` é opcional e assume `dev`. Os outros campos são
-obrigatórios. A API aceitar o evento não significa que a atualização foi
-concluída: acompanhe o run no APAE-INFRA e o PR resultante.
+## Testes e aceite operacional
 
-Os campos de origem do dispatch são declarações de quem possui a credencial.
-A allowlist verifica a combinação, mas não autentica o repositório remetente
-por meio desses campos nem comprova a publicação no GHCR. Envie o evento apenas
-de pipelines confiáveis após o publish. A verificação de assinatura/proveniência
-da imagem permanece na #64; a validação local confirma formato e consistência
-entre tag e SHA.
-
-## Validação e aceite operacional
-
-Execute localmente, com Python, PyYAML 6.0.3, kubectl e actionlint disponíveis:
+Com Python, PyYAML 6.0.3, **Kustomize v5.8.1** no `PATH` e actionlint:
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -B -m unittest discover -s tests -v
 actionlint .github/workflows/update-image-overlay-reusable.yml \
   .github/workflows/update-image-overlay-dispatch.yml \
   .github/workflows/gitops-workflows-test.yml
 ```
 
-Os testes executam os scripts do próprio workflow em overlays temporários,
-incluindo a renderização real do Kustomize, atualização de digest, alias,
-idempotência, preservação de outras imagens e rejeição de payloads inválidos.
-O workflow `gitops-workflows-test.yml` executa os testes em PRs que alteram essa
-implementação.
+A suíte executa o código do próprio workflow. Consultas ao GHCR usam mocks,
+sem credenciais reais, acesso ao registro ou criação de PRs. Casos cobertos:
 
-O aceite com uma imagem real exige os overlays da #92 em `main`, as credenciais
-configuradas e a integração do consumidor. Publique uma imagem, confirme que o
-PR contém o digest e o link do commit correto e repita a notificação para
-verificar que o mesmo PR é atualizado. Após merge, repetir o mesmo digest não
-deve abrir novo PR. Uma publicação com falha não deve disparar atualização.
-Registre os links do run de publicação, do run GitOps e do PR na issue #82.
+- Tag inexistente, digest divergente, falhas HTTP/rede/timeout e respostas inválidas.
+- OCI/Docker, manifest/índice multiarch e rejeição de digest de manifest filho.
+- Imagens privadas, sucesso/falha de autenticação, escopo somente pull,
+  bloqueio de redirects e ausência de credenciais nos logs.
+- Payloads inválidos, valores falsos de ambiente, campos extras e quebras de linha.
+- Allowlist incluindo Gestão Escolar, rejeição de `hml`/`prod` e caminhos arbitrários.
+- Overlay inexistente, erro de renderização, alias, idempotência e preservação
+  das imagens de outros serviços.
+
+`gitops-workflows-test.yml` roda essa suíte em PRs, com o mesmo instalador de
+Kustomize do fluxo principal e apenas `contents: read`. Não usa secrets de
+escrita nem packages reais. A instalação da ferramenta e do PyYAML exige rede;
+os testes de registro não dependem de serviços externos.
+
+As evidências anteriores do PR #97 registram testes automatizados, autenticação
+real do App, rejeição de `prod` e falha esperada por overlay ausente. Essas
+execuções antecedem a nova validação do GHCR: os testes de `dev` com dados
+fictícios agora devem parar na consulta ao registro, antes do checkout.
+Para testar ausência de overlay ao vivo, forneça uma tag e digest reais válidos.
+
+Ainda dependem da integração completa: leitura de packages privados com as
+permissões reais, overlays da #92 em `main`, geração de PR após publicação real,
+repetição da notificação para atualizar o mesmo PR e repetição após merge sem
+novo PR. Registre os links do run de publicação, run GitOps e PR na #82. Mantenha
+a issue aberta até concluir o aceite com imagem real; autenticação isolada e
+mocks não substituem esse teste.
 
 ## Referências
 
-- [Contrato do fluxo GitOps](../argocd/fluxo-argocd.md)
+- [Fluxo do ArgoCD](../argocd/fluxo-argocd.md)
 - [Comunicação entre repositórios](../fluxo-comunicacao-repositorios.md)
-- [GitHub: eventos repository_dispatch](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#repository_dispatch)
-- [GitHub: criação de repository_dispatch](https://docs.github.com/en/rest/repos/repos#create-a-repository-dispatch-event)
-- [GitHub App token](https://github.com/actions/create-github-app-token)
-- [Criação e atualização de PRs](https://github.com/peter-evans/create-pull-request)
+- [Container Registry e autenticação](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+- [Registry HTTP API V2 e digests](https://distribution.github.io/distribution/spec/api/)
+- [Kustomize v5.8.1 e checksums oficiais](https://github.com/kubernetes-sigs/kustomize/releases/tag/kustomize/v5.8.1)
+- [Eventos repository_dispatch](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#repository_dispatch)
+- [Permissão do endpoint de dispatch](https://docs.github.com/en/rest/repos/repos#create-a-repository-dispatch-event)
