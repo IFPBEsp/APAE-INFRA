@@ -16,7 +16,7 @@ jobs:
     uses: ./.github/workflows/update-image-overlay-reusable.yml
     with:
       application: apae-geral
-      environment: prod
+      environment: dev
       image: ghcr.io/ifpbesp/apae-geral-backend
       image-tag: sha-abcdef0
       image-digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
