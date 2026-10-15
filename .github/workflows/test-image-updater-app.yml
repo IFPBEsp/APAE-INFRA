@@ -1,6 +1,13 @@
 name: Test Image Updater App
 
+
 on:
+  push:
+    branches:
+      - 82-ci-criar-workflow-reutilizavel-de-atualizacao-da-tag-de-imagem-nos-manifests-do-apae-infra
+    paths:
+      - .github/workflows/test-image-updater-app.yml
+
   workflow_dispatch:
 
 permissions:
