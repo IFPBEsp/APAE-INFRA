@@ -34,7 +34,7 @@ Ao final da pipeline de release (estágio 3 do CI), a imagem gerada recebe uma n
 
 ### 4. Detecção e atualização do APAE-INFRA
 
-O **ArgoCD Image Updater** monitora o GHCR e identifica que uma nova imagem foi publicada. Ele então abre um Pull Request no repositório APAE-INFRA (GitOps repo) atualizando a tag da imagem no manifesto correspondente. Esse PR passa por aprovação manual antes do merge — é essa aprovação que efetivamente confirma que a nova versão deve ir para o cluster.
+Após a publicação bem-sucedida no GHCR, o pipeline chama o **workflow reutilizável de atualização GitOps**, diretamente ou via `repository_dispatch`. Ele abre ou atualiza um Pull Request para `main` no APAE-INFRA, gravando o digest da imagem no overlay de `dev` e registrando tag, commit e repositório de origem. O PR exige revisão humana antes do merge; o sync no ArgoCD permanece manual. Veja [inputs, credenciais e exemplos de integração](workflows/update-image-overlay.md).
 
 ### 5. ArgoCD detecta a mudança
 

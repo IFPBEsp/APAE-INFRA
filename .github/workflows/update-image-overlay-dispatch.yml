@@ -1,0 +1,25 @@
+name: Dispatch Update Image Overlay
+
+on:
+  repository_dispatch:
+    types:
+      - gitops-image-published
+
+permissions:
+  contents: read
+
+jobs:
+  update-overlay:
+    name: Update Image Overlay
+    uses: ./.github/workflows/update-image-overlay-reusable.yml
+    with:
+      application: ${{ github.event.client_payload.application }}
+      environment: ${{ github.event.client_payload.environment || 'dev' }}
+      image: ${{ github.event.client_payload.image }}
+      image-tag: ${{ github.event.client_payload.image_tag }}
+      image-digest: ${{ github.event.client_payload.image_digest }}
+      source-repository: ${{ github.event.client_payload.source_repository }}
+      source-commit: ${{ github.event.client_payload.source_commit }}
+    secrets:
+      APP_ID: ${{ secrets.GITOPS_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
