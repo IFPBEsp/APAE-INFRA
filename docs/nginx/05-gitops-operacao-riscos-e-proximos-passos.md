@@ -158,7 +158,7 @@ A implementação deverá prever monitoramento, verificação de saúde, reiníc
 
 A alternativa de NGINX externo mais NGINX Gateway Fabric adiciona duas camadas HTTP, podendo duplicar TLS, logs, timeouts e políticas de segurança.
 
-Após o comparativo da [seção 4.5 — Comparação das alternativas](02-alternativas-e-arquitetura.md#45-comparacao-das-alternativas), o estudo adota **Gateway API direto** para a VPS atual. A camada externa só deverá ser reconsiderada se surgir um requisito operacional comprovado que compense a complexidade adicional.
+Após o comparativo da [seção 4.5 — Comparação das alternativas](02-alternativas-e-arquitetura.md), o estudo adota **Gateway API direto** para a VPS atual. A camada externa só deverá ser reconsiderada se surgir um requisito operacional comprovado que compense a complexidade adicional.
 
 ---
 
