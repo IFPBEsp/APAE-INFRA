@@ -51,7 +51,7 @@ Cada repositório consumidor deve possuir um arquivo `renovate.json` na raiz com
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "github>IFPBEsp/APAE-INFRA"
+    "local>IFPBEsp/APAE-INFRA"
   ]
 }
 ```
