@@ -1,5 +1,7 @@
 # Segurança, ambientes e ciclo Terraform
 
+> Análise conceitual da issue #59. Para a VPS HostGator, consultar a [delimitação proposta na issue #86](06-conclusao-e-proximos-passos.md): Terraform para recursos externos suportados, Ansible para host/k3s/bootstrap e ArgoCD para recursos Kubernetes atribuídos às Applications. Menções a outros provedores são exemplos do estudo original.
+
 Este documento cobre apenas os aspectos de segurança e operação necessários para avaliar a arquitetura da issue #59.
 
 Não define uma estratégia completa de segurança ou operação.
