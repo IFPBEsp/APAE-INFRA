@@ -1,5 +1,7 @@
 # Alternativas arquiteturais
 
+> Análise conceitual da issue #59. Para a VPS HostGator, consultar a [delimitação proposta na issue #86](06-conclusao-e-proximos-passos.md): Terraform para recursos externos suportados, Ansible para host/k3s/bootstrap e ArgoCD para recursos Kubernetes atribuídos às Applications. Menções a outros provedores são exemplos do estudo original.
+
 Este documento compara as alternativas consideradas para aplicar GitOps ao Terraform no `APAE-INFRA`.
 
 ---
