@@ -1,0 +1,10 @@
+# Exceções do Trivy (modo config) para o código em terraform/.
+#
+# Uma linha por finding, com o ID da regra. Toda exceção precisa de um
+# comentário logo acima com o motivo, a issue ou PR que aprovou e a data.
+# Como pedir e aprovar: docs/terraform/07-analise-estatica-e-excecoes.md
+#
+# Exemplo:
+#
+# Motivo: bucket público de propósito, serve só arquivos estáticos (issue #XX).
+# AVD-AWS-0086
