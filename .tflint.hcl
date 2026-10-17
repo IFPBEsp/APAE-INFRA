@@ -16,12 +16,3 @@ plugin "terraform" {
   preset = "recommended"
 }
 
-# Plugins de provider: adicione aqui só quando o provider passar a ser usado
-# em terraform/. Exemplo para o provider do GitHub (issue #88), se existir
-# plugin para ele na época:
-#
-# plugin "<provider>" {
-#   enabled = true
-#   version = "x.y.z"
-#   source  = "github.com/terraform-linters/tflint-ruleset-<provider>"
-# }
