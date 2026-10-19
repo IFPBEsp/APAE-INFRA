@@ -280,14 +280,17 @@ A assinatura é realizada sobre:
 ghcr.io/<owner>/<image>@sha256:<digest>
 ```
 
-A verificação valida a assinatura, a identidade do workflow autorizado e o issuer OIDC esperado.
+A verificação valida a assinatura, a identidade do workflow autorizado, o issuer OIDC e o repositório consumidor esperado.
 
 A referência adotada para os callers é `IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main`. A verificação exige exatamente:
 
 ```text
 certificate-identity: https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main
 certificate-oidc-issuer: https://token.actions.githubusercontent.com
+certificate-github-workflow-repository: ${{ github.repository }}
 ```
+
+O contexto `${{ github.repository }}` identifica o repositório que chamou o workflow reutilizável. Essa restrição impede aceitar assinaturas de outros repositórios que usem o mesmo workflow público com a mesma identidade e issuer.
 
 Os detalhes dessa política estão documentados em:
 

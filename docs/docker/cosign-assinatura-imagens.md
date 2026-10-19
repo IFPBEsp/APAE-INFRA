@@ -11,6 +11,7 @@ O objetivo é garantir que as imagens publicadas possam ser verificadas quanto �
 - integridade do artefato;
 - identidade do workflow que realizou a assinatura;
 - origem da identidade OIDC;
+- repositório consumidor que originou a execução;
 - vinculação da assinatura ao digest exato da imagem.
 
 ## Visão geral do fluxo
@@ -184,14 +185,17 @@ https://token.actions.githubusercontent.com
 
 Essa identidade corresponde ao workflow reutilizável responsável pela assinatura.
 
-O workflow de verificação restringe explicitamente esses valores.
+Essa identidade, sozinha, não identifica o repositório consumidor: como o workflow reutilizável é público, outros repositórios também podem chamá-lo e obter uma assinatura com a mesma identidade e issuer.
+
+Por isso, a verificação também exige `--certificate-github-workflow-repository`, que confere o repositório de origem registrado no certificado. No workflow reutilizável, o valor esperado é `${{ github.repository }}`, correspondente ao repositório que fez a chamada.
 
 Exemplo:
 
 ```bash
 cosign verify "${IMAGE}@${DIGEST}" \
   --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main" \
-  --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  --certificate-github-workflow-repository="${{ github.repository }}"
 ```
 
 O consumidor deve chamar `IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main` para corresponder à identidade exigida. Essa referência identifica o workflow reutilizável; a branch ou tag que dispara o consumidor pode ser diferente.
@@ -214,8 +218,11 @@ Exemplo:
 cosign verify \
   --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  --certificate-github-workflow-repository="IFPBEsp/APAE" \
   ghcr.io/ifpbesp/<imagem>@sha256:<digest>
 ```
+
+Nos exemplos de verificação manual, `IFPBEsp/APAE` é o repositório consumidor esperado. Substitua esse valor pelo repositório autorizado a produzir a imagem verificada; não use `IFPBEsp/APAE-INFRA` apenas por ele hospedar o workflow reutilizável.
 
 A validação não deve apenas confirmar que existe alguma assinatura válida.
 
@@ -223,6 +230,7 @@ Ela deve verificar também:
 
 - a identidade esperada;
 - o issuer OIDC esperado;
+- o repositório consumidor esperado;
 - o digest exato do artefato.
 
 ## Expressões permissivas
@@ -256,11 +264,11 @@ Se o comando:
 cosign verify
 ```
 
-não confirmar a assinatura, identidade ou issuer esperados, o job também falha.
+não confirmar a assinatura, identidade, issuer ou repositório consumidor esperados, o job também falha.
 
 Consequentemente, as tags finais não são criadas ou atualizadas quando a assinatura ou sua verificação falha. Os digests do build e a tag candidata podem permanecer no GHCR e não devem ser usados como sinal de aprovação para consumo.
 
-Uma falha em `cosign sign` pode deixar o candidato sem assinatura. Esse artefato não deve ser consumido sem uma assinatura válida para o digest, a identidade e o issuer exigidos.
+Uma falha em `cosign sign` pode deixar o candidato sem assinatura. Esse artefato não deve ser consumido sem uma assinatura válida para o digest, a identidade, o issuer e o repositório consumidor exigidos.
 
 O GHCR não bloqueia o pull desses artefatos por causa da falha do workflow. O bloqueio no deploy depende de uma etapa obrigatória de verificação ou de uma admission policy; essa integração ainda não está implementada nesta issue.
 
@@ -290,6 +298,8 @@ Existence of the claims in the transparency log was verified offline
 The code-signing certificate was verified using trusted certificate authority certificates
 ```
 
+Essa execução antecede a exigência de verificação do repositório consumidor. Um novo run deverá confirmar a etapa `Verify Cosign signature` com `--certificate-github-workflow-repository`, antes da promoção das tags finais.
+
 O teste confirmou:
 
 - assinatura de uma imagem real publicada no GHCR;
@@ -312,6 +322,7 @@ Exemplo:
 cosign verify \
   --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  --certificate-github-workflow-repository="IFPBEsp/APAE" \
   ghcr.io/ifpbesp/<imagem>@sha256:<digest>
 ```
 
@@ -320,7 +331,8 @@ A imagem deve ser considerada confiável somente quando:
 - a assinatura for válida;
 - o digest corresponder ao artefato esperado;
 - a identidade corresponder ao workflow autorizado;
-- o issuer corresponder ao GitHub Actions.
+- o issuer corresponder ao GitHub Actions;
+- o repositório no certificado corresponder ao consumidor esperado.
 
 ## Relação entre digest e assinatura
 
@@ -365,7 +377,7 @@ admission policy
   ↓
 verificação Cosign/Sigstore
   ↓
-identity + issuer válidos?
+identity + issuer + repositório válidos?
   ├── sim → deploy permitido
   └── não → deploy bloqueado
 ```
@@ -380,7 +392,8 @@ A política futura deverá validar, no mínimo:
 https://token.actions.githubusercontent.com
 ```
 
-- identidade correspondente ao workflow reutilizável autorizado do `APAE-INFRA`.
+- identidade correspondente ao workflow reutilizável autorizado do `APAE-INFRA`;
+- repositório consumidor esperado para cada imagem, equivalente à restrição `--certificate-github-workflow-repository="IFPBEsp/APAE"` do Cosign. Esse valor deve ser definido pela política de confiança, pois identidade e issuer sozinhos também aceitariam assinaturas de outros repositórios que chamem o mesmo workflow público.
 
 Ferramentas de admission policy compatíveis com Sigstore/Cosign podem ser avaliadas em uma issue futura.
 
