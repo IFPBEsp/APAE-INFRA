@@ -704,7 +704,6 @@ A configuração do backend remoto não autoriza automaticamente a execução de
 
 ---
 
-
 ## 15. Referências
 
 - [HashiCorp — Running Terraform in Automation](https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform)
