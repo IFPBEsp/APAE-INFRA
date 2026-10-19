@@ -34,10 +34,14 @@ O esquema abaixo representa a organização pretendida do repositório; nem todo
 argocd/           # manifests de aplicação para o ArgoCD
 docker/           # Dockerfiles e configurações de containers
 docs/             # documentação de padrões e boas práticas do repositório
+  adr/            # registros de decisões arquiteturais
   ansible/        # estudo de gerenciamento declarativo da VPS
   boas-praticas/  # padrões técnicos e operacionais
   argocd/         # documentação do fluxo do ArgoCD (GitOps)
   diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
+  nginx/          # estudo de NGINX Gateway Fabric e Gateway API
+  terraform/      # estudo de Terraform e arquitetura GitOps
+  workflows/      # guias dos workflows reutilizáveis
 kubernetes/       # manifests e configurações do cluster
 monitoring/
   grafana/          # dashboards

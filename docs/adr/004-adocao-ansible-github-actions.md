@@ -24,7 +24,7 @@ Cada recurso terá uma única ferramenta responsável por seu estado declarado:
 
 | Ferramenta | Responsabilidade e limite |
 | --- | --- |
-| **Ansible** | Sistema operacional, usuários, SSH, pacotes, permissões, firewall local, serviços e agentes do host; instalação, configuração e manutenção do k3s; bootstrap do ArgoCD. |
+| **Ansible** | Sistema operacional, usuários, SSH, pacotes, permissões, firewall local, serviços e agentes do host; instalação, configuração e manutenção do k3s; instalação e atualização do ArgoCD com versão fixada e validada. |
 | **GitHub Actions** | Validação e orquestração das execuções aprovadas, sem assumir a propriedade dos recursos. |
 | **ArgoCD** | Applications filhas e recursos Kubernetes atribuídos a elas: workloads, observabilidade do cluster, CRDs, NGINX Gateway Fabric, GatewayClass, Gateway, HTTPRoute e cert-manager quando implementado. |
 | **Terraform** | Recursos externos ao host, como VPS, rede, volumes, DNS e firewall do provedor, somente quando houver integração suportada. Provisionamento não automatizável será uma exceção documentada. |
@@ -77,7 +77,7 @@ A configuração do firewall deverá preservar a rede de pods e Services do k3s,
 
 O estudo de Terraform da [issue #59](https://github.com/IFPBEsp/APAE-INFRA/issues/59) atribuía conceitualmente ao Terraform o bootstrap do host, do Kubernetes e do ArgoCD, prevendo autogerenciamento posterior.
 
-Para a VPS HostGator atual, a decisão registrada neste ADR atribui esse bootstrap ao Ansible. Terraform permanece aplicável aos recursos externos com integração confirmada. O autogerenciamento integral do ArgoCD não se aplica aos objetos de bootstrap enquanto estiverem excluídos da reconciliação.
+Para a VPS HostGator atual, a decisão registrada neste ADR atribui esse bootstrap e as atualizações da instalação do ArgoCD ao Ansible. Terraform permanece aplicável aos recursos externos com integração confirmada. Os manifestos da própria instalação do ArgoCD ficam fora de todas as Applications reconciliadas por ele; não haverá autogerenciamento dessa instalação. O AppProject e a Application raiz também permanecem sob o Ansible enquanto estiverem excluídos da reconciliação.
 
 A ratificação dessa delimitação com o time e a atualização dos documentos anteriores serão tratadas na issue #86, conforme o estudo. A arquitetura de entrada da issue #60 é preservada.
 

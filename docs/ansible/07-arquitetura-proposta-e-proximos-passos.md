@@ -35,6 +35,8 @@ Para a VPS HostGator atual, este estudo **propõe substituir essa atribuição d
 
 Enquanto `project.yaml` e `app-of-apps.yaml` estiverem excluídos do caminho reconciliado pela Application raiz, o **AppProject de bootstrap e a Application raiz** permanecem sob gerenciamento do playbook Ansible. As Applications filhas e os recursos atribuídos a elas ficam sob o ArgoCD. Portanto, o autogerenciamento integral previsto no estudo anterior não se aplica a esses objetos de bootstrap na divisão proposta.
 
+O Ansible também mantém a instalação e executa os upgrades do próprio ArgoCD, com versão fixada e validada. Os manifestos dessa instalação ficam fora de todas as Applications reconciliadas pelo ArgoCD, substituindo o autogerenciamento da instalação previsto no estudo anterior.
+
 A ratificação dessa divisão e a atualização dos documentos anteriores deverão ser tratadas na [issue #86](https://github.com/IFPBEsp/APAE-INFRA/issues/86). Nenhuma ferramenta deve modificar o mesmo recurso por caminhos concorrentes.
 
 ## Estado atual e arquitetura proposta
@@ -64,7 +66,7 @@ Este estudo descreve uma arquitetura-alvo. A existência de diretórios e docume
 | Bootstrap de VPS existente | Acesso inicial controlado a partir de estação autorizada; não enviar senha root para Actions |
 | Bootstrap de VPS futura | Terraform e cloud-init mínimo somente quando o provedor confirmar o suporte |
 | Distribuição Kubernetes | k3s single-node na VPS HostGator, com versão fixada, rede validada e política explícita para Traefik e ServiceLB |
-| Bootstrap do ArgoCD | Ansible instala o ArgoCD e aplica AppProject e Application raiz enquanto excluídos da reconciliação |
+| Instalação e atualização do ArgoCD | Ansible instala e atualiza o ArgoCD com versão fixada; mantém os manifestos da instalação fora da reconciliação e aplica AppProject e Application raiz enquanto excluídos |
 | Entrada HTTP/HTTPS | NGINX Gateway Fabric exposto diretamente nas portas públicas 80/443, sem proxy HTTP externo obrigatório |
 | Roteamento | Gateway API por meio de GatewayClass, Gateway e HTTPRoute; Services internos preferencialmente `ClusterIP` |
 | CRDs e controllers | ArgoCD gerencia os CRDs do Gateway API, NGINX Gateway Fabric e demais recursos de infraestrutura, mediante permissões e ordem de sincronização apropriadas |

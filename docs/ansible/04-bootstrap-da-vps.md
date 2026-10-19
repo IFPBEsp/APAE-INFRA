@@ -48,6 +48,8 @@ Atualizações do k3s e do sistema operacional exigirão versões controladas, v
 
 ### Bootstrap do ArgoCD
 
+As tarefas Kubernetes do playbook serão executadas na própria VPS, pela conexão SSH do Ansible, com `become` quando necessário, usando o kubeconfig local do k3s e a API em `https://127.0.0.1:6443`. Isso inclui a instalação e as atualizações do ArgoCD, a aplicação dos AppProjects e da Application raiz e as verificações de saúde. Essas tarefas não deverão ser delegadas ao runner nem executadas com `connection: local` no runner; o kubeconfig não deverá ser copiado para ele. O runner precisa apenas da conectividade SSH autorizada, sem liberação de `6443/tcp` para os IPs do GitHub Actions. O acesso externo à API permanece restrito às origens administrativas autorizadas.
+
 Após confirmar a saúde do k3s, um playbook Ansible separado deverá:
 
 1. Instalar uma versão fixada e validada do ArgoCD.
@@ -55,6 +57,8 @@ Após confirmar a saúde do k3s, um playbook Ansible separado deverá:
 3. Aplicar o `AppProject` necessário ao bootstrap e registrar a `Application` raiz do repositório.
 4. Validar acesso ao repositório GitOps, destino Kubernetes e estado da Application raiz.
 5. Confirmar a descoberta e a reconciliação das Applications filhas.
+
+Após o bootstrap, o Ansible continuará responsável pela instalação do ArgoCD e por seus upgrades, utilizando versão fixada e validada. Os manifestos da própria instalação deverão ficar fora de todas as Applications reconciliadas pelo ArgoCD. Atualizações exigirão verificação de compatibilidade, backup, procedimento de recuperação e validação da saúde do ArgoCD e da reconciliação das Applications após a execução do playbook.
 
 Conforme o fluxo atualmente documentado em [Fluxo do ArgoCD](../argocd/fluxo-argocd.md), `project.yaml` e `app-of-apps.yaml` são excluídos do caminho reconciliado pela raiz. Enquanto essa exclusão permanecer, ambos pertencem ao **Ansible**: suas alterações exigirão a execução controlada do playbook. Não fazer Ansible e ArgoCD administrarem simultaneamente os mesmos objetos.
 

@@ -15,8 +15,9 @@ Cada recurso deve ter uma ferramenta proprietária para seu estado declarado. Gi
 | SO, usuários, SSH, pacotes e firewall local | Ansible | Configuração e manutenção do sistema operacional da VPS. |
 | Serviços e agentes instalados no host | Ansible | Gerencia unidades systemd, diretórios e demais serviços do Ubuntu; NGINX externo e Certbot não fazem parte da arquitetura inicial selecionada. |
 | Cluster Kubernetes k3s single-node | Ansible | Instalação, configuração, versionamento e manutenção do k3s na VPS, conforme a issue #90. |
-| Instalação inicial do ArgoCD | Ansible | Bootstrap do ArgoCD após a disponibilização do cluster k3s. |
+| Instalação e atualização do ArgoCD | Ansible | Bootstrap e upgrades do ArgoCD com versão fixada e validada, após a disponibilização do k3s; os manifestos da própria instalação ficam fora da reconciliação do ArgoCD. |
 | AppProject e Application raiz | Ansible | Mantidos pelo playbook enquanto estiverem excluídos da reconciliação do ArgoCD. |
+| AppProject de infraestrutura | Ansible | Aplicado no bootstrap junto com o AppProject `apae` e antes das Applications de infraestrutura; mantido pelo playbook, com `project-infra.yaml` também incluído no `exclude` da Application raiz. |
 | CRDs do Gateway API | ArgoCD, em Application de infraestrutura | Instalação e atualização declarativa, com permissões para recursos de cluster e sincronização antes dos recursos dependentes. |
 | NGINX Gateway Fabric e data plane | ArgoCD, em Application de infraestrutura | Instalação e atualização do controller e data plane, após disponibilização dos CRDs necessários. |
 | GatewayClass, Gateway e HTTPRoute | ArgoCD | Recursos declarativos de entrada e roteamento; GatewayClass é de escopo de cluster e exige permissões específicas. |
@@ -102,6 +103,8 @@ GitHub Actions valida e orquestra as execuções aprovadas de Terraform e Ansibl
 
 O Ansible instala e configura o k3s single-node conforme a [issue #90](https://github.com/IFPBEsp/APAE-INFRA/issues/90). Também executa o bootstrap do ArgoCD, incluindo instalação, AppProject e Application raiz. Enquanto `project.yaml` e `app-of-apps.yaml` estiverem excluídos do caminho reconciliado, suas alterações deverão ser realizadas pelo playbook.
 
+Na implementação, o Ansible também deverá criar e manter o AppProject dedicado aos CRDs, ao NGINX Gateway Fabric e ao cert-manager, antes de registrar as Applications de infraestrutura. Ao adicionar seu manifesto em `argocd/project-infra.yaml`, atualizar o `spec.source.directory.exclude` da Application raiz para `'{app-of-apps.yaml,project.yaml,project-infra.yaml}'`. Assim, a raiz continua reconciliando as Applications filhas, mas não passa a gerenciar o AppProject de infraestrutura pelo projeto `apae` das aplicações. Alterações e recuperação desse novo AppProject também deverão ser realizadas pelo playbook.
+
 Após o bootstrap, o ArgoCD reconcilia as Applications filhas e os recursos atribuídos a elas, sem que duas ferramentas administrem o mesmo objeto. A recuperação do bootstrap deve contemplar reinstalação do k3s e do ArgoCD, reaplicação dos objetos de bootstrap, validação dos CRDs e restauração de dados persistentes a partir de backups independentes.
 
 ## Compatibilidade com a decisão anterior de Terraform
@@ -123,6 +126,8 @@ A divisão proposta para esse ambiente é:
   ArgoCD, incluindo AppProject e Application raiz.
 - **ArgoCD:** reconciliação das Applications filhas e dos recursos Kubernetes
   atribuídos a elas após o bootstrap.
+
+Além do bootstrap, o Ansible mantém a instalação e executa os upgrades do próprio ArgoCD, com versão fixada e validada. Os manifestos dessa instalação não deverão ser incluídos em nenhuma Application reconciliada pelo ArgoCD. Essa atribuição substitui o autogerenciamento da instalação previsto no estudo anterior e evita que o playbook e o ArgoCD disputem os mesmos recursos.
 
 O AppProject de bootstrap e a Application raiz permanecem sob responsabilidade do Ansible
 enquanto estiverem excluídos do caminho reconciliado pelo ArgoCD. Portanto,
