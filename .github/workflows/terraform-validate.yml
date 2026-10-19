@@ -140,7 +140,7 @@ jobs:
         id: init-plan
         env:
           TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
-        run: terraform init -input=false -reconfigure
+        run: terraform init -input=false
 
       - name: Terraform Plan
         id: plan
