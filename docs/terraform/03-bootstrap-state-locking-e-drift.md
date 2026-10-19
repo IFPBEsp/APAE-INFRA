@@ -176,7 +176,7 @@ O requisito arquitetural é:
 A issue #87 definiu a utilização de workspaces independentes no HCP Terraform.
 
 | Ambiente | Workspace | Situação |
-|---|---|---|
+| --- | --- | --- |
 | `dev` | `apae-infra-dev` | Configurado e validado |
 | `hml` | `apae-infra-hml` | Planejado |
 | `prod` | `apae-infra-prod` | Planejado |
@@ -222,7 +222,7 @@ Por esse motivo, a adoção de serviços S3 compatíveis exige validação espec
 ### 7.1. Alternativas consideradas na issue #87
 
 | Alternativa | Vantagens | Considerações |
-|---|---|---|
+| --- | --- | --- |
 | HCP Terraform Free | Locking nativo, histórico de state e integração direta com Terraform CLI | Dependência da plataforma HCP e limites do plano gratuito |
 | AWS S3 | Locking via lockfile e versionamento de objetos | Exige configuração adicional de bucket e permissões |
 | Cloudflare R2 | Armazenamento compatível com S3 e possibilidade de baixo custo | Exige validação operacional do locking |
@@ -704,31 +704,15 @@ A configuração do backend remoto não autoriza automaticamente a execução de
 
 ---
 
+
 ## 15. Referências
 
-- HashiCorp — Running Terraform in Automation  
-  https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform
-
-- HashiCorp — HCP Terraform  
-  https://developer.hashicorp.com/terraform/cloud-docs
-
-- HashiCorp — Terraform Settings  
-  https://developer.hashicorp.com/terraform/language/terraform
-
-- HashiCorp — State Locking  
-  https://developer.hashicorp.com/terraform/language/state/locking
-
-- HashiCorp — S3 Backend  
-  https://developer.hashicorp.com/terraform/language/backend/s3
-
-- Terraform Provider Contabo  
-  https://registry.terraform.io/providers/contabo/contabo/latest/docs
-
-- Issue #59 — Estudar arquitetura GitOps para provisionamento com Terraform e ArgoCD  
-  https://github.com/IFPBEsp/APAE-INFRA/issues/59
-
-- Issue #87 — Configurar backend remoto do state do Terraform com lock  
-  https://github.com/IFPBEsp/APAE-INFRA/issues/87
-
-- PR #101 — Configurar backend remoto do state do Terraform com lock  
-  https://github.com/IFPBEsp/APAE-INFRA/pull/101
+- [HashiCorp — Running Terraform in Automation](https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform)
+- [HashiCorp — HCP Terraform](https://developer.hashicorp.com/terraform/cloud-docs)
+- [HashiCorp — Terraform Settings](https://developer.hashicorp.com/terraform/language/terraform)
+- [HashiCorp — State Locking](https://developer.hashicorp.com/terraform/language/state/locking)
+- [HashiCorp — S3 Backend](https://developer.hashicorp.com/terraform/language/backend/s3)
+- [Terraform Provider Contabo](https://registry.terraform.io/providers/contabo/contabo/latest/docs)
+- [Issue #59 — Estudar arquitetura GitOps](https://github.com/IFPBEsp/APAE-INFRA/issues/59)
+- [Issue #87 — Backend remoto do Terraform](https://github.com/IFPBEsp/APAE-INFRA/issues/87)
+- [PR #101 — Implementação do backend remoto](https://github.com/IFPBEsp/APAE-INFRA/pull/101)
