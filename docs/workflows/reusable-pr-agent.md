@@ -249,6 +249,7 @@ O evento `issue_comment` é filtrado pelo workflow reutilizável.
 O PR-Agent somente executa quando:
 
 - o comentário pertence a um Pull Request;
+- o comentário começa com `/`;
 - o autor não é um bot;
 - o `author_association` é um dos seguintes:
 
@@ -310,11 +311,13 @@ A análise deve ser feita por revisão humana ou após o código estar disponív
 
 ## Concorrência
 
-O workflow utiliza um grupo de concorrência por repositório e número do Pull Request.
+O workflow utiliza um grupo de concorrência por repositório, tipo de evento e número do Pull Request.
 
-Novas execuções cancelam execuções anteriores ainda em andamento.
+Para eventos `pull_request`, novas execuções cancelam revisões automáticas anteriores ainda em andamento no mesmo grupo. Isso evita consumo desnecessário de cota quando vários commits são enviados rapidamente para o mesmo Pull Request.
 
-Isso evita consumo desnecessário de cota quando vários commits são enviados rapidamente para o mesmo Pull Request.
+Para eventos `issue_comment`, comandos como `/ask` e `/improve` não cancelam comandos em andamento. Como os grupos são separados por evento, comandos por comentário e revisões automáticas não cancelam uns aos outros.
+
+Comentários que não começam com `/` não executam o job do PR-Agent.
 
 ---
 
@@ -409,10 +412,10 @@ GEMINI_API_KEY individual configurada
 
 ### `IFPBEsp/APAE-gestao-escolar`
 
-Branch padrão durante a implementação:
+Branch padrão:
 
 ```text
-dev-database
+dev
 ```
 
 Stack informada:
