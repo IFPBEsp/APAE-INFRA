@@ -24,7 +24,7 @@ O Ansible deverá manter o estado da VPS e dos componentes de bootstrap atribuí
 - usuários administrativos e de serviço, grupos, `sudo`, chaves públicas e configuração SSH;
 - firewall local, coordenado com eventuais regras de rede oferecidas pelo provedor e com os requisitos de conectividade do k3s;
 - pré-requisitos, instalação, configuração e manutenção do **k3s single-node**, com versão fixada, configuração de rede e definição sobre os componentes Traefik e ServiceLB;
-- instalação inicial do ArgoCD e aplicação controlada do **AppProject** e da **Application raiz**, enquanto esses objetos permanecerem fora da reconciliação do ArgoCD;
+- instalação e atualização do ArgoCD, com versão fixada, e aplicação controlada do **AppProject** e da **Application raiz**, enquanto esses objetos permanecerem fora da reconciliação do ArgoCD;
 - ferramentas auxiliares, verificações operacionais e agentes de observabilidade executados diretamente no host.
 
 **NGINX externo e Certbot não fazem parte do escopo obrigatório do Ansible na arquitetura selecionada.** Esses componentes somente deverão ser incluídos em playbooks se uma futura decisão arquitetural justificar um proxy HTTP independente do cluster. A validação de configurações e o reload de serviços do host continuam sendo responsabilidade do Ansible quando tais serviços existirem.
@@ -65,7 +65,7 @@ cert-manager   → emissão e renovação de certificados TLS no cluster
 GitHub Actions → validação, aprovação e orquestração de Terraform/Ansible
 ```
 
-A instalação inicial do ArgoCD, do AppProject e da Application raiz ficará sob execução controlada do Ansible enquanto esses objetos forem excluídos do caminho reconciliado. O ArgoCD passará a reconciliar as Applications filhas e seus recursos após o bootstrap, conforme o escopo de permissões definido.
+A instalação e as atualizações do ArgoCD, o AppProject e a Application raiz ficarão sob execução controlada do Ansible enquanto esses objetos forem excluídos do caminho reconciliado. O ArgoCD passará a reconciliar as Applications filhas e seus recursos após o bootstrap, conforme o escopo de permissões definido.
 
 ## Decisões ainda necessárias para implementação
 
