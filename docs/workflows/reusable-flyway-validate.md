@@ -135,6 +135,8 @@ with:
 
 Quando habilitado, o workflow simula a aplicação das migrations da branch base, seguida das migrations do Pull Request e de `flyway validate`.
 
+O checkout utiliza o commit de merge do evento `pull_request`, incluindo as migrations já integradas à branch base. Assim, o teste de upgrade valida o estado resultante do merge mesmo quando a branch do PR está desatualizada.
+
 ### `fail-on-destructive`
 
 Controla se operações potencialmente destrutivas devem bloquear o job.
@@ -160,6 +162,7 @@ name: Flyway Migrations Validate
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - "apps/api/src/main/resources/db/migration/**"
       - ".github/workflows/flyway-validate.yml"
@@ -179,6 +182,10 @@ jobs:
       check-upgrade-path: true
       fail-on-destructive: false
 ```
+
+Os eventos `labeled` e `unlabeled` executam novamente a validação ao adicionar ou remover labels. Com `fail-on-destructive: true`, isso permite reavaliar a aprovação sem um novo push ou reexecução manual.
+
+Para validar a integração, use um PR com uma migration destrutiva e `fail-on-destructive: true`: confirme a falha sem o label, adicione `migration-destrutiva-aprovada` e confirme o sucesso na execução disparada por `labeled`; depois remova o label e confirme o bloqueio na execução de `unlabeled`. Registre os links dessas execuções como evidência, incluindo o sucesso com o label para comprovar também a leitura dos labels pela API.
 
 ### Caller com dependência externa
 
@@ -211,7 +218,7 @@ Não são necessários secrets adicionais para a validação. O PostgreSQL utili
 
 ## Imutabilidade das migrations
 
-O workflow compara a branch base com a branch do Pull Request. Somente migrations novas podem ser adicionadas. Uma migration existente não deve ser:
+O workflow usa o diff de três pontos (`base...head`) para comparar o ancestral comum das branches com o head do Pull Request. Isso identifica apenas as alterações do PR, sem tratar migrations integradas à branch base depois da criação da branch do PR como removidas. Somente migrations novas podem ser adicionadas. Uma migration existente não deve ser:
 
 - Modificada;
 - Renomeada;
@@ -261,15 +268,8 @@ Uma migration nova com versão menor ou igual à última versão existente faz o
 
 O workflow procura operações potencialmente destrutivas nas migrations novas, incluindo:
 
-- `DROP TABLE`;
-- `DROP VIEW`;
-- `DROP MATERIALIZED VIEW`;
-- `DROP SCHEMA`;
-- `DROP TYPE`;
-- `DROP SEQUENCE`;
-- `DROP INDEX`;
+- `DROP` em geral, incluindo `DROP TABLE`, `DROP FUNCTION`, `DROP TRIGGER` e `ALTER TABLE ... DROP` (colunas, com ou sem `COLUMN`, e constraints);
 - `TRUNCATE`;
-- `ALTER TABLE ... DROP COLUMN`;
 - `DELETE` sem `WHERE`;
 - `UPDATE` sem `WHERE`.
 
@@ -309,6 +309,20 @@ As responsabilidades ficam distribuídas da seguinte forma:
 
 - **Aplicação:** código e migrations;
 - **APAE-INFRA:** workflows reutilizáveis e infraestrutura compartilhada.
+
+## Recomendação para o APAE-gestao-escolar
+
+A [issue #58](https://github.com/IFPBEsp/APAE-INFRA/issues/58) registra o uso de `spring.jpa.hibernate.ddl-auto=update` junto com o Flyway no `APAE-gestao-escolar`. Essa configuração permite que o Hibernate altere o schema ao iniciar a aplicação, fazendo o banco divergir do estado descrito pelas migrations e validado por este workflow, que não inicia a aplicação.
+
+Recomenda-se substituir `update` por `validate`, mantendo as alterações de schema em migrations do Flyway. Com `validate`, o Hibernate verifica a compatibilidade do schema com as entidades e falha na inicialização quando encontra incompatibilidades, sem atualizar as tabelas automaticamente.
+
+```properties
+spring.jpa.hibernate.ddl-auto=validate
+```
+
+Antes da troca, eventuais diferenças entre o banco existente e as migrations devem ser reconciliadas por novas migrations. A alteração da configuração deve ser feita em um PR no próprio `APAE-gestao-escolar`, conforme o escopo da issue.
+
+Referência: [Inicialização do banco de dados no Spring Boot](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
 
 ## Referências relacionadas
 

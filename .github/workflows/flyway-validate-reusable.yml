@@ -72,7 +72,6 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Prepare migration snapshots
@@ -94,8 +93,7 @@ jobs:
           git diff \
             --name-status \
             --find-renames \
-            "$BASE_SHA" \
-            "$HEAD_SHA" \
+            "$BASE_SHA...$HEAD_SHA" \
             -- "$MIGRATIONS_PATH" \
             > "$diff_file"
 
@@ -238,7 +236,7 @@ jobs:
               output.write(f"latest-version={latest_version_text}\n")
               output.write(f"new-count={len(new_files)}\n")
 
-      - name: Validate migrations from zero
+      - name: Validate migrations from zero and upgrade path
         shell: bash
         env:
           MIGRATIONS_PATH: ${{ inputs.migrations-path }}
@@ -246,8 +244,11 @@ jobs:
           POSTGRES_VERSION: ${{ inputs.postgres-version }}
           FLYWAY_VERSION: ${{ inputs.flyway-version }}
           SCHEMAS: ${{ inputs.schemas }}
+          CHECK_UPGRADE: ${{ inputs.check-upgrade-path }}
         run: |
           set -euo pipefail
+
+          base_root="$RUNNER_TEMP/flyway-base"
 
           run_psql_file() {
             local sql_file="$1"
@@ -321,6 +322,7 @@ jobs:
               -e FLYWAY_CLEAN_DISABLED=false \
               -e FLYWAY_LOCATIONS="$location" \
               -v "$GITHUB_WORKSPACE:/workspace:ro" \
+              -v "$base_root:/base:ro" \
               "flyway/flyway:${FLYWAY_VERSION}" \
               "$@"
           }
@@ -338,125 +340,37 @@ jobs:
             "filesystem:/workspace/${MIGRATIONS_PATH}" \
             validate
 
-      - name: Validate upgrade path
-        if: inputs.check-upgrade-path
-        shell: bash
-        env:
-          MIGRATIONS_PATH: ${{ inputs.migrations-path }}
-          EXTRA_PATHS: ${{ inputs.extra-migrations-paths }}
-          POSTGRES_VERSION: ${{ inputs.postgres-version }}
-          FLYWAY_VERSION: ${{ inputs.flyway-version }}
-          SCHEMAS: ${{ inputs.schemas }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
+          if [[ "$CHECK_UPGRADE" == "true" ]]; then
+            echo "Limpando banco descartável..."
+            flyway \
+              "filesystem:/workspace/${MIGRATIONS_PATH}" \
+              clean
 
-          base_root="$RUNNER_TEMP/flyway-base"
+            echo "Aplicando SQL preparatório..."
+            run_extra_sql
 
-          run_psql_file() {
-            local sql_file="$1"
+            if [[ -d "$base_root/$MIGRATIONS_PATH" ]]; then
+              echo "Aplicando migrations da branch base..."
 
-            docker run \
-              --rm \
-              --network host \
-              -e PGPASSWORD=flyway \
-              -v "$GITHUB_WORKSPACE:/workspace:ro" \
-              "postgres:${POSTGRES_VERSION}" \
-              psql \
-                -h 127.0.0.1 \
-                -p 5432 \
-                -U flyway \
-                -d flyway \
-                -v ON_ERROR_STOP=1 \
-                -f "/workspace/${sql_file}"
-          }
+              flyway \
+                "filesystem:/base/${MIGRATIONS_PATH}" \
+                migrate
+            else
+              echo "A branch base não possui migrations nesse caminho."
+            fi
 
-          run_extra_sql() {
-            [[ -z "${EXTRA_PATHS}" ]] && return 0
-
-            while IFS= read -r path; do
-              path="${path#"${path%%[![:space:]]*}"}"
-              path="${path%"${path##*[![:space:]]}"}"
-
-              [[ -z "$path" ]] && continue
-
-              full_path="$GITHUB_WORKSPACE/$path"
-
-              if [[ -f "$full_path" ]]; then
-                run_psql_file "$path"
-                continue
-              fi
-
-              if [[ -d "$full_path" ]]; then
-                while IFS= read -r sql_file; do
-                  relative="${sql_file#$GITHUB_WORKSPACE/}"
-                  run_psql_file "$relative"
-                done < <(
-                  find "$full_path" \
-                    -type f \
-                    -name '*.sql' \
-                    -print \
-                    | sort
-                )
-
-                continue
-              fi
-
-              echo "::error::Caminho SQL não encontrado: $path"
-              exit 1
-            done <<< "$EXTRA_PATHS"
-          }
-
-          flyway() {
-            local location="$1"
-            shift
-
-            docker run \
-              --rm \
-              --network host \
-              -e FLYWAY_URL="jdbc:postgresql://127.0.0.1:5432/flyway" \
-              -e FLYWAY_USER=flyway \
-              -e FLYWAY_PASSWORD=flyway \
-              -e FLYWAY_SCHEMAS="$SCHEMAS" \
-              -e FLYWAY_CREATE_SCHEMAS=true \
-              -e FLYWAY_CONNECT_RETRIES=30 \
-              -e FLYWAY_CLEAN_DISABLED=false \
-              -e FLYWAY_LOCATIONS="$location" \
-              -v "$GITHUB_WORKSPACE:/workspace:ro" \
-              -v "$base_root:/base:ro" \
-              "flyway/flyway:${FLYWAY_VERSION}" \
-              "$@"
-          }
-
-          echo "Limpando banco descartável..."
-          flyway \
-            "filesystem:/workspace/${MIGRATIONS_PATH}" \
-            clean
-
-          echo "Aplicando SQL preparatório..."
-          run_extra_sql
-
-          if [[ -d "$base_root/$MIGRATIONS_PATH" ]]; then
-            echo "Aplicando migrations da branch base..."
+            echo "Aplicando migrations novas do PR..."
 
             flyway \
-              "filesystem:/base/${MIGRATIONS_PATH}" \
+              "filesystem:/workspace/${MIGRATIONS_PATH}" \
               migrate
-          else
-            echo "A branch base não possui migrations nesse caminho."
+
+            echo "Validando estado final..."
+
+            flyway \
+              "filesystem:/workspace/${MIGRATIONS_PATH}" \
+              validate
           fi
-
-          echo "Aplicando migrations novas do PR..."
-
-          flyway \
-            "filesystem:/workspace/${MIGRATIONS_PATH}" \
-            migrate
-
-          echo "Validando estado final..."
-
-          flyway \
-            "filesystem:/workspace/${MIGRATIONS_PATH}" \
-            validate
 
       - name: Detect destructive operations
         id: destructive
@@ -478,12 +392,10 @@ jobs:
           workspace = Path(os.environ["GITHUB_WORKSPACE"])
 
           destructive_patterns = [
-              (r"\bDROP\s+(TABLE|VIEW|MATERIALIZED\s+VIEW|SCHEMA|TYPE|SEQUENCE|INDEX)\b",
+              (r"\bDROP\b",
                "DROP"),
               (r"\bTRUNCATE\b",
                "TRUNCATE"),
-              (r"\bALTER\s+TABLE\b.*?\bDROP\s+COLUMN\b",
-               "ALTER TABLE ... DROP COLUMN"),
           ]
 
           findings = []
