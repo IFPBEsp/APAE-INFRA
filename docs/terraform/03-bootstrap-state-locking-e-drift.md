@@ -440,7 +440,7 @@ O ArgoCD permanece responsável pela reconciliação dos recursos Kubernetes, se
 Foi criada a seguinte organização no HCP Terraform:
 
 ```text
-ifpbesp-apae
+ifpb-esp-apae
 ```
 
 Workspace configurado:
@@ -474,7 +474,7 @@ terraform {
   required_version = "~> 1.13.0"
 
   cloud {
-    organization = "ifpbesp-apae"
+    organization = "ifpb-esp-apae"
 
     workspaces {
       name = "apae-infra-dev"
@@ -608,7 +608,7 @@ Acquiring state lock. This may take a few moments...
 Error: Error acquiring the state lock
 
 Error message: workspace already locked
-(lock ID: "ifpbesp-apae/apae-infra-dev")
+(lock ID: "ifpb-esp-apae/apae-infra-dev")
 ```
 
 O Terraform não conseguiu adquirir o lock enquanto o workspace estava bloqueado.
