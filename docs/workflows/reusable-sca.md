@@ -22,6 +22,7 @@ O workflow analisa os seguintes ecossistemas:
 | `severity` | `string` | Não | `HIGH,CRITICAL` | Severidades que bloqueiam o Pull Request (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`). |
 | `ignore-unfixed` | `boolean` | Não | `true` | Se `true`, ignora vulnerabilidades que ainda não possuem correção oficial disponível. |
 | `trivyignores` | `string` | Não | `.trivyignore` | Caminho do arquivo de exceções versionado no repositório. |
+| `upload-sarif` | `boolean` | Não | `true` | Se `true`, tenta publicar o relatório SARIF na área de Code scanning do GitHub quando o arquivo for gerado. |
 | `fail-on-vulnerabilities` | `boolean` | Não | `true` | Se `true`, falha o job do PR caso vulnerabilidades não suprimidas sejam encontradas. |
 
 ---
@@ -153,6 +154,12 @@ jobs:
     with:
       scan-path: "."
 ```
+
+### Aviso sobre filtros `paths` e checks obrigatórios
+
+> **Não torne obrigatório um check que pode deixar de ser criado devido a filtros de caminho.** Se um workflow de `pull_request` for ignorado por `paths`, o check pode ficar pendente e bloquear o merge. Se o SCA for obrigatório em todos os PRs, remova os filtros de caminho ou adote uma estratégia de workflow/check que produza um resultado conclusivo em todas as alterações relevantes. Valide o comportamento nas regras de proteção/rulesets da organização.
+
+Os filtros dos exemplos são ilustrativos e devem ser adaptados à estrutura real de cada repositório. Considere também arquivos que alteram dependências, como manifestos, lockfiles, `.trivyignore` e configurações do próprio workflow.
 
 > [!IMPORTANT]
 > A referência `<commit-sha>` deve ser substituída pelo SHA completo do commit aprovado no `APAE-INFRA`. Evite o uso de tags mutáveis como `@main` ou `@dev`.
