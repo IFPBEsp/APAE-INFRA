@@ -113,9 +113,30 @@ jobs:
           set -euo pipefail
 
           short_sha="${COMMIT_SHA:0:7}"
+          {
+            echo "short-sha=${short_sha}"
+            echo "version=sha-${short_sha}"
+          } >> "$GITHUB_OUTPUT"
 
-          echo "short-sha=${short_sha}" >> "$GITHUB_OUTPUT"
-          echo "version=sha-${short_sha}" >> "$GITHUB_OUTPUT"
+      - name: Prepare build arguments
+        id: build-args
+        shell: bash
+        env:
+          INPUT_BUILD_ARGS: ${{ inputs.build-args }}
+          COMMIT_SHA: ${{ github.sha }}
+          VERSION: ${{ steps.build-meta.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "args<<EOF"
+            echo "APP_VERSION=${VERSION}"
+            echo "VCS_REF=${COMMIT_SHA}"
+            if [[ -n "${INPUT_BUILD_ARGS}" ]]; then
+              echo "${INPUT_BUILD_ARGS}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         if: matrix.platform != 'linux/amd64'
@@ -139,7 +160,11 @@ jobs:
           file: ${{ inputs.dockerfile }}
           target: ${{ inputs.target }}
           platforms: ${{ matrix.platform }}
-          build-args: ${{ inputs.build-args }}
+          build-args: ${{ steps.build-args.outputs.args }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.build-meta.outputs.version }}
           outputs: >-
             type=image,
             name=${{ steps.image.outputs.name }},
@@ -186,7 +211,7 @@ jobs:
       - name: Upload platform digest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: digest-${{ steps.platform.outputs.name }}
+          name: digest-${{ inputs.image-name }}-${{ steps.platform.outputs.name }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -237,7 +262,7 @@ jobs:
       - name: Download approved digests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          pattern: digest-*
+          pattern: digest-${{ inputs.image-name }}-*
           path: ${{ runner.temp }}/digests
           merge-multiple: true
 
@@ -249,6 +274,7 @@ jobs:
           tags: |
             type=sha,format=short
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
 
       - name: Create candidate manifest
         id: candidate
@@ -384,10 +410,12 @@ jobs:
           short_sha="${COMMIT_SHA:0:7}"
           sha_tag="sha-${short_sha}"
 
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-          echo "sha-tag=$sha_tag" >> "$GITHUB_OUTPUT"
-          echo "immutable-reference=${IMAGE}@${DIGEST}" >> "$GITHUB_OUTPUT"
+          {
+            echo "image=$IMAGE"
+            echo "digest=$DIGEST"
+            echo "sha-tag=$sha_tag"
+            echo "immutable-reference=${IMAGE}@${DIGEST}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Publish workflow summary
         shell: bash

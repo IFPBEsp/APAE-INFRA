@@ -102,11 +102,12 @@ A política relacionada às tags e ao uso de digest é documentada separadamente
 O workflow gera:
 
 - `sha-<short-sha>`: gerada para o commit que originou o build;
-- `latest`: publicada automaticamente quando o consumidor executa em `dev`, após verificar a assinatura.
+- `latest`: publicada quando o consumidor executa em `dev`, após verificar a assinatura;
+- `dev`: publicada junto com `latest`, após verificar a assinatura, para compatibilidade com os manifests Kubernetes que ainda consomem essa tag.
 
 A tag `vX.Y.Z` não é gerada por este workflow. A publicação de uma release semântica deve reutilizar a imagem já existente e será tratada em um workflow específico de release.
 
-O uso de `latest` para deploy, rollback ou auditoria não é recomendado.
+O uso de `latest` ou `dev` para deploy, rollback ou auditoria não é recomendado, sendo a referência canônica o digest OCI imutável.
 
 ## Inputs
 
@@ -150,7 +151,9 @@ Cada plataforma:
 1. é construída separadamente;
 2. é publicada por digest;
 3. é analisada individualmente pelo Trivy;
-4. tem seu digest persistido como artifact somente se o scan for aprovado.
+4. tem seu digest persistido como artifact nomeado `digest-<image-name>-<platform>` somente se o scan for aprovado.
+
+O isolamento do nome do artifact por `image-name` impede conflitos de upload e colisões no GitHub Actions v4 quando múltiplos jobs do mesmo workflow chamam o reusable em paralelo (por exemplo, `publish-backend` e `publish-frontend`).
 
 Para plataformas diferentes de `linux/amd64`, o workflow configura QEMU automaticamente.
 
@@ -220,7 +223,9 @@ Consequentemente:
 
 ## Promoção da imagem
 
-Após todas as plataformas passarem pelo scan, o job `publish` baixa os artifacts contendo os digests aprovados.
+Após todas as plataformas passarem pelo scan, o job `publish` baixa os artifacts contendo os digests aprovados utilizando o filtro `digest-<image-name>-*`.
+
+Esse padrão de download isolado por serviço garante que apenas os digests pertencentes à imagem em promoção sejam combinados, evitando a contaminação cruzada de manifests entre diferentes componentes executados no mesmo run.
 
 A promoção utiliza:
 
@@ -296,19 +301,24 @@ Os detalhes dessa política estão documentados em:
 
 [Assinatura e verificação de imagens Docker com Cosign](./cosign-assinatura-imagens.md)
 
-### Labels OCI
+### Labels OCI e rastreabilidade
 
-Os metadados OCI específicos de cada imagem são definidos pelos próprios Dockerfiles padronizados.
+O reusable workflow preenche automaticamente os build-args e labels OCI necessários para rastreabilidade:
 
-O reusable workflow disponibiliza `build-args` para que os callers forneçam os valores necessários, por exemplo:
+- `APP_VERSION`: preenchido automaticamente com `sha-<short-sha>`;
+- `VCS_REF`: preenchido automaticamente com o commit SHA (`${{ github.sha }}`);
+- `org.opencontainers.image.source`: URL canônica do repositório de origem;
+- `org.opencontainers.image.revision`: commit SHA completo;
+- `org.opencontainers.image.version`: tag `sha-<short-sha>`.
+
+Os Dockerfiles que declaram `ARG APP_VERSION` e `ARG VCS_REF` em seus `LABEL` recebem esses valores automaticamente, sem necessidade de configuração redundante no caller.
+
+Caso a aplicação demande build args adicionais (ex.: URLs de backend, flags de compilação) ou valores customizados, estes podem ser fornecidos via input `build-args`:
 
 ```yaml
 build-args: |
-  APP_VERSION=${{ github.sha }}
-  VCS_REF=${{ github.sha }}
+  BACKEND_URL=http://api.exemplo.com
 ```
-
-Dessa forma, os `LABEL` definidos nos Dockerfiles permanecem como fonte dos metadados da aplicação, evitando que um conjunto genérico de labels seja aplicado indistintamente a imagens diferentes.
 
 ### Actions pinadas
 
@@ -368,9 +378,6 @@ jobs:
       image-name: apae-geral-backend
       platforms: '["linux/amd64"]'
       scan-severity: HIGH,CRITICAL
-      build-args: |
-        APP_VERSION=${{ github.sha }}
-        VCS_REF=${{ github.sha }}
 ```
 
 A permissão `id-token: write` deve ser concedida pelo caller para permitir a assinatura keyless com Cosign.
@@ -379,7 +386,9 @@ Embora o reusable workflow restrinja essa permissão ao job `publish`, o caller 
 
 O gatilho `push` em `dev` refere-se à branch do repositório consumidor. A chamada com `@main` seleciona a referência do workflow reutilizável no `APAE-INFRA`, correspondente à identidade exigida pela verificação Cosign.
 
-Os gatilhos são definidos no consumidor; o workflow reutilizável recebe a execução via `workflow_call`. O `latest` é publicado automaticamente quando a execução ocorre em `dev`, após verificar a assinatura. A publicação de tags semânticas pertence ao workflow específico de release e não exige adicionar um gatilho de tags a este caller.
+Argumentos como `APP_VERSION` e `VCS_REF` são preenchidos automaticamente pelo reutilizável.
+
+Os gatilhos são definidos no consumidor; o workflow reutilizável recebe a execução via `workflow_call`. As tags `latest` e `dev` são publicadas automaticamente quando a execução ocorre em `dev`, após verificar a assinatura. A publicação de tags semânticas pertence ao workflow específico de release e não exige adicionar um gatilho de tags a este caller.
 
 Caso a chamada seja alterada para uma branch de feature, versão ou commit SHA aprovado, a identidade exigida na verificação Cosign também deverá corresponder à referência adotada.
 
