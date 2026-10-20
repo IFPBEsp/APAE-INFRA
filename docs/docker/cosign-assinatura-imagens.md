@@ -274,21 +274,42 @@ O GHCR não bloqueia o pull desses artefatos por causa da falha do workflow. O b
 
 ## Validação realizada
 
-A integração foi validada utilizando uma imagem real do backend do repositório `IFPBEsp/APAE`.
+O fluxo atual foi validado em 20/10/2026 utilizando o backend do repositório `IFPBEsp/APAE` como consumidor real.
+
+- [Execução completa, concluída com sucesso](https://github.com/IFPBEsp/APAE/actions/runs/39421278748).
+- [Job de assinatura, verificação e promoção](https://github.com/IFPBEsp/APAE/actions/runs/39421278748/job/118623497832).
+- Commit do workflow reutilizável testado: `aa5fa43`.
+- Commit do consumidor: `aa2f449a10f368071f49a767d279f004c0059552`, na branch de teste `codex/pr75-cosign-validation`.
 
 Imagem validada:
 
 ```text
-ghcr.io/ifpbesp/apae-geral-backend@sha256:a8e30f0971bc2e81cd5e3f868866b3e860788c08bd038d3392fa1d84d7e902d1
+ghcr.io/ifpbesp/apae-geral-backend@sha256:8cf384edad6f79f0c0fe673abde35113898405bffc7da52a61de45e62894e916
 ```
 
-Durante a execução, foram concluídas com sucesso as etapas:
+Durante a execução, foram concluídas com sucesso, nesta ordem, as etapas:
 
 ```text
 Install Cosign
-Sign promoted image with Cosign
+Create candidate manifest
+Verify candidate image
+Sign candidate image with Cosign
 Verify Cosign signature
+Promote verified image to final tags
+Export workflow outputs
+Publish workflow summary
 ```
+
+Para testar o código antes da integração, o caller apontou para `@64-ci-adicionar-assinatura-de-imagens-docker-com-cosign`, e a identidade exigida foi temporariamente ajustada para essa mesma referência:
+
+```bash
+cosign verify "${IMAGE}@${DIGEST}" \
+  --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/64-ci-adicionar-assinatura-de-imagens-docker-com-cosign" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+  --certificate-github-workflow-repository="IFPBEsp/APAE"
+```
+
+A identidade definitiva do workflow foi restaurada para `@refs/heads/main` após o teste. Os callers definitivos devem usar `@main`.
 
 A verificação confirmou:
 
@@ -298,19 +319,11 @@ Existence of the claims in the transparency log was verified offline
 The code-signing certificate was verified using trusted certificate authority certificates
 ```
 
-Essa execução antecede a exigência de verificação do repositório consumidor. Um novo run deverá confirmar a etapa `Verify Cosign signature` com `--certificate-github-workflow-repository`, antes da promoção das tags finais.
+Os logs confirmam a assinatura e a verificação do candidato antes da promoção, com restrição de identidade, issuer e repositório consumidor. A promoção utilizou `--prefer-index=false`, e a comparação obrigatória confirmou que a tag final `sha-aa2f449` aponta para o mesmo digest assinado.
 
-O teste confirmou:
+O caller de teste usou temporariamente `scan-severity: UNKNOWN` para permitir a validação do Cosign apesar das vulnerabilidades conhecidas no backend. O padrão do reutilizável permanece `HIGH,CRITICAL`. Como o consumidor executou em uma branch de teste, as tags `latest` e `dev` não foram atualizadas.
 
-- assinatura de uma imagem real publicada no GHCR;
-- assinatura vinculada ao digest OCI final;
-- geração de chave efêmera;
-- uso de identidade OIDC do GitHub Actions;
-- ausência de chave privada persistente;
-- validação do certificado emitido pelo Sigstore;
-- validação das evidências no transparency log;
-- restrição da identidade ao workflow reutilizável autorizado;
-- execução com permissões mínimas por job.
+Essa execução substitui a evidência anterior do fluxo que assinava a imagem depois da promoção.
 
 ## Verificação antes do consumo
 

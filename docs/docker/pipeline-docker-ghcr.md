@@ -408,7 +408,7 @@ Durante a validação, foram confirmados:
 - assinatura keyless com Cosign;
 - verificação da assinatura com identidade OIDC e issuer esperados.
 
-O teste encontrou:
+Em uma execução anterior, o teste do security gate encontrou:
 
 ```text
 Base Debian: 0 vulnerabilidades detectadas
@@ -421,19 +421,31 @@ Como o limite utilizado foi `HIGH,CRITICAL`, o job de promoção foi corretament
 
 Esse comportamento confirmou o funcionamento do security gate.
 
-Para validar especificamente a integração com Cosign, foi realizada uma execução controlada com configuração temporária do caller para permitir que o fluxo avançasse até a etapa de assinatura.
+O fluxo atual de Cosign foi validado em 20/10/2026 na [execução 39421278748](https://github.com/IFPBEsp/APAE/actions/runs/39421278748), utilizando o backend de `IFPBEsp/APAE`. O [job de publicação](https://github.com/IFPBEsp/APAE/actions/runs/39421278748/job/118623497832) concluiu com sucesso a sequência:
 
-Nessa validação, foram confirmados:
+```text
+Create candidate manifest
+Verify candidate image
+Sign candidate image with Cosign
+Verify Cosign signature
+Promote verified image to final tags
+Export workflow outputs
+Publish workflow summary
+```
 
-- promoção da imagem para o digest OCI final;
-- assinatura keyless com Cosign;
-- uso do GitHub Actions OIDC;
-- verificação da assinatura;
-- validação do issuer esperado;
-- validação da identidade do reusable workflow;
-- assinatura vinculada ao digest OCI final.
+Foram confirmados:
 
-A política padrão de bloqueio por vulnerabilidades permanece `HIGH,CRITICAL`.
+- assinatura keyless do digest candidato antes da promoção;
+- verificação da identidade exata do reutilizável e do issuer GitHub Actions OIDC;
+- restrição do certificado ao consumidor com `--certificate-github-workflow-repository="IFPBEsp/APAE"`;
+- promoção com `--prefer-index=false`, preservando o digest assinado;
+- tag final `sha-aa2f449` e output imutável com o digest `sha256:8cf384edad6f79f0c0fe673abde35113898405bffc7da52a61de45e62894e916`.
+
+O teste executou o reutilizável no commit `aa5fa43`, com a identidade temporariamente ajustada para a branch `64-ci-adicionar-assinatura-de-imagens-docker-com-cosign`. Após a execução, a identidade definitiva foi restaurada para `@refs/heads/main`, correspondente aos callers com `@main`.
+
+O consumidor executou na branch `codex/pr75-cosign-validation`, commit `aa2f449a10f368071f49a767d279f004c0059552`, sem atualizar `latest` ou `dev`. O caller de teste removeu o input obsoleto `publish-latest` e utilizou `scan-severity: UNKNOWN` exclusivamente para validar o Cosign apesar das vulnerabilidades conhecidas do backend. A política padrão de bloqueio do reutilizável permanece `HIGH,CRITICAL`.
+
+Os detalhes do comando de verificação e da imagem validada estão em [Assinatura e verificação de imagens Docker com Cosign](./cosign-assinatura-imagens.md#validação-realizada).
 
 ## Ajustes identificados durante a validação
 
