@@ -1,5 +1,7 @@
 # Decisão arquitetural
 
+**Status:** proposta atualizada pela issue #86, pendente de validação do time. O [levantamento e a matriz de responsabilidades](06-conclusao-e-proximos-passos.md) detalham as evidências e pendências da VPS HostGator.
+
 ## 1. Resumo
 
 Após avaliar:
@@ -11,7 +13,7 @@ Após avaliar:
 
 a recomendação para o estágio atual do `APAE-INFRA` é:
 
-> **Utilizar GitHub Actions como mecanismo de automação do Terraform para infraestrutura fundacional e manter ArgoCD responsável pela reconciliação dos recursos Kubernetes.**
+> **Utilizar GitHub Actions para executar Terraform sobre recursos externos com API/provider validado e Ansible sobre o host, k3s e bootstrap do ArgoCD. Manter ArgoCD responsável pela reconciliação dos recursos Kubernetes atribuídos às suas Applications.**
 
 Terraform Operator e Crossplane permanecem como alternativas futuras, condicionadas ao surgimento de requisitos que justifiquem sua complexidade.
 
@@ -20,50 +22,31 @@ Terraform Operator e Crossplane permanecem como alternativas futuras, condiciona
 ## 2. Arquitetura
 
 ```text
-                         GitHub
-                           │
-                     APAE-INFRA
-                           │
-                 Pull Request / Review
-                           │
-               ┌───────────┴────────────┐
-               │                        │
-          terraform/               kubernetes/
-               │                        │
-       GitHub Actions                 ArgoCD
-               │                        │
-      fmt / validate / plan             │
-               │                        │
-            approval                    │
-               │                        │
-             apply                      │
-               │                        │
-               ▼                        ▼
-        infraestrutura             Kubernetes
-         fundacional                   │
-               │                       ▼
-               │                 Aplicações APAE
-               ▼
-          VPS / rede /
-      firewall / bootstrap
+Git → Pull Request / Review
+├── GitHub Actions → Terraform → GitHub / DNS e backend quando suportados
+├── GitHub Actions → Ansible   → host / k3s / bootstrap do ArgoCD
+└── ArgoCD                    → Applications filhas / recursos Kubernetes
+
+Portal/suporte HostGator → operações da VPS; integração Terraform dispensada nesta etapa
 ```
 
 ---
 
 ## 3. Fonte da verdade
 
-Git será a fonte da verdade para os dois domínios:
+Git será a fonte da verdade para os três domínios:
 
 ```text
 Git
 ├── Terraform
+├── Ansible
 └── Kubernetes
 ```
 
 A diferença está no reconciliador/executor:
 
 ```text
-Terraform
+Terraform / Ansible
 → GitHub Actions
 
 Kubernetes
@@ -78,24 +61,17 @@ Isso mantém GitOps sem transformar ArgoCD em executor universal.
 
 ### Terraform
 
-Responsável pela infraestrutura fundacional externa ao cluster.
+Responsável por recursos externos com integração validada: configurações dos repositórios GitHub (issue #88), infraestrutura do backend remoto (issue #87) e DNS quando houver API/provider adequado à zona autoritativa.
 
-Exemplos conceituais:
+Por decisão registrada em 17/10/2026, a integração Terraform com a VPS HostGator, rede, volumes, firewall do provedor e snapshots não será adotada nesta etapa. As operações do provedor serão realizadas pelo Portal/suporte. A existência de API/provider permanece não confirmada, mas sua investigação não é requisito para concluir a issue #86; a configuração da VPS existente será realizada pelo Ansible via SSH. DNS e backend de state serão avaliados independentemente. A identificação OCI do produto não comprova acesso à conta Oracle necessária ao provider `oracle/oci`.
 
-```text
-VPS
-rede
-firewall externo
-bootstrap do host
-bootstrap Kubernetes
-instalação inicial do ArgoCD
-```
+Providers Helm e Kubernetes foram avaliados para bootstrap, mas não serão adotados para esse fim nesta VPS. Não haverá provisioners SSH Terraform para configurar o host.
 
-O Terraform é responsável apenas pela instalação inicial necessária para disponibilizar o ArgoCD.
+### Ansible
 
-Após essa etapa, a configuração e o ciclo de vida do ArgoCD passam a ser gerenciados exclusivamente pelo Git através do próprio ArgoCD.
+Responsável pelo sistema operacional, usuários, SSH, pacotes, serviços e firewall local, instalação/manutenção do k3s e instalação/manutenção inicial do ArgoCD. AppProject de bootstrap e Application raiz ficam com Ansible enquanto estiverem excluídos da reconciliação, conforme o PR #80.
 
-O mecanismo exato de bootstrap não faz parte desta decisão.
+Transferir algum desses recursos ao ArgoCD exigirá uma decisão explícita e retirada da gestão anterior, sem dois responsáveis pelo mesmo objeto.
 
 ### GitHub Actions
 
@@ -109,13 +85,13 @@ aprovações
 apply
 ```
 
-conforme workflows que serão definidos posteriormente.
+e pelas validações/aprovações das execuções Ansible, conforme workflows que serão definidos posteriormente. GitHub Actions orquestra e não assume a propriedade dos recursos.
 
 ### ArgoCD
 
 Responsável pela reconciliação dos recursos Kubernetes depois que o cluster estiver disponível.
 
-Após sua instalação inicial, o ArgoCD deve ser gerenciado exclusivamente pelos manifests versionados no Git.
+Applications filhas, workloads, Gateway API, NGINX Gateway Fabric e cert-manager quando implementado pertencem ao ArgoCD. Não se presume autogerenciamento do próprio ArgoCD ou dos objetos excluídos da reconciliação.
 
 O Terraform não deve continuar administrando os mesmos recursos Kubernetes que pertencem ao ArgoCD.
 
@@ -190,7 +166,7 @@ somente então
 automatizar apply
 ```
 
-Contabo Object Storage permanece candidato e deverá passar por PoC.
+O backend deverá ser externo à VPS e ao k3s. Contabo Object Storage é apenas candidato histórico, sem seleção implícita; escolha e PoC de locking/recuperação pertencem à issue #87.
 
 ---
 
@@ -222,7 +198,10 @@ A arquitetura não bloqueia uma futura evolução:
 
 ```text
 GitHub Actions + Terraform
-→ infraestrutura fundacional
+→ recursos externos com integração validada
+
+Ansible + GitHub Actions
+→ host, k3s e bootstrap
 
 ArgoCD
 → Kubernetes
