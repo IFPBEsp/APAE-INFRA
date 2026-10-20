@@ -1,0 +1,66 @@
+name: SonarQube Analysis - Maven
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: 'Chave do projeto no SonarQube / SonarCloud'
+        required: true
+        type: string
+      working-directory:
+        description: 'Diretório raiz do projeto Maven'
+        required: false
+        default: '.'
+        type: string
+      java-version:
+        description: 'Versão do JDK'
+        required: false
+        default: '21'
+        type: string
+      sonar-host-url:
+        description: 'URL do servidor SonarQube'
+        required: true
+        type: string
+    secrets:
+      SONAR_TOKEN:
+        description: 'Token de autenticação no SonarQube'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sonar-maven:
+    name: SonarQube Analysis (Maven)
+    runs-on: [self-hosted, linux, x64, sonar-private]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ inputs.java-version }}
+          cache: 'maven'
+
+      - name: Cache Sonar packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Build and Analyze with Sonar
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
+        run: |
+          mvn clean verify sonar:sonar \
+            -Dsonar.projectKey="${{ inputs.project-key }}" \
+            -Dsonar.host.url="${SONAR_HOST_URL}" \
+            -Dsonar.qualitygate.wait=true \
