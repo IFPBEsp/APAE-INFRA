@@ -60,6 +60,12 @@ Esses assuntos podem ser derivados da decisão arquitetural, mas devem ser trata
 5. [`05-decisao-arquitetural.md`](./05-decisao-arquitetural.md)
 6. [`06-conclusao-e-proximos-passos.md`](./06-conclusao-e-proximos-passos.md)
 
+### Documentos complementares
+
+Fora do estudo da issue #59:
+
+- [`07-analise-estatica-e-excecoes.md`](./07-analise-estatica-e-excecoes.md): TFLint e Trivy nos PRs e como tratar exceções (issue #85).
+
 ## Resultado esperado
 
 Ao final do estudo, o time deve conseguir responder de forma objetiva:
