@@ -67,4 +67,3 @@ Branches com PR associado também podem ser restauradas pelo botão
 2. Executar manualmente com `dry-run: true` e conferir a lista gerada
 3. Após conferência do time, executar com `dry-run: false`
 4. Ativar **Automatically delete head branches** em Settings → General
-
