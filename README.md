@@ -24,6 +24,22 @@ Manter em um único lugar tudo que é infraestrutura como código, pipelines de 
 - [APAE-gestao-escolar](https://github.com/IFPBEsp/APAE-gestao-escolar)
 - [apae-site-comemorativo](https://github.com/IFPBEsp/apae-site-comemorativo)
 
+## Documentação
+
+A documentação de infraestrutura está em [`docs/`](docs/).
+
+**Ponto de entrada:** [Visão Geral da Arquitetura](docs/visao-geral-arquitetura.md) — um único documento que amarra todos os fluxos (Terraform, CI/CD, ArgoCD e Observabilidade) e referencia os documentos detalhados de cada um.
+
+[![Diagrama de Visão Geral](docs/diagramas/visao-geral-arquitetura.svg)](docs/visao-geral-arquitetura.md)
+
+| Fluxo | Documento |
+| --- | --- |
+| Visão geral da arquitetura | [docs/visao-geral-arquitetura.md](docs/visao-geral-arquitetura.md) |
+| Comunicação entre repositórios | [docs/fluxo-comunicacao-repositorios.md](docs/fluxo-comunicacao-repositorios.md) |
+| Terraform | [docs/terraform/README.md](docs/terraform/README.md) |
+| ArgoCD (GitOps) | [docs/argocd/fluxo-argocd.md](docs/argocd/fluxo-argocd.md) |
+| Observabilidade | [docs/fluxo-observabilidade.md](docs/fluxo-observabilidade.md) |
+
 ## Estrutura de diretórios
 
 ```text
