@@ -96,6 +96,27 @@ jobs:
             done < "$IGNORE_FILE"
           fi
 
+      - name: Cache Maven local repository
+        if: hashFiles(format('{0}/pom.xml', inputs.scan-path)) != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles(format('{0}/pom.xml', inputs.scan-path)) }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Resolve Maven dependencies (prevent Maven Central 429 rate limit)
+        if: hashFiles(format('{0}/pom.xml', inputs.scan-path)) != ''
+        shell: bash
+        working-directory: ${{ inputs.scan-path }}
+        run: |
+          if [[ -f "./mvnw" ]]; then
+            chmod +x ./mvnw
+            ./mvnw dependency:resolve -q -DskipTests || true
+          elif command -v mvn &>/dev/null; then
+            mvn dependency:resolve -q -DskipTests || true
+          fi
+
       - name: Scan dependencies and enforce policy
         id: trivy-scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
