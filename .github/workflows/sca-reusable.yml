@@ -1,0 +1,174 @@
+name: Reusable Dependency Vulnerability Scan (SCA)
+
+on:
+  workflow_call:
+    inputs:
+      scan-path:
+        description: "Diretório contendo os manifestos ou lockfiles a serem analisados"
+        required: false
+        type: string
+        default: "."
+
+      severity:
+        description: "Severidades que bloqueiam o Pull Request (ex: HIGH,CRITICAL)"
+        required: false
+        type: string
+        default: "HIGH,CRITICAL"
+
+      ignore-unfixed:
+        description: "Ignora vulnerabilidades sem correção disponível"
+        required: false
+        type: boolean
+        default: true
+
+      trivyignores:
+        description: "Caminho do arquivo de exceções .trivyignore"
+        required: false
+        type: string
+        default: ".trivyignore"
+
+      upload-sarif:
+        description: "Publica o resultado em formato SARIF na aba Security do repositório"
+        required: false
+        type: boolean
+        default: true
+
+      fail-on-vulnerabilities:
+        description: "Bloqueia o job/PR com código de saída 1 caso encontre vulnerabilidades"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  sca-scan:
+    name: SCA Scan (${{ inputs.scan-path }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Prepare and validate ignore file
+        shell: bash
+        env:
+          IGNORE_FILE: ${{ inputs.trivyignores }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "$IGNORE_FILE" ]]; then
+            touch "$IGNORE_FILE"
+          else
+            lineno=0
+            while IFS= read -r line || [[ -n "$line" ]]; do
+              lineno=$((lineno + 1))
+              # Pula linhas em branco e comentários
+              [[ -z "${line// }" ]] && continue
+              [[ "$line" =~ ^[[:space:]]*# ]] && continue
+
+              # Formato esperado: <ID> exp:YYYY-MM-DD # justificativa
+              if ! [[ "$line" =~ ^(CVE-[0-9]{4}-[0-9]+|GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})[[:space:]]+exp:([0-9]{4})-([0-9]{2})-([0-9]{2})[[:space:]]+#[[:space:]]+.+ ]]; then
+                echo "::error file=$IGNORE_FILE,line=$lineno::Formato inválido. Esperado: <CVE-XXXX-NNNNN|GHSA-xxxx-xxxx-xxxx> exp:YYYY-MM-DD # justificativa — encontrado: $line"
+                exit 1
+              fi
+
+              year="${BASH_REMATCH[2]}"
+              month="${BASH_REMATCH[3]}"
+              day="${BASH_REMATCH[4]}"
+
+              # Valida que a data existe no calendário
+              if ! date -d "${year}-${month}-${day}" '+%Y-%m-%d' &>/dev/null; then
+                echo "::error file=$IGNORE_FILE,line=$lineno::Data inválida no calendário: ${year}-${month}-${day} — linha: $line"
+                exit 1
+              fi
+
+              # Verifica se a exceção já expirou
+              exp_epoch=$(date -d "${year}-${month}-${day}" '+%s')
+              now_epoch=$(date '+%s')
+              if (( exp_epoch < now_epoch )); then
+                echo "::warning file=$IGNORE_FILE,line=$lineno::Exceção expirada em ${year}-${month}-${day} e será ignorada pelo Trivy: $line"
+              fi
+            done < "$IGNORE_FILE"
+          fi
+
+      - name: Cache Maven local repository
+        if: hashFiles(format('{0}/pom.xml', inputs.scan-path)) != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles(format('{0}/pom.xml', inputs.scan-path)) }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Resolve Maven dependencies (prevent Maven Central 429 rate limit)
+        if: hashFiles(format('{0}/pom.xml', inputs.scan-path)) != ''
+        shell: bash
+        working-directory: ${{ inputs.scan-path }}
+        run: |
+          if [[ -f "./mvnw" ]]; then
+            chmod +x ./mvnw
+            ./mvnw dependency:resolve -q -DskipTests || true
+          elif command -v mvn &>/dev/null; then
+            mvn dependency:resolve -q -DskipTests || true
+          fi
+
+      - name: Scan dependencies and enforce policy
+        id: trivy-scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          version: v0.74.0
+          scan-type: fs
+          scan-ref: ${{ inputs.scan-path }}
+          scanners: vuln
+          format: 'table'
+          output: 'trivy-results.txt'
+          severity: ${{ inputs.severity }}
+          ignore-unfixed: ${{ inputs.ignore-unfixed }}
+          trivyignores: ${{ inputs.trivyignores }}
+          exit-code: ${{ inputs.fail-on-vulnerabilities && '1' || '0' }}
+
+      - name: Publish Step Summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -s "trivy-results.txt" ]]; then
+            {
+              echo '## SCA — Trivy Dependency Scan (`${{ inputs.scan-path }}`)'
+              echo ''
+              echo '```'
+              cat trivy-results.txt
+              echo '```'
+            } >> $GITHUB_STEP_SUMMARY
+          else
+            echo '## SCA — Nenhuma vulnerabilidade encontrada (`${{ inputs.scan-path }}`)' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Scan dependencies (SARIF report)
+        if: always() && inputs.upload-sarif
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          version: v0.74.0
+          scan-type: fs
+          scan-ref: ${{ inputs.scan-path }}
+          scanners: vuln
+          format: sarif
+          output: trivy-sca-results.sarif
+          severity: ${{ inputs.severity }}
+          ignore-unfixed: ${{ inputs.ignore-unfixed }}
+          trivyignores: ${{ inputs.trivyignores }}
+          exit-code: "0"
+
+      - name: Publish SARIF to GitHub Security
+        if: >-
+          always() &&
+          inputs.upload-sarif &&
+          hashFiles('trivy-sca-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@4c50b6f6fd9dc6fe03111c2d045c8be2a724cce1
+        with:
+          sarif_file: trivy-sca-results.sarif
+          category: sca-${{ inputs.scan-path }}
