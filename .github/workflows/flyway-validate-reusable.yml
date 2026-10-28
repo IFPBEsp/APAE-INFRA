@@ -100,9 +100,12 @@ jobs:
           echo "Alterações detectadas:"
           cat "$diff_file" || true
 
-          if awk -F '\t' '$1 !~ /^A$/ {found=1} END {exit !found}' "$diff_file"; then
+          if awk -F '\t' '
+            $1 != "A" && !($1 == "M" && $2 ~ /(^|\/)R__[^\/]+\.sql$/) {found=1}
+            END {exit !found}
+          ' "$diff_file"; then
             echo "::error::Uma migration existente foi modificada, renomeada ou removida."
-            echo "Somente novas migrations podem ser adicionadas."
+            echo "Somente novas migrations e edições de migrations repetíveis R__ são permitidas."
             exit 1
           fi
 
@@ -252,6 +255,7 @@ jobs:
 
           run_psql_file() {
             local sql_file="$1"
+            local database="$2"
 
             docker run \
               --rm \
@@ -263,12 +267,13 @@ jobs:
                 -h 127.0.0.1 \
                 -p 5432 \
                 -U flyway \
-                -d flyway \
+                -d "$database" \
                 -v ON_ERROR_STOP=1 \
                 -f "/workspace/${sql_file}"
           }
 
           run_extra_sql() {
+            local database="$1"
             [[ -z "${EXTRA_PATHS}" ]] && return 0
 
             while IFS= read -r path; do
@@ -280,7 +285,7 @@ jobs:
               full_path="$GITHUB_WORKSPACE/$path"
 
               if [[ -f "$full_path" ]]; then
-                run_psql_file "$path"
+                run_psql_file "$path" "$database"
                 continue
               fi
 
@@ -295,7 +300,7 @@ jobs:
 
                 for sql_file in "${sql_files[@]}"; do
                   relative="${sql_file#$GITHUB_WORKSPACE/}"
-                  run_psql_file "$relative"
+                  run_psql_file "$relative" "$database"
                 done
 
                 continue
@@ -307,19 +312,19 @@ jobs:
           }
 
           flyway() {
-            local location="$1"
-            shift
+            local database="$1"
+            local location="$2"
+            shift 2
 
             docker run \
               --rm \
               --network host \
-              -e FLYWAY_URL="jdbc:postgresql://127.0.0.1:5432/flyway" \
+              -e FLYWAY_URL="jdbc:postgresql://127.0.0.1:5432/${database}" \
               -e FLYWAY_USER=flyway \
               -e FLYWAY_PASSWORD=flyway \
               -e FLYWAY_SCHEMAS="$SCHEMAS" \
               -e FLYWAY_CREATE_SCHEMAS=true \
               -e FLYWAY_CONNECT_RETRIES=30 \
-              -e FLYWAY_CLEAN_DISABLED=false \
               -e FLYWAY_LOCATIONS="$location" \
               -v "$GITHUB_WORKSPACE:/workspace:ro" \
               -v "$base_root:/base:ro" \
@@ -328,31 +333,37 @@ jobs:
           }
 
           echo "Aplicando SQL preparatório..."
-          run_extra_sql
+          run_extra_sql flyway
 
           echo "Executando flyway migrate..."
           flyway \
+            flyway \
             "filesystem:/workspace/${MIGRATIONS_PATH}" \
             migrate
 
           echo "Executando flyway validate..."
           flyway \
+            flyway \
             "filesystem:/workspace/${MIGRATIONS_PATH}" \
             validate
 
           if [[ "$CHECK_UPGRADE" == "true" ]]; then
-            echo "Limpando banco descartável..."
-            flyway \
-              "filesystem:/workspace/${MIGRATIONS_PATH}" \
-              clean
+            echo "Criando banco limpo para o upgrade path..."
+            docker run \
+              --rm \
+              --network host \
+              -e PGPASSWORD=flyway \
+              "postgres:${POSTGRES_VERSION}" \
+              createdb -h 127.0.0.1 -p 5432 -U flyway flyway_upgrade
 
             echo "Aplicando SQL preparatório..."
-            run_extra_sql
+            run_extra_sql flyway_upgrade
 
             if [[ -d "$base_root/$MIGRATIONS_PATH" ]]; then
               echo "Aplicando migrations da branch base..."
 
               flyway \
+                flyway_upgrade \
                 "filesystem:/base/${MIGRATIONS_PATH}" \
                 migrate
             else
@@ -362,12 +373,14 @@ jobs:
             echo "Aplicando migrations novas do PR..."
 
             flyway \
+              flyway_upgrade \
               "filesystem:/workspace/${MIGRATIONS_PATH}" \
               migrate
 
             echo "Validando estado final..."
 
             flyway \
+              flyway_upgrade \
               "filesystem:/workspace/${MIGRATIONS_PATH}" \
               validate
           fi
@@ -516,6 +529,7 @@ jobs:
           )
 
       - name: Publish summary
+        if: always()
         shell: bash
         env:
           MIGRATIONS_PATH: ${{ inputs.migrations-path }}

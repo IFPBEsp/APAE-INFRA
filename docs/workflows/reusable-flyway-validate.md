@@ -27,7 +27,7 @@ on:
 
 O componente realiza as seguintes validações:
 
-- Imutabilidade das migrations existentes;
+- Imutabilidade das migrations versionadas existentes e bloqueio de renomeação ou remoção de migrations repetíveis;
 - Padrão de nomes e versões;
 - Versões duplicadas;
 - Migrations novas com versão menor ou igual à versão existente na branch base;
@@ -133,7 +133,7 @@ with:
   check-upgrade-path: true
 ```
 
-Quando habilitado, o workflow simula a aplicação das migrations da branch base, seguida das migrations do Pull Request e de `flyway validate`.
+Quando habilitado, o workflow simula a aplicação das migrations da branch base, seguida das migrations do Pull Request e de `flyway validate`. Esse teste usa um segundo banco descartável, `flyway_upgrade`, separado do banco `flyway` usado na execução do zero. O SQL preparatório é executado em cada banco antes das respectivas migrations, sem reutilizar schemas ou objetos da primeira execução e sem executar `flyway clean`.
 
 O checkout utiliza o commit de merge do evento `pull_request`, incluindo as migrations já integradas à branch base. Assim, o teste de upgrade valida o estado resultante do merge mesmo quando a branch do PR está desatualizada.
 
@@ -218,7 +218,7 @@ Não são necessários secrets adicionais para a validação. O PostgreSQL utili
 
 ## Imutabilidade das migrations
 
-O workflow usa o diff de três pontos (`base...head`) para comparar o ancestral comum das branches com o head do Pull Request. Isso identifica apenas as alterações do PR, sem tratar migrations integradas à branch base depois da criação da branch do PR como removidas. Somente migrations novas podem ser adicionadas. Uma migration existente não deve ser:
+O workflow usa o diff de três pontos (`base...head`) para comparar o ancestral comum das branches com o head do Pull Request. Isso identifica apenas as alterações do PR, sem tratar migrations integradas à branch base depois da criação da branch do PR como removidas. Migrations novas podem ser adicionadas. Uma migration versionada existente não deve ser:
 
 - Modificada;
 - Renomeada;
@@ -243,7 +243,7 @@ Exemplo:
 V11__add_ativo_for_users.sql
 ```
 
-Também são aceitas migrations repeatable no padrão `R__<descrição>.sql`.
+Também são aceitas migrations repeatable no padrão `R__<descrição>.sql`. Elas podem ser adicionadas ou ter seu conteúdo modificado: o Flyway as reaplica quando o checksum muda. Renomear ou remover uma migration repetível continua bloqueado.
 
 Exemplo:
 
@@ -277,7 +277,7 @@ A detecção utiliza análise textual de SQL. Ela serve como camada de proteçã
 
 ## Resumo da execução
 
-Ao final, o workflow registra informações no `GITHUB_STEP_SUMMARY`, incluindo:
+Ao final, o workflow registra informações no `GITHUB_STEP_SUMMARY`, mesmo quando uma etapa anterior falha, incluindo:
 
 - Caminho das migrations;
 - Versão do PostgreSQL;
