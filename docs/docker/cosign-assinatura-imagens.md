@@ -147,6 +147,8 @@ permissions:
 
 `id-token: write` permite que o GitHub Actions solicite o token OIDC utilizado pelo fluxo keyless do Cosign.
 
+O workflow consumidor também precisa conceder `id-token: write` no bloco de permissões do workflow ou do job que chama o reutilizável. As permissões dos jobs reutilizáveis não podem ampliar as concedidas pelo caller. O exemplo completo está em [Exemplo de caller](./pipeline-docker-ghcr.md#exemplo-de-caller).
+
 ## Assinatura da imagem
 
 A assinatura é realizada sobre a referência imutável formada pelo nome da imagem e pelo digest OCI final.
@@ -199,6 +201,8 @@ cosign verify "${IMAGE}@${DIGEST}" \
 ```
 
 O consumidor deve chamar `IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main` para corresponder à identidade exigida. Essa referência identifica o workflow reutilizável; a branch ou tag que dispara o consumidor pode ser diferente.
+
+Os callers existentes com `@dev` devem receber `id-token: write` antes da integração do Cosign. A troca para `@main` só deve ocorrer após a promoção do workflow para essa branch, em uma janela coordenada sem execuções dos callers durante a transição. A ordem completa está em [Migração dos callers existentes para Cosign](./pipeline-docker-ghcr.md#migração-dos-callers-existentes-para-cosign).
 
 Se a chamada passar a usar uma tag ou commit SHA, a identidade exigida na verificação também deverá ser atualizada para corresponder à nova referência.
 
@@ -266,7 +270,9 @@ cosign verify
 
 não confirmar a assinatura, identidade, issuer ou repositório consumidor esperados, o job também falha.
 
-Consequentemente, as tags finais não são criadas ou atualizadas quando a assinatura ou sua verificação falha. Os digests do build e a tag candidata podem permanecer no GHCR e não devem ser usados como sinal de aprovação para consumo.
+Consequentemente, as tags finais não são criadas ou atualizadas quando a assinatura ou sua verificação falha.
+
+Depois de criada, a tag `candidate-<run-id>-<run-attempt>` permanece no GHCR, inclusive nas execuções bem-sucedidas. Não há limpeza automática configurada para essas tags ou para os digests do build; sua remoção exige uma ação manual ou uma automação futura. A presença desses artefatos no registry não deve ser usada como sinal de aprovação para consumo.
 
 Uma falha em `cosign sign` pode deixar o candidato sem assinatura. Esse artefato não deve ser consumido sem uma assinatura válida para o digest, a identidade, o issuer e o repositório consumidor exigidos.
 

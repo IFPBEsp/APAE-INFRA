@@ -239,7 +239,7 @@ Para builds multi-platform, o digest final corresponde ao OCI Image Index criado
 
 Esse digest final é assinado e verificado com Cosign. Somente então as tags geradas pelo `docker/metadata-action` são aplicadas a ele, usando `--prefer-index=false` para preservar o manifest. O workflow confere que o digest promovido é o mesmo digest assinado antes de exportar os outputs.
 
-Se a assinatura ou sua verificação falhar, as tags finais não são criadas ou atualizadas. Os digests do build e a tag candidata podem permanecer no GHCR; sua remoção deve seguir a política de retenção do registry.
+Se a assinatura ou sua verificação falhar, as tags finais não são criadas ou atualizadas. Depois de criada, a tag `candidate-<run-id>-<run-attempt>` permanece no GHCR, inclusive nas execuções bem-sucedidas. Não há limpeza automática configurada para essas tags ou para os digests do build; sua remoção exige uma ação manual ou uma automação futura.
 
 O job `build-and-scan` não executa quando o consumidor é disparado por `pull_request`. Como o job `publish` depende dele, o workflow não publica imagens ou assinaturas nesse evento.
 
@@ -476,6 +476,34 @@ ghcr.io/<owner>/<image>@sha256:<digest>
 Após essa alteração, o Trivy conseguiu obter e analisar corretamente a imagem publicada no GHCR.
 
 ## Adoção pelos repositórios
+
+### Migração dos callers existentes para Cosign
+
+Os repositórios `APAE`, `APAE-atendimento`, `APAE-gestao-escolar` e `apae-site-comemorativo` ainda chamam o reutilizável com `@dev`. A integração do [PR #75](https://github.com/IFPBEsp/APAE-INFRA/pull/75) exige coordenar a permissão OIDC e a referência usada por esses callers:
+
+Os PRs de preparação adicionam somente `id-token: write`, mantendo a referência `@dev`:
+
+| Repositório consumidor | PR de permissão OIDC | Branch de destino |
+| --- | --- | --- |
+| `APAE` | [#1080](https://github.com/IFPBEsp/APAE/pull/1080) | `dev` |
+| `APAE-atendimento` | [#480](https://github.com/IFPBEsp/APAE-atendimento/pull/480) | `dev` |
+| `APAE-gestao-escolar` | [#490](https://github.com/IFPBEsp/APAE-gestao-escolar/pull/490) | `dev` |
+| `apae-site-comemorativo` | [#66](https://github.com/IFPBEsp/apae-site-comemorativo/pull/66) | `main` |
+
+Ordem de integração:
+
+1. Integrar primeiro os PRs nos quatro consumidores adicionando `id-token: write` ao bloco de permissões do workflow Docker, preservando `contents: read`, `packages: write` e a chamada com `@dev` nesta etapa.
+2. Coordenar uma janela sem execuções dos callers Docker. Integrar o PR #75 em `APAE-INFRA@dev` e promover essa versão para `APAE-INFRA@main`, incluindo o workflow com Cosign.
+3. Confirmar que `.github/workflows/docker-build-publish-image.yml` está disponível em `main` com a implementação deste PR. Só então integrar os PRs posteriores que trocam todas as chamadas Docker de `@dev` para `@main` nos quatro consumidores.
+4. Retomar as execuções e validar o fluxo completo de assinatura, verificação e promoção com a política padrão `HIGH,CRITICAL`.
+
+O site comemorativo recebe o PR em sua branch `main`; os outros três consumidores recebem em `dev`. Isso não altera a referência do workflow no `APAE-INFRA`.
+
+Adicionar somente `id-token: write` não conclui a migração. Depois da integração do Cosign em `dev`, uma chamada com `@dev` obtém um certificado cuja identidade não corresponde à identidade exigida em `refs/heads/main`. Por outro lado, trocar antecipadamente para `@main` falha enquanto essa branch não contiver o workflow. A janela deve cobrir a integração do #75, a promoção para `main` e a migração de todos os callers.
+
+O teste registrado acima utilizou um caller específico com `id-token: write` e identidade temporária da branch de feature. Ele valida o fluxo do Cosign, mas não comprova a migração dos quatro callers definitivos.
+
+### Adoção por novos consumidores
 
 Antes de migrar um repositório para o reusable workflow, recomenda-se:
 
