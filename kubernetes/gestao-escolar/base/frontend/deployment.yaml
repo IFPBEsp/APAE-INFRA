@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gestao-escolar-frontend
+  labels:
+    app: gestao-escolar-frontend
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: gestao-escolar-frontend
+  template:
+    metadata:
+      labels:
+        app: gestao-escolar-frontend
+    spec:
+      containers:
+        - name: gestao-escolar-frontend
+          image: ghcr.io/ifpbesp/apae-gestao-escolar-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: gestao-escolar-frontend-config
+          startupProbe:
+            httpGet:
+              path: /gestao-escolar
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /gestao-escolar
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /gestao-escolar
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: next-cache
+          emptyDir: {}

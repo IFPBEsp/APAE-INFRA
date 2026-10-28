@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gestao-escolar-backend
+  labels:
+    app: gestao-escolar-backend
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: gestao-escolar-backend
+  template:
+    metadata:
+      labels:
+        app: gestao-escolar-backend
+    spec:
+      containers:
+        - name: gestao-escolar-backend
+          image: ghcr.io/ifpbesp/apae-gestao-escolar-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: gestao-escolar-backend-config
+                    startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
