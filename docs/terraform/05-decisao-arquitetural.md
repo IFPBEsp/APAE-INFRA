@@ -69,7 +69,7 @@ Providers Helm e Kubernetes foram avaliados para bootstrap, mas não serão adot
 
 ### Ansible
 
-Responsável pelo sistema operacional, usuários, SSH, pacotes, serviços e firewall local, instalação/manutenção do k3s e instalação/manutenção inicial do ArgoCD. AppProject de bootstrap e Application raiz ficam com Ansible enquanto estiverem excluídos da reconciliação, conforme o PR #80.
+Responsável pelo sistema operacional, usuários, SSH, pacotes, serviços e firewall local, instalação/manutenção do k3s e instalação/manutenção inicial do ArgoCD. AppProject de bootstrap e Application raiz ficam com Ansible enquanto estiverem excluídos da reconciliação, conforme o [ADR 004](../adr/004-adocao-ansible-github-actions.md).
 
 Transferir algum desses recursos ao ArgoCD exigirá uma decisão explícita e retirada da gestão anterior, sem dois responsáveis pelo mesmo objeto.
 
@@ -166,7 +166,7 @@ somente então
 automatizar apply
 ```
 
-O backend deverá ser externo à VPS e ao k3s. Contabo Object Storage é apenas candidato histórico, sem seleção implícita; escolha e PoC de locking/recuperação pertencem à issue #87.
+O backend deverá ser externo à VPS e ao k3s. O HCP Terraform Free foi escolhido na issue #87 e sua implementação está no [PR #101](https://github.com/IFPBEsp/APAE-INFRA/pull/101), ainda pendente de integração à `dev`. A configuração e as validações de locking/recuperação do state pertencem à issue #87. Contabo Object Storage permanece apenas alternativa histórica.
 
 ---
 

@@ -1,6 +1,6 @@
 # Bootstrap, Terraform State, locking e drift
 
-Esses quatro pontos influenciam diretamente a escolha arquitetural da issue #59. A [atualização da issue #86](06-conclusao-e-proximos-passos.md) delimita sua aplicação à VPS HostGator; a proposta aguarda validação do time.
+Esses quatro pontos influenciam diretamente a escolha arquitetural e, por isso, fazem parte do escopo da issue #59.
 
 ---
 
@@ -55,9 +55,9 @@ storage básico
 bootstrap do ArgoCD
 ```
 
-Para a VPS HostGator existente, a proposta da issue #86 distribui essa camada: operador via Portal/suporte para operações do provedor, com integração Terraform dispensada nesta etapa; Terraform para recursos externos com API/provider validado; Ansible para host, firewall local, instalação/manutenção do k3s e bootstrap do ArgoCD.
+A responsabilidade recomendada para essa camada é Terraform.
 
-AppProject de bootstrap e Application raiz permanecem com Ansible enquanto excluídos do caminho reconciliado. Applications filhas e recursos Kubernetes atribuídos a elas pertencem ao ArgoCD. Não se presume autogerenciamento integral do ArgoCD.
+O mecanismo exato de instalação do Kubernetes não é definido nesta issue.
 
 ---
 
@@ -94,7 +94,7 @@ recursos específicos das aplicações
 
 A issue #59 não define quem gerenciará cada um deles.
 
-A issue #86 inclui DNS e infraestrutura do backend como candidatos a Terraform, condicionados à integração validada. Operator e Crossplane continuam apenas alternativas futuras.
+Ela apenas registra que essa categoria pode ser reavaliada futuramente para Terraform Operator, Crossplane ou Terraform tradicional.
 
 ---
 
@@ -151,11 +151,9 @@ O requisito arquitetural é:
 
 ---
 
-## 7. Backend externo e alternativa histórica Contabo
+## 7. Contabo Object Storage como candidato
 
-O estudo #59 considerou Contabo Object Storage como candidato. Isso não representa contratação ou seleção de backend para a HostGator. A escolha e a PoC pertencem à issue #87; o serviço deverá ficar fora da VPS e do cluster que precisa ajudar a recuperar.
-
-O Terraform possui backend S3 com suporte a endpoint customizado.
+A Contabo oferece Object Storage compatível com S3 e o Terraform possui backend S3 com suporte a endpoint customizado.
 
 O backend S3 do Terraform também permite locking por lockfile usando:
 
@@ -307,10 +305,7 @@ Os quatro pontos analisados favorecem uma separação clara:
 
 ```text
 Terraform + GitHub Actions
-→ recursos externos com integração validada
-
-Ansible + GitHub Actions
-→ host, k3s e bootstrap do ArgoCD
+→ infraestrutura fundacional
 
 ArgoCD
 → recursos Kubernetes

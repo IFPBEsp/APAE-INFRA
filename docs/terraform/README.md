@@ -2,9 +2,11 @@
 
 Este diretório contém o estudo arquitetural da issue #59 e sua atualização para a VPS HostGator na issue #86.
 
-A decisão atual está em [Conclusão e próximos passos](06-conclusao-e-proximos-passos.md): Terraform para recursos externos com integração validada, Ansible para host/k3s/bootstrap e ArgoCD para os recursos Kubernetes atribuídos às Applications. A proposta aguarda validação do time. Inventário e acesso operacional ficam fora da documentação pública; snapshots/backups foram encaminhados à issue #87 e a homologação prática de capacidade à #90.
+A decisão atual está em [Conclusão e próximos passos](06-conclusao-e-proximos-passos.md): Terraform para recursos externos com integração validada, Ansible para host/k3s/bootstrap e ArgoCD para os recursos Kubernetes atribuídos às Applications. A proposta aguarda validação do time. Inventário e acesso operacional ficam fora da documentação pública; a estratégia de backup e recuperação foi encaminhada à issue #107 e sua implementação e teste à #108; a homologação prática de capacidade à #90.
 
-Os documentos 01, 02 e 04 preservam a análise conceitual da issue #59. Menções a provedores e infraestrutura fundacional nesses textos não confirmam contratação nem suporte da HostGator.
+Os documentos 01, 02, 03 e 04 preservam a análise conceitual da issue #59. Menções a provedores e infraestrutura fundacional nesses textos não confirmam contratação nem suporte da HostGator.
+
+O documento 03 será atualizado pelo [PR #101](https://github.com/IFPBEsp/APAE-INFRA/pull/101), que escolheu o HCP Terraform Free. Ele permanece sem alterações neste PR para evitar sobreposição; suas referências históricas não substituem a delimitação atual da HostGator.
 
 ## Pergunta central
 
@@ -37,12 +39,12 @@ O estudo cobre:
 O estudo original #59 não definiu os itens abaixo. A issue #86 delimita o papel do Ansible e a distribuição k3s como arquitetura-alvo; implementação e escolhas operacionais continuam nas issues específicas:
 
 - implementação do `terraform apply`;
-- escolha final do backend remoto;
+- implementação do backend remoto HCP Terraform (issue #87 / PR #101, ainda pendente de integração);
 - configuração do bucket/state;
 - implementação de módulos Terraform;
 - provisionamento real da VPS ou de outros provedores;
 - implementação do k3s e homologação de capacidade (issue #90);
-- playbooks Ansible e mecanismo detalhado de bootstrap (issue #63);
+- playbooks Ansible e mecanismo detalhado de bootstrap (issue #90, conforme ADR 004);
 - TFLint, Checkov, OPA ou outra estratégia de Policy as Code;
 - `terraform test` ou framework de testes;
 - Vault, External Secrets ou secret manager;
