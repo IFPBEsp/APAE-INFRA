@@ -138,14 +138,14 @@ jobs:
         run: |
           if [[ -s "trivy-results.txt" ]]; then
             {
-              echo '## 🔍 SCA — Trivy Dependency Scan (`${{ inputs.scan-path }}`)'
+              echo '## SCA — Trivy Dependency Scan (`${{ inputs.scan-path }}`)'
               echo ''
               echo '```'
               cat trivy-results.txt
               echo '```'
             } >> $GITHUB_STEP_SUMMARY
           else
-            echo '## ✅ SCA — Nenhuma vulnerabilidade encontrada (`${{ inputs.scan-path }}`)' >> $GITHUB_STEP_SUMMARY
+            echo '## SCA — Nenhuma vulnerabilidade encontrada (`${{ inputs.scan-path }}`)' >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Scan dependencies (SARIF report)
