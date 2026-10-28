@@ -530,7 +530,7 @@ Para a configuração `cloud`, o procedimento normal não utiliza a opção `-re
 
 ### 14.7. Autenticação no GitHub Actions
 
-Para permitir a autenticação no HCP Terraform durante as execuções do CI, foi configurado o seguinte secret no GitHub Actions:
+Para permitir a autenticação no HCP Terraform durante as execuções do CI, foi configurado o seguinte secret exclusivamente no ambiente `terraform-plan` do GitHub Actions:
 
 ```text
 TF_TOKEN_app_terraform_io
@@ -538,32 +538,52 @@ TF_TOKEN_app_terraform_io
 
 O Terraform CLI reconhece essa variável de ambiente para autenticação em `app.terraform.io`.
 
-Exemplo de utilização:
+O workflow disponibiliza o token somente nas etapas `Terraform Init for plan` e `Terraform Plan`. Exemplo de utilização no escopo de uma etapa:
 
 ```yaml
-env:
-  TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+- name: Terraform Init for plan
+  env:
+    TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+  run: terraform init -input=false
 ```
 
-As credenciais devem permanecer fora do repositório.
+As credenciais devem permanecer fora do repositório. O secret não deve ser duplicado no nível do repositório nem disponibilizado por um secret da organização acessível a este repositório.
+
+#### Aprovação obrigatória antes da execução autenticada
+
+O ambiente `terraform-plan` foi configurado em **Settings → Environments** com as seguintes regras:
+
+- **Required reviewers**: aprovação de um mantenedor antes de iniciar o job;
+- **Prevent self-review**: quem iniciou a execução não pode aprová-la;
+- **Allow administrators to bypass configured protection rules**: desativado.
+
+Essas regras são configurações do GitHub e não são criadas pela declaração `environment: terraform-plan` no YAML. Armazenar um secret em um ambiente sem regras não exige aprovação para disponibilizá-lo.
+
+Antes de aprovar cada execução, o responsável deve revisar o código correspondente do PR, incluindo alterações no workflow, módulos, providers e fontes de dados. O `terraform plan` pode executar código do PR, por exemplo por meio de `data "external"`, e esse código pode acessar o token e o state. Limitar a variável às etapas autenticadas reduz sua exposição, mas não isola o token do código executado pelo plan.
+
+PRs de forks não executam o job autenticado. Para PRs de branches do próprio repositório, a revisão obrigatória do ambiente controla a liberação da credencial. A aprovação de uma execução anterior não dispensa a revisão e a aprovação de uma nova execução.
+
+A validação operacional dessa proteção deve confirmar que uma nova execução fica aguardando em **Review deployments**, antes do job autenticado, e só prossegue após a aprovação de outro mantenedor. Esse teste deve ser realizado após configurar ou alterar as regras do ambiente.
+
+Referência: [GitHub — Managing environments for deployment](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
 
 Para utilização permanente no CI, recomenda-se:
 
 - utilizar tokens de equipe com permissões mínimas;
 - limitar o acesso aos workspaces necessários;
-- utilizar ambientes protegidos no GitHub Actions;
+- manter as regras de aprovação do ambiente `terraform-plan`;
 - evitar disponibilizar credenciais a código não revisado;
 - realizar a rotação das credenciais quando necessário.
 
 ### 14.8. Validação no GitHub Actions
 
-Durante os testes da issue #87, foi criado o workflow:
+Durante os testes da issue #87, foi utilizado um workflow temporário, já removido:
 
 ```text
 .github/workflows/terraform-backend-check.yml
 ```
 
-O workflow executa:
+O workflow temporário executava:
 
 ```bash
 terraform init -input=false
@@ -584,7 +604,7 @@ Evidência:
 
 [Pull Request #101 — Configurar backend remoto do state do Terraform com lock](https://github.com/IFPBEsp/APAE-INFRA/pull/101)
 
-As configurações temporárias utilizadas para os testes deverão ser revisadas antes da conclusão do PR, mantendo apenas os componentes necessários para o funcionamento definitivo da solução.
+Após a conclusão dos testes, o workflow temporário foi removido, mantendo apenas a pipeline principal `.github/workflows/terraform-validate.yml` para validação do Terraform.
 
 ### 14.9. Validação do locking
 
@@ -693,7 +713,6 @@ Como evolução futura, estão previstos:
 
 - configuração dos workspaces `hml` e `prod`;
 - utilização de credenciais de equipe com privilégios mínimos;
-- proteção definitiva das execuções autenticadas no CI;
 - validação adicional de locking com operações concorrentes;
 - testes periódicos de recuperação do state;
 - avaliação de backup independente do HCP Terraform;
