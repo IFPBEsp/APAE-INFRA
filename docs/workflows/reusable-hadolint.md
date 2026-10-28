@@ -4,7 +4,7 @@
 > **Arquivo do workflow:** [`.github/workflows/hadolint-reusable.yml`](https://github.com/IFPBEsp/APAE-INFRA/blob/dev/.github/workflows/hadolint-reusable.yml)  
 > **Configuração padrão:** [`.hadolint.yaml`](https://github.com/IFPBEsp/APAE-INFRA/blob/dev/.hadolint.yaml)  
 > **Issue de origem:** [APAE-INFRA #70](https://github.com/IFPBEsp/APAE-INFRA/issues/70)  
-> **Versão validada nos callers:** `f7d59d6e4ad15d8d199aebf619b5b401ffbcc2f1`  
+> **Versão validada nos callers:** `f7c41669bcc3ea12a1ba558de134171e744e2cc8`  
 > **Observação:** os links para `dev` passam a funcionar para esses arquivos depois do merge da implementação. Até lá, consulte o commit indicado.
 
 ## 1. Objetivo
@@ -61,7 +61,8 @@ flowchart TD
     E --> F[Checkout do repositório da aplicação]
     F --> G[Checkout da configuração do APAE-INFRA]
     G --> H[Resolução do arquivo de configuração]
-    H --> I[Hadolint com threshold warning]
+    H --> U[Checagem de USER não-root no estágio final]
+    U --> I[Hadolint com threshold warning]
     I --> J{Há violação bloqueante?}
     J -- Não --> K[Check aprovado]
     J -- Sim --> L[Check reprovado e diagnóstico nos logs]
@@ -97,7 +98,7 @@ Isso significa que:
 - Uma violação em um arquivo não cancela automaticamente a análise dos demais.
 - O resultado geral depende dos jobs resultantes da matriz.
 
-Cada job faz checkout da aplicação, recupera a configuração compartilhada, resolve o caminho da configuração e executa `hadolint/hadolint-action`.
+Cada job faz checkout da aplicação, recupera a configuração compartilhada, resolve o caminho da configuração, confere o `USER` do estágio final (seção 5.3) e executa `hadolint/hadolint-action`.
 
 ### 3.3. Por que o checkout da configuração usa `job.workflow_sha`?
 
@@ -171,21 +172,9 @@ with:
   config-file: .github/hadolint/custom.yaml
 ```
 
-**Limitação conhecida da versão validada (`f7d59d6...`):** existe uma etapa temporária `Verify shared configuration` que executa, sem condição, `ls -la .infra-hadolint` e `test -f .infra-hadolint/.hadolint.yaml`. Quando `config-file` é preenchido, o checkout compartilhado é pulado, mas essa verificação ainda roda. Assim, **o override por `config-file` não está funcional de ponta a ponta nessa revisão**, a menos que a etapa de verificação seja removida ou condicionada.
+Quando `config-file` é preenchido, o checkout da configuração compartilhada é pulado e `Resolve Hadolint configuration` usa o arquivo informado, rejeitando caminhos absolutos, caminhos com `..` e arquivos inexistentes.
 
-Correção recomendada no `APAE-INFRA`:
-
-```yaml
-- name: Verify shared configuration
-  if: inputs.config-file == ''
-  shell: bash
-  run: |
-    set -euo pipefail
-    ls -la .infra-hadolint
-    test -f .infra-hadolint/.hadolint.yaml
-```
-
-Também é aceitável retirar integralmente a etapa temporária, pois `Resolve Hadolint configuration` já verifica a existência do arquivo selecionado. **Após a correção, um novo commit SHA deverá ser publicado e adotado pelos callers**. O caso `config-file` deve ser testado separadamente antes de ser considerado suportado em produção.
+Nenhum caller atual utiliza `config-file`. Antes de adotá-lo em um produto, valide uma execução com o arquivo próprio e registre o link no PR.
 
 ## 5. Configuração central `.hadolint.yaml`
 
@@ -201,6 +190,8 @@ override:
     - DL3002
     - DL3006
     - DL3007
+  warning:
+    - DL3009
 ```
 
 ### 5.1. Significado
@@ -208,14 +199,16 @@ override:
 - `failure-threshold: warning`: severidade mínima padrão para bloquear.
 - `ignored: []`: nenhuma regra foi globalmente suprimida nessa lista.
 - `override.error`: **eleva as regras listadas à severidade `error`**; não as ignora.
+- `override.warning`: eleva a regra listada de `info` para `warning`, tornando-a bloqueante no threshold padrão.
 
 | Regra | Descrição resumida | Tratamento central |
 | --- | --- | --- |
-| `DL3002` | Evitar executar a imagem como `root` quando desnecessário. | Elevada para `error`. |
+| `DL3002` | O último `USER` declarado não deve ser `root`. | Elevada para `error`. |
 | `DL3006` | Evitar imagem-base sem tag ou digest explícito. | Elevada para `error`. |
 | `DL3007` | Evitar imagem-base com tag `latest`. | Elevada para `error`. |
+| `DL3009` | Remover as listas do `apt-get` após instalar pacotes. | Elevada de `info` para `warning`. |
 
-As regras visam incentivar imagens com identidade de versão clara e execução com menor privilégio. Fixar imagens-base por digest fornece maior reprodutibilidade do que depender apenas de tags mutáveis.
+As regras visam incentivar imagens com identidade de versão clara, sem cache de pacotes e com execução de menor privilégio. Fixar imagens-base por digest fornece maior reprodutibilidade do que depender apenas de tags mutáveis.
 
 ### 5.2. Políticas de exceção
 
@@ -236,6 +229,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends pacote-interno 
 ```
 
 **Atenção:** comentários de justificativa são documentação para revisores; o Hadolint não interpreta a justificativa como mecanismo de autorização. Supressões devem ser específicas e revisadas.
+
+### 5.3. Checagem de usuário não-root
+
+A regra `DL3002` só reclama quando o último `USER` declarado é `root`. Um Dockerfile sem nenhuma instrução `USER` executa como `root` e passa no Hadolint.
+
+Por isso, o reusable executa a etapa `Check non-root user` antes do lint. Ela falha quando o estágio final não define `USER`, ou define `root`, `0` ou `0:<grupo>`. Um estágio criado a partir de outro (`FROM builder`) herda o `USER` desse estágio.
+
+Essa checagem não possui supressão por comentário. Uma imagem que precise executar como `root` deve ter a necessidade técnica discutida e registrada antes de qualquer alteração no reusable.
 
 ## 6. Como integrar um novo repositório
 
@@ -267,7 +268,7 @@ permissions:
 jobs:
   hadolint:
     name: Lint Dockerfiles
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7d59d6e4ad15d8d199aebf619b5b401ffbcc2f1
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7c41669bcc3ea12a1ba558de134171e744e2cc8
     with:
       dockerfiles: |
         api/Dockerfile
@@ -302,7 +303,7 @@ O próprio caller consta no filtro `paths`; portanto, sua inclusão no PR já de
 Todos os callers desta seção utilizam o reusable do `APAE-INFRA` fixado no commit:
 
 ```text
-f7d59d6e4ad15d8d199aebf619b5b401ffbcc2f1
+f7c41669bcc3ea12a1ba558de134171e744e2cc8
 ```
 
 ### 7.1. APAE Geral
@@ -326,7 +327,7 @@ permissions:
 jobs:
   hadolint:
     name: Lint Dockerfiles
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7d59d6e4ad15d8d199aebf619b5b401ffbcc2f1
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7c41669bcc3ea12a1ba558de134171e744e2cc8
     with:
       dockerfiles: |
         apps/api/Dockerfile
@@ -334,7 +335,7 @@ jobs:
       failure-threshold: warning
 ```
 
-Validação: [Dockerfile Lint — execução #38009826734](https://github.com/IFPBEsp/APAE/actions/runs/38009826734). Passaram `Prepare Dockerfiles` e os dois jobs de Hadolint.
+Validação: [Dockerfile Lint — execução #40697780288](https://github.com/IFPBEsp/APAE/actions/runs/40697780288). Passaram `Prepare Dockerfiles` e os dois jobs de Hadolint.
 
 ### 7.2. APAE Atendimento
 
@@ -357,7 +358,7 @@ permissions:
 jobs:
   hadolint:
     name: Lint Dockerfiles
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7d59d6e4ad15d8d199aebf619b5b401ffbcc2f1
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7c41669bcc3ea12a1ba558de134171e744e2cc8
     with:
       dockerfiles: |
         backend/atendimento/Dockerfile
@@ -365,7 +366,7 @@ jobs:
       failure-threshold: warning
 ```
 
-Validação: [Dockerfile Lint — execução #38011770413](https://github.com/IFPBEsp/APAE-atendimento/actions/runs/38011770413). Passaram `Prepare Dockerfiles` e os dois jobs de Hadolint. **A pipeline geral `CI Pipeline` registrou falha separada no mesmo commit**; não confundir essa falha com o resultado do Hadolint.
+Validação: [Dockerfile Lint — execução #40697787898](https://github.com/IFPBEsp/APAE-atendimento/actions/runs/40697787898). Passaram `Prepare Dockerfiles` e os dois jobs de Hadolint.
 
 ### 7.3. APAE Gestão Escolar
 
@@ -388,7 +389,7 @@ permissions:
 jobs:
   hadolint:
     name: Lint Dockerfiles
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7d59d6e4ad15d8d199aebf619b5b401ffbcc2f1
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7c41669bcc3ea12a1ba558de134171e744e2cc8
     with:
       dockerfiles: |
         api/Dockerfile
@@ -396,7 +397,7 @@ jobs:
       failure-threshold: warning
 ```
 
-Validação: [Dockerfile Lint — execução #38012687230](https://github.com/IFPBEsp/APAE-gestao-escolar/actions/runs/38012687230). Passaram `Prepare Dockerfiles` e os dois jobs de Hadolint.
+Validação: [Dockerfile Lint — execução #40697795155](https://github.com/IFPBEsp/APAE-gestao-escolar/actions/runs/40697795155). Passaram `Prepare Dockerfiles` e os dois jobs de Hadolint.
 
 ### 7.4. APAE Site Comemorativo
 
@@ -418,7 +419,7 @@ permissions:
 jobs:
   hadolint:
     name: Lint Dockerfile
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7d59d6e4ad15d8d199aebf619b5b401ffbcc2f1
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7c41669bcc3ea12a1ba558de134171e744e2cc8
     with:
       dockerfiles: |
         Dockerfile
@@ -430,7 +431,7 @@ A validação inicial ([execução #38013140792](https://github.com/IFPBEsp/apae
 - **DL3008 — warning:** pacotes instalados via `apt-get install` sem versões fixadas.
 - **DL3015 — info:** ausência de `--no-install-recommends`.
 
-A correção realizada no Dockerfile adicionou `--no-install-recommends` e versões explícitas aos pacotes `openssl`, `python3`, `make` e `g++`. Na validação posterior, [execução #38013619380](https://github.com/IFPBEsp/apae-site-comemorativo/actions/runs/38013619380), `Prepare Dockerfiles` e `Hadolint (Dockerfile)` passaram.
+A correção adicionou `--no-install-recommends` e uma supressão pontual da `DL3008`, com justificativa no Dockerfile: a imagem-base está fixada por digest e versões exatas do APT deixam de existir no repositório de segurança do Debian a cada nova correção, o que quebraria o build (seção 9.1). Na validação atual, [execução #40697804130](https://github.com/IFPBEsp/apae-site-comemorativo/actions/runs/40697804130), `Prepare Dockerfiles` e `Hadolint (Dockerfile)` passaram.
 
 **Observação:** a execução bem-sucedida de Hadolint não é evidência suficiente de que o build da imagem tenha sido executado ou aprovado.
 
@@ -438,13 +439,13 @@ A correção realizada no Dockerfile adicionou `--no-install-recommends` e vers�
 
 | Produto | PR de integração | Dockerfiles verificados | Execução Hadolint | Resultado |
 | --- | --- | ---: | --- | --- |
-| APAE Geral | [#1050](https://github.com/IFPBEsp/APAE/pull/1050) | 2 | [#38009826734](https://github.com/IFPBEsp/APAE/actions/runs/38009826734) | **Success** |
-| APAE Atendimento | [#446](https://github.com/IFPBEsp/APAE-atendimento/pull/446) | 2 | [#38011770413](https://github.com/IFPBEsp/APAE-atendimento/actions/runs/38011770413) | **Success** |
-| APAE Gestão Escolar | [#459](https://github.com/IFPBEsp/APAE-gestao-escolar/pull/459) | 2 | [#38012687230](https://github.com/IFPBEsp/APAE-gestao-escolar/actions/runs/38012687230) | **Success** |
-| APAE Site Comemorativo | [#63](https://github.com/IFPBEsp/apae-site-comemorativo/pull/63) | 1 | [#38013619380](https://github.com/IFPBEsp/apae-site-comemorativo/actions/runs/38013619380) | **Success** |
+| APAE Geral | [#1050](https://github.com/IFPBEsp/APAE/pull/1050) | 2 | [#40697780288](https://github.com/IFPBEsp/APAE/actions/runs/40697780288) | **Success** |
+| APAE Atendimento | [#446](https://github.com/IFPBEsp/APAE-atendimento/pull/446) | 2 | [#40697787898](https://github.com/IFPBEsp/APAE-atendimento/actions/runs/40697787898) | **Success** |
+| APAE Gestão Escolar | [#459](https://github.com/IFPBEsp/APAE-gestao-escolar/pull/459) | 2 | [#40697795155](https://github.com/IFPBEsp/APAE-gestao-escolar/actions/runs/40697795155) | **Success** |
+| APAE Site Comemorativo | [#63](https://github.com/IFPBEsp/apae-site-comemorativo/pull/63) | 1 | [#40697804130](https://github.com/IFPBEsp/apae-site-comemorativo/actions/runs/40697804130) | **Success** |
 | **Total** | **4 repositórios** | **7** | **4 execuções aprovadas** | **Hadolint validado** |
 
-As evidências comprovam a execução do reusable e o processamento dos sete Dockerfiles nos quatro repositórios. A primeira falha do Site Comemorativo também demonstrou o bloqueio por regra `warning` (`DL3008`).
+As execuções acima usam o reusable no commit `f7c41669bcc3ea12a1ba558de134171e744e2cc8`, com a `DL3009` bloqueante e a etapa `Check non-root user`. Os sete Dockerfiles passaram sem findings e definem `USER 65532:65532` no estágio final. A primeira falha do Site Comemorativo ([execução #38013140792](https://github.com/IFPBEsp/apae-site-comemorativo/actions/runs/38013140792)) demonstrou o bloqueio por regra `warning` (`DL3008`) e as anotações no Dockerfile.
 
 ## 9. Interpretando diagnósticos e corrigindo Dockerfiles
 
@@ -456,16 +457,20 @@ Exemplo que produz diagnóstico:
 RUN apt-get update && apt-get install -y curl
 ```
 
-Exemplo de correção (substituir pela versão efetivamente disponível na distribuição utilizada):
+Nas imagens Debian e Ubuntu, fixar a versão exata do pacote costuma quebrar o build: o repositório de segurança mantém apenas a versão mais recente de cada pacote, e a versão fixada deixa de existir na próxima correção publicada. A fixação também impede que o pacote receba atualizações de segurança.
+
+Quando a imagem-base já está fixada por digest, prefira uma supressão pontual com justificativa:
 
 ```dockerfile
+# Imagem base fixada por digest; versões exatas do apt somem do mirror a cada atualização de segurança.
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       curl=<VERSAO_COMPATIVEL> \
+       curl \
     && rm -rf /var/lib/apt/lists/*
 ```
 
-**As versões precisam ser verificadas para a distribuição, arquitetura e repositórios APT da imagem-base.** O Hadolint verifica a prática de fixar versões, mas não assegura que uma versão específica esteja disponível. É necessário executar um build Docker separadamente.
+Fixe versões do APT apenas quando o repositório garantir a disponibilidade da versão escolhida. O Hadolint verifica a prática, mas não assegura que uma versão específica esteja disponível; execute um build Docker separadamente.
 
 ### 9.2. `DL3015`: evitar dependências recomendadas desnecessárias
 
@@ -474,7 +479,7 @@ Inclua `--no-install-recommends` ao instalar pacotes APT, reduzindo dependência
 ```dockerfile
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       ca-certificates=<VERSAO_COMPATIVEL> \
+       ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 ```
 
@@ -506,7 +511,7 @@ Não confunda o texto de diagnóstico nos logs com a política de bloqueio. Algu
 1. Copie o SHA completo da linha `uses:` do caller.
 2. Abra no GitHub o `.hadolint.yaml` exatamente nesse commit do `APAE-INFRA`.
 3. Confirme `repository: ${{ job.workflow_repository }}` e `ref: ${{ job.workflow_sha }}`.
-4. Verifique os logs de `Checkout shared configuration` e `Verify shared configuration`.
+4. Verifique os logs de `Checkout shared configuration` e `Resolve Hadolint configuration`.
 5. Se houve novo commit no reusable, atualize a referência SHA de todos os callers relevantes.
 
 ### 10.2. Workflow não inicia nenhum job
@@ -518,7 +523,7 @@ Não confunda o texto de diagnóstico nos logs com a política de bloqueio. Algu
 Exemplo correto:
 
 ```yaml
-uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7d59d6e4ad15d8d199aebf619b5b401ffbcc2f1
+uses: IFPBEsp/APAE-INFRA/.github/workflows/hadolint-reusable.yml@f7c41669bcc3ea12a1ba558de134171e744e2cc8
 ```
 
 Verifique também a existência do arquivo `hadolint-reusable.yml` no commit indicado e se o workflow contém `on.workflow_call`. Em caso de falha de validação do YAML, consulte as mensagens de erro do GitHub no PR ou na página de execução.
@@ -537,9 +542,17 @@ Examine o job `Hadolint (<arquivo>)`, identifique o código da regra (`DL...` ou
 
 ### 10.6. `config-file` alternativo falha antes do lint
 
-Na revisão `f7d59d6...`, a etapa temporária `Verify shared configuration` é incondicional. Consulte a [seção 4.3](#43-input-config-file--opção-avançada) e condicione ou remova essa etapa no reusable, com teste específico e atualização posterior do SHA dos callers.
+**Sintoma:** `Resolve Hadolint configuration` falha com `Configuracao nao encontrada` ou `Caminho de configuracao invalido`.
 
-### 10.7. `fatal: No url found for submodule path ... in .gitmodules`
+Confira se o caminho é relativo à raiz do repositório chamador, não usa `..` e aponta para um arquivo commitado no PR. Consulte a [seção 4.3](#43-input-config-file--opção-avançada).
+
+### 10.7. `O estágio final não define um USER não-root`
+
+**Sintoma:** a etapa `Check non-root user` falha antes do Hadolint.
+
+Adicione um `USER` não-root depois do último `FROM`, por exemplo `USER 65532:65532` nas imagens distroless `nonroot`. Consulte a [seção 5.3](#53-checagem-de-usuário-não-root).
+
+### 10.8. `fatal: No url found for submodule path ... in .gitmodules`
 
 Esse erro pode ser emitido por `actions/checkout` quando o repositório chamador contém um gitlink de submódulo (`mode 160000`) sem entrada correspondente em `.gitmodules`.
 
@@ -551,7 +564,7 @@ git ls-files --stage | grep '^160000'
 
 Se o submódulo foi criado por acidente, pode-se remover apenas sua referência do índice com `git rm --cached CAMINHO`, após confirmar que não é utilizado intencionalmente. Se for legítimo, regularize seu cadastro em `.gitmodules`.
 
-### 10.8. Hadolint aprova, mas `docker build` falha
+### 10.9. Hadolint aprova, mas `docker build` falha
 
 Os objetivos são diferentes. O Hadolint valida a forma das instruções; o build verifica se elas são executáveis com as dependências, versões, arquitetura e rede reais. Execute um build separado, especialmente após fixar versões de pacotes APT ou alterar a imagem-base.
 
@@ -603,8 +616,9 @@ O workflow não recebe segredos explicitamente e opera em PRs. Mantenha permiss�
 | Um job por Dockerfile | Matriz dinâmica a partir do input `dockerfiles`. |
 | Sete Dockerfiles analisados | Quatro execuções de validação, totalizando sete Dockerfiles. |
 | Findings e bloqueio por severidade | Demonstrados por `DL3008` no primeiro teste do Site Comemorativo. |
+| `apt-get` sem limpeza e execução como `root` | `DL3009` elevada para `warning` e etapa `Check non-root user` (seção 5.3). |
 | Documentação dos inputs e adoção | Este documento. |
-| Override `config-file` opcional | **Limitação conhecida** nesta revisão, descrita na seção 4.3; necessita ajuste e validação específica. |
+| Override `config-file` opcional | Implementado; ainda sem execução de validação em caller (seção 4.3). |
 
 ## 13. Referências
 
