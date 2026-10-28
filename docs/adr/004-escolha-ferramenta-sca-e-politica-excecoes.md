@@ -35,7 +35,7 @@ APAE-INFRA#68 — [CI] Criar workflow reutilizável de verificação de dependê
   - Já padronizado e adotado na organização APAE no workflow reutilizável de imagens (`docker-build-publish-image.yml`), garantindo consistência na base de dados de CVEs e políticas de severidade.
   - Suporte nativo e maduro aos manifestos e lockfiles dos três ecossistemas em escopo (`pom.xml`, `pnpm-lock.yaml`, `package-lock.json`).
   - Geração nativa de relatórios no formato SARIF compatíveis com a aba *Security* do GitHub (*Code Scanning*).
-  - Suporte nativo a arquivo de exceções versionado (`.trivyignore`), com capacidade de especificar justificativas e prazos de validade (`exp: YYYY-MM-DD`).
+  - Suporte nativo a arquivo de exceções versionado (`.trivyignore`), com capacidade de especificar justificativas e prazos de validade (`exp:YYYY-MM-DD`).
   - Execução independente de APIs externas proprietárias ou serviços pagos.
   - Suporte a filtros como `--ignore-unfixed` e níveis de severidade configuráveis (`HIGH,CRITICAL`).
 - **Contras**:

@@ -64,13 +64,34 @@ jobs:
           if [[ ! -f "$IGNORE_FILE" ]]; then
             touch "$IGNORE_FILE"
           else
+            lineno=0
             while IFS= read -r line || [[ -n "$line" ]]; do
+              lineno=$((lineno + 1))
+              # Pula linhas em branco e comentários
               [[ -z "${line// }" ]] && continue
               [[ "$line" =~ ^[[:space:]]*# ]] && continue
 
-              if ! [[ "$line" =~ exp:[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
-                echo "::error file=$IGNORE_FILE::Entrada inválida no trivyignore (falta exp:YYYY-MM-DD): $line"
+              # Formato esperado: <ID> exp:YYYY-MM-DD # justificativa
+              if ! [[ "$line" =~ ^(CVE-[0-9]{4}-[0-9]+|GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})[[:space:]]+exp:([0-9]{4})-([0-9]{2})-([0-9]{2})[[:space:]]+#[[:space:]]+.+ ]]; then
+                echo "::error file=$IGNORE_FILE,line=$lineno::Formato inválido. Esperado: <CVE-XXXX-NNNNN|GHSA-xxxx-xxxx-xxxx> exp:YYYY-MM-DD # justificativa — encontrado: $line"
                 exit 1
+              fi
+
+              year="${BASH_REMATCH[2]}"
+              month="${BASH_REMATCH[3]}"
+              day="${BASH_REMATCH[4]}"
+
+              # Valida que a data existe no calendário
+              if ! date -d "${year}-${month}-${day}" '+%Y-%m-%d' &>/dev/null; then
+                echo "::error file=$IGNORE_FILE,line=$lineno::Data inválida no calendário: ${year}-${month}-${day} — linha: $line"
+                exit 1
+              fi
+
+              # Verifica se a exceção já expirou
+              exp_epoch=$(date -d "${year}-${month}-${day}" '+%s')
+              now_epoch=$(date '+%s')
+              if (( exp_epoch < now_epoch )); then
+                echo "::warning file=$IGNORE_FILE,line=$lineno::Exceção expirada em ${year}-${month}-${day} e será ignorada pelo Trivy: $line"
               fi
             done < "$IGNORE_FILE"
           fi
@@ -83,9 +104,8 @@ jobs:
           scan-type: fs
           scan-ref: ${{ inputs.scan-path }}
           scanners: vuln
-          format: 'template'
-          template: '@/contrib/markdown.tpl'
-          output: 'trivy-results.md'
+          format: 'table'
+          output: 'trivy-results.txt'
           severity: ${{ inputs.severity }}
           ignore-unfixed: ${{ inputs.ignore-unfixed }}
           trivyignores: ${{ inputs.trivyignores }}
@@ -95,8 +115,16 @@ jobs:
         if: always()
         shell: bash
         run: |
-          if [[ -f "trivy-results.md" ]]; then
-            cat trivy-results.md >> $GITHUB_STEP_SUMMARY
+          if [[ -s "trivy-results.txt" ]]; then
+            {
+              echo '## 🔍 SCA — Trivy Dependency Scan (`${{ inputs.scan-path }}`)'
+              echo ''
+              echo '```'
+              cat trivy-results.txt
+              echo '```'
+            } >> $GITHUB_STEP_SUMMARY
+          else
+            echo '## ✅ SCA — Nenhuma vulnerabilidade encontrada (`${{ inputs.scan-path }}`)' >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Scan dependencies (SARIF report)
