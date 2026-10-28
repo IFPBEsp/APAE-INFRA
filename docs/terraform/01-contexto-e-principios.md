@@ -1,5 +1,7 @@
 # Contexto e princípios
 
+> Análise conceitual da issue #59. Para a VPS HostGator, consultar a [delimitação proposta na issue #86](06-conclusao-e-proximos-passos.md): Terraform para recursos externos suportados, Ansible para host/k3s/bootstrap e ArgoCD para recursos Kubernetes atribuídos às Applications. Menções a outros provedores são exemplos do estudo original.
+
 ## 1. Contexto
 
 O `APAE-INFRA` centraliza infraestrutura como código, pipelines de CI/CD, Kubernetes, ArgoCD, observabilidade e demais elementos de infraestrutura utilizados pelos sistemas da APAE.
