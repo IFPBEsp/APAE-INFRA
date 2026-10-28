@@ -78,7 +78,7 @@ As atualizações são propostas por Pull Requests para permitir análise das al
 
 O Renovate não substitui a verificação de vulnerabilidades da issue #68. As duas automações são complementares: a SCA identifica vulnerabilidades e o Renovate propõe atualizações de dependências.
 
-O Renovate também não substitui a automação GitOps da issue #82, responsável pelas referências das imagens de aplicações nos overlays Kubernetes.
+O Renovate também não substitui a automação GitOps da issue #82, responsável pelas referências das imagens de aplicações nos overlays Kubernetes. O preset desativa as atualizações das imagens `ghcr.io/ifpbesp/**` em todos os gerenciadores, incluindo Docker Compose e Kustomize, evitando propostas de tags ou digests que concorram com essa automação. As demais imagens Docker continuam sendo atualizadas pelo Renovate.
 
 ## Validação inicial
 

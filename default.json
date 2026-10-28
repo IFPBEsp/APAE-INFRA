@@ -1,4 +1,3 @@
-
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": [
@@ -47,6 +46,12 @@
       "matchManagers": ["terraform"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Terraform dependencies"
+    },
+    {
+      "description": "Imagens das aplicacoes da APAE sao atualizadas pelo GitOps (#82)",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/ifpbesp/**"],
+      "enabled": false
     }
   ]
 }
