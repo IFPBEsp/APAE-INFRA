@@ -7,3 +7,5 @@ override:
     - DL3002
     - DL3006
     - DL3007
+  warning:
+    - DL3009

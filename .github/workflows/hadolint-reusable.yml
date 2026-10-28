@@ -168,6 +168,57 @@ jobs:
 
           echo "path=$config" >> "$GITHUB_OUTPUT"
 
+      - name: Check non-root user
+        shell: bash
+        env:
+          DOCKERFILE: ${{ matrix.dockerfile }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          path = os.environ["DOCKERFILE"]
+          text = re.sub(r"\\\r?\n", " ", open(path, encoding="utf-8").read())
+
+          stage_users = {}
+          user = None
+          stage = None
+
+          for line in text.splitlines():
+              parts = line.split()
+
+              if not parts or parts[0].startswith("#"):
+                  continue
+
+              keyword = parts[0].upper()
+
+              if keyword == "FROM":
+                  if stage:
+                      stage_users[stage] = user
+
+                  args = [part for part in parts[1:] if not part.startswith("--")]
+                  base = args[0].lower() if args else ""
+                  user = stage_users.get(base)
+                  stage = (
+                      args[2].lower()
+                      if len(args) >= 3 and args[1].upper() == "AS"
+                      else None
+                  )
+              elif keyword == "USER" and len(parts) > 1:
+                  user = parts[1]
+
+          if user is None or re.match(r"^(root|0)(:|$)", user):
+              print(
+                  f"::error file={path}::O estágio final não define um USER não-root."
+              )
+              sys.exit(1)
+
+          print(f"USER do estágio final: {user}")
+          PY
+
       - name: Lint Dockerfile
         uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
         with:
