@@ -1,0 +1,474 @@
+name: Reusable Update Image Overlay
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: "Imagem completa no GHCR"
+        required: true
+        type: string
+
+      image-tag:
+        description: "Tag sha-<short-sha>"
+        required: true
+        type: string
+
+      image-digest:
+        description: "Digest OCI da imagem publicada"
+        required: true
+        type: string
+
+      application:
+        description: "Aplicação que será atualizada"
+        required: true
+        type: string
+
+      environment:
+        description: "Ambiente de destino"
+        required: false
+        default: dev
+        type: string
+
+      source-repository:
+        description: "Repositório que publicou a imagem"
+        required: true
+        type: string
+
+      source-commit:
+        description: "Commit que originou a imagem"
+        required: true
+        type: string
+
+    outputs:
+      pull-request-url:
+        description: "URL do PR criado ou atualizado; vazio quando não há diferença"
+        value: ${{ jobs.update-image.outputs.pull-request-url }}
+
+    secrets:
+      IMAGE_UPDATER_APP_ID:
+        required: true
+
+      IMAGE_UPDATER_APP_PRIVATE_KEY:
+        required: true
+
+      GHCR_READ_USERNAME:
+        description: "Usuário do PAT opcional para leitura de imagens privadas"
+        required: false
+
+      GHCR_READ_TOKEN:
+        description: "PAT opcional com read:packages; sem ele usa o GITHUB_TOKEN"
+        required: false
+
+jobs:
+  update-image:
+    name: Update Kubernetes image
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: read
+
+    timeout-minutes: 15
+    concurrency:
+      group: gitops-${{ inputs.application }}-${{ inputs.environment }}-${{ inputs.image }}
+      cancel-in-progress: false
+
+    outputs:
+      pull-request-url: ${{ steps.pull-request.outputs.pull-request-url }}
+
+    steps:
+      - name: Validate workflow inputs
+        shell: bash
+        env:
+          IMAGE: ${{ inputs.image }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          IMAGE_DIGEST: ${{ inputs.image-digest }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          APPLICATION: ${{ inputs.application }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$ENVIRONMENT" != "dev" ]]; then
+            echo "::error::Somente o ambiente dev é permitido."
+            exit 1
+          fi
+
+          if [[ ! "$APPLICATION" =~ ^[a-z0-9-]+$ ]]; then
+            echo "::error::Identificador de aplicação inválido."
+            exit 1
+          fi
+
+          if [[ ! "$IMAGE_TAG" =~ ^sha-[a-f0-9]{7,40}$ ]]; then
+            echo "::error::Tag de imagem inválida."
+            exit 1
+          fi
+
+          if [[ ! "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::SHA do commit de origem inválido."
+            exit 1
+          fi
+
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Digest OCI inválido."
+            exit 1
+          fi
+
+          if [[ ! "$IMAGE" =~ ^ghcr\.io/ifpbesp/[a-z0-9._/-]+$ ]]; then
+            echo "::error::Imagem fora do GHCR autorizado."
+            exit 1
+          fi
+
+          if [[ "$CALLER_REPOSITORY" != "IFPBEsp/APAE-INFRA" ]]; then
+            echo "::error::Este workflow deve ser executado exclusivamente no APAE-INFRA."
+            exit 1
+          fi
+
+          case "$SOURCE_REPOSITORY:$APPLICATION:$IMAGE" in
+            IFPBEsp/APAE:apae-geral:ghcr.io/ifpbesp/apae-geral-backend|\
+            IFPBEsp/APAE:apae-geral:ghcr.io/ifpbesp/apae-geral-frontend|\
+            IFPBEsp/APAE-atendimento:apae-atendimento:ghcr.io/ifpbesp/apae-atendimento-backend|\
+            IFPBEsp/APAE-atendimento:apae-atendimento:ghcr.io/ifpbesp/apae-atendimento-frontend|\
+            IFPBEsp/APAE-gestao-escolar:apae-gestao-escolar:ghcr.io/ifpbesp/apae-gestao-escolar-backend|\
+            IFPBEsp/APAE-gestao-escolar:apae-gestao-escolar:ghcr.io/ifpbesp/apae-gestao-escolar-frontend|\
+            IFPBEsp/apae-site-comemorativo:site-comemorativo:ghcr.io/ifpbesp/apae-site-comemorativo)
+              ;;
+            *)
+              echo "::error::Combinação de repositório, aplicação e imagem não autorizada."
+              exit 1
+              ;;
+          esac
+
+          if [[ "${IMAGE_TAG#sha-}" != "${SOURCE_COMMIT:0:${#IMAGE_TAG}-4}" ]]; then
+            echo "::error::Tag não corresponde ao commit de origem."
+            exit 1
+          fi
+
+          echo "Inputs validados."
+
+      - name: Verify published image in GHCR
+        id: registry
+        shell: bash
+        env:
+          IMAGE: ${{ inputs.image }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          IMAGE_DIGEST: ${{ inputs.image-digest }}
+          GHCR_READ_USERNAME: ${{ secrets.GHCR_READ_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import base64
+          import hashlib
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          MEDIA_TYPES = (
+              "application/vnd.oci.image.index.v1+json",
+              "application/vnd.oci.image.manifest.v1+json",
+              "application/vnd.docker.distribution.manifest.list.v2+json",
+              "application/vnd.docker.distribution.manifest.v2+json",
+          )
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              # Credenciais só podem ser enviadas aos endpoints fixos do GHCR.
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          def verify_published_image(image, tag, expected_digest, username="", password=""):
+              repository = image.removeprefix("ghcr.io/")
+              query = urllib.parse.urlencode({"service": "ghcr.io", "scope": f"repository:{repository}:pull"})
+              token_url = "https://ghcr.io/token?" + query
+              manifest_url = f"https://ghcr.io/v2/{repository}/manifests/{tag}"
+              opener = urllib.request.build_opener(NoRedirect())
+
+              def get(url, headers, limit):
+                  request = urllib.request.Request(url, headers=headers)
+                  with opener.open(request, timeout=30) as response:
+                      body = response.read(limit + 1)
+                      if len(body) > limit:
+                          raise ValueError("Resposta do GHCR excede o limite permitido.")
+                      return body, response.headers
+
+              def fetch_manifest(authenticated):
+                  headers = {"Accept": "application/json"}
+                  if authenticated:
+                      basic = base64.b64encode(f"{username}:{password}".encode()).decode()
+                      headers["Authorization"] = "Basic " + basic
+                  body, _ = get(token_url, headers, 1024 * 1024)
+                  payload = json.loads(body)
+                  if not isinstance(payload, dict):
+                      raise ValueError("Resposta de autenticação inválida do GHCR.")
+                  token = payload.get("token") or payload.get("access_token")
+                  if not isinstance(token, str) or not token or any(c in token for c in "\r\n"):
+                      raise ValueError("Token de leitura ausente ou inválido na resposta do GHCR.")
+                  return get(manifest_url, {
+                      "Accept": ", ".join(MEDIA_TYPES),
+                      "Accept-Encoding": "identity",
+                      "Authorization": "Bearer " + token,
+                  }, 8 * 1024 * 1024)
+
+              try:
+                  body, headers = fetch_manifest(False)
+              except urllib.error.HTTPError as error:
+                  if error.code not in (401, 403) or not username or not password:
+                      raise
+                  error.close()
+                  body, headers = fetch_manifest(True)
+
+              content_type = headers.get("Content-Type", "").split(";", 1)[0].strip()
+              if content_type not in MEDIA_TYPES or headers.get("Content-Encoding", "identity") != "identity":
+                  raise ValueError("Tipo de objeto ou codificação não suportados na resposta do GHCR.")
+              manifest = json.loads(body)
+              if not isinstance(manifest, dict) or manifest.get("schemaVersion") != 2:
+                  raise ValueError("Manifest publicado inválido.")
+              if manifest.get("mediaType", content_type) != content_type:
+                  raise ValueError("Media type do manifest diverge do cabeçalho do GHCR.")
+              # Hash dos bytes originais do objeto da tag, sem selecionar uma plataforma.
+              # Para multiarch, compara o índice completo, não um manifest filho.
+              actual_digest = "sha256:" + hashlib.sha256(body).hexdigest()
+              if headers.get("Docker-Content-Digest", actual_digest) != actual_digest:
+                  raise ValueError("Cabeçalho de digest do GHCR diverge do conteúdo recebido.")
+              if actual_digest != expected_digest:
+                  raise ValueError("Digest informado não corresponde ao objeto publicado para a tag.")
+
+          def main():
+              try:
+                  username = os.environ.get("GHCR_READ_USERNAME", "")
+                  password = os.environ.get("GHCR_READ_TOKEN", "")
+                  if bool(username) != bool(password):
+                      raise ValueError("Configure GHCR_READ_USERNAME e GHCR_READ_TOKEN em conjunto.")
+                  verify_published_image(
+                      os.environ["IMAGE"], os.environ["IMAGE_TAG"], os.environ["IMAGE_DIGEST"],
+                      username or os.environ.get("REGISTRY_USERNAME", ""),
+                      password or os.environ.get("REGISTRY_TOKEN", ""),
+                  )
+              except urllib.error.HTTPError as error:
+                  # Não registrar corpo, headers, tokens ou mensagens fornecidas pelo registro.
+                  print(f"::error::Consulta ao GHCR falhou (HTTP {error.code}). Verifique a tag e o acesso de leitura.")
+                  error.close()
+                  return 1
+              except (OSError, ValueError, KeyError):
+                  print("::error::Falha ao verificar a imagem no GHCR: conexão, resposta, credenciais ou digest inválidos.")
+                  return 1
+              print("Tag existente e digest do objeto publicado confirmados no GHCR.")
+              return 0
+
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PYTHON
+
+      - name: Checkout automation revision
+        id: automation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: ${{ github.sha }}
+          token: ${{ github.token }}
+          persist-credentials: false
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.IMAGE_UPDATER_APP_ID }}
+          private-key: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
+          owner: IFPBEsp
+          repositories: APAE-INFRA
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout main manifests
+        id: manifests
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: main
+          path: infra
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Resolve Kubernetes overlay
+        id: overlay
+        shell: bash
+        working-directory: infra
+        env:
+          APPLICATION: ${{ inputs.application }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$ENVIRONMENT" != "dev" ]]; then
+            echo "::error::Somente dev é permitido."
+            exit 1
+          fi
+
+          case "$APPLICATION" in
+            apae-geral)
+              overlay="kubernetes/overlays/dev/apae"
+              ;;
+            apae-atendimento)
+              overlay="kubernetes/overlays/dev/apae-atendimento"
+              ;;
+            apae-gestao-escolar)
+              overlay="kubernetes/overlays/dev/apae-gestao-escolar"
+              ;;
+            site-comemorativo)
+              overlay="kubernetes/overlays/dev/apae-site-comemorativo"
+              ;;
+            *)
+              echo "::error::Aplicação não autorizada."
+              exit 1
+              ;;
+          esac
+
+          if [[ ! -f "$overlay/kustomization.yaml" ]]; then
+            echo "::error::Overlay não encontrado: $overlay"
+            echo "::error::A estrutura depende da issue #92."
+            exit 1
+          fi
+
+          echo "path=$overlay" >> "$GITHUB_OUTPUT"
+
+          echo "Overlay autorizado: $overlay"
+
+      - name: Set up approved Kustomize
+        uses: ./.github/actions/setup-kustomize
+
+      - name: Install YAML editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/gitops-yaml"
+          "$RUNNER_TEMP/gitops-yaml/bin/pip" install --disable-pip-version-check 'PyYAML==6.0.3'
+
+      - name: Update and validate image reference
+        id: image-update
+        shell: bash
+        working-directory: infra
+        env:
+          OVERLAY: ${{ steps.overlay.outputs.path }}
+          IMAGE: ${{ inputs.image }}
+          IMAGE_DIGEST: ${{ inputs.image-digest }}
+          APPLICATION: ${{ inputs.application }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/gitops-yaml/bin/python" - <<'PYTHON'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          import yaml
+
+          overlay = os.environ["OVERLAY"]
+          image = os.environ["IMAGE"]
+          digest = os.environ["IMAGE_DIGEST"]
+          path = Path(overlay) / "kustomization.yaml"
+
+          def container_images():
+              rendered = subprocess.check_output(["kustomize", "build", overlay], text=True)
+              result = []
+
+              def visit(value):
+                  if isinstance(value, dict):
+                      for key, item in value.items():
+                          if key in ("containers", "initContainers", "ephemeralContainers"):
+                              result.extend(container["image"] for container in item)
+                          else:
+                              visit(item)
+                  elif isinstance(value, list):
+                      for item in value:
+                          visit(item)
+
+              for document in yaml.safe_load_all(rendered):
+                  visit(document)
+              return result
+
+          def image_name(reference):
+              return reference.split("@", 1)[0].split(":", 1)[0]
+
+          before = container_images()
+          if not any(image_name(reference) == image for reference in before):
+              raise SystemExit("Imagem solicitada não encontrada nos workloads do overlay.")
+
+          data = yaml.safe_load(path.read_text())
+          entries = data.setdefault("images", [])
+          matches = [entry for entry in entries if entry.get("newName", entry["name"]) == image]
+          if len(matches) > 1:
+              raise SystemExit("Múltiplas regras de imagem correspondem à imagem solicitada.")
+          entry = matches[0] if matches else {"name": image}
+          if not matches:
+              entries.append(entry)
+          entry.pop("newTag", None)
+          entry["digest"] = digest
+
+          # Evita reformatar o arquivo quando o digest já está atualizado.
+          if yaml.safe_load(path.read_text()) != data:
+              path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+
+          after = container_images()
+          expected = image + "@" + digest
+          if not any(reference == expected for reference in after):
+              raise SystemExit("O Kustomize não aplicou o digest solicitado.")
+          if any(image_name(reference) == image and reference != expected for reference in after):
+              raise SystemExit("Há workloads com referências inconsistentes à imagem solicitada.")
+          if sorted(ref for ref in before if image_name(ref) != image) != sorted(
+              ref for ref in after if image_name(ref) != image
+          ):
+              raise SystemExit("A atualização alterou imagens de outros serviços.")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              image_id = image.rsplit("/", 1)[-1]
+              branch = f"gitops/{os.environ['APPLICATION']}/{os.environ['ENVIRONMENT']}/{image_id}"
+              output.write(f"branch={branch}\n")
+          PYTHON
+
+      - name: Create or update image pull request
+        id: pull-request
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          path: infra
+          base: main
+          branch: ${{ steps.image-update.outputs.branch }}
+          add-paths: ${{ steps.overlay.outputs.path }}/kustomization.yaml
+          commit-message: "chore(gitops): update ${{ inputs.application }} image to ${{ inputs.image-tag }}"
+          title: "chore(gitops): update ${{ inputs.application }} (${{ inputs.image }}) to ${{ inputs.image-tag }}"
+          body: |
+            Atualiza a imagem de `${{ inputs.application }}` no ambiente `${{ inputs.environment }}`.
+
+            - Origem: [${{ inputs.source-repository }}](https://github.com/${{ inputs.source-repository }})
+            - Commit: [${{ inputs.source-commit }}](https://github.com/${{ inputs.source-repository }}/commit/${{ inputs.source-commit }})
+            - Tag: `${{ inputs.image-tag }}`
+            - Referência imutável: `${{ inputs.image }}@${{ inputs.image-digest }}`
+            - Overlay: `${{ steps.overlay.outputs.path }}`
+            - Execução: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            A existência da tag e seu digest foram verificados no GHCR. Isso não comprova a proveniência do build.
+            O overlay foi renderizado com Kustomize e a referência resultante foi verificada.
+            Requer revisão e merge humanos. O sync no ArgoCD permanece manual.
+
+      - name: Publish update summary
+        shell: bash
+        env:
+          PR_URL: ${{ steps.pull-request.outputs.pull-request-url }}
+          IMAGE: ${{ inputs.image }}
+          DIGEST: ${{ inputs.image-digest }}
+        run: |
+          set -euo pipefail
+          {
+            echo "Imagem: $IMAGE@$DIGEST"
+            if [[ -n "$PR_URL" ]]; then
+              echo "PR: $PR_URL"
+            else
+              echo "Nenhuma diferença em relação à main; nenhum novo PR necessário."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
