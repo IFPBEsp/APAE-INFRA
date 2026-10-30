@@ -1,0 +1,32 @@
+---
+- name: Proteger API Kubernetes na VPS
+  hosts: production
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Validar interface publica
+      ansible.builtin.assert:
+        that:
+          - k3s_public_interface in ansible_facts['interfaces']
+        fail_msg: "Interface publica nao encontrada."
+
+    - name: Instalar unidade de protecao da API
+      ansible.builtin.template:
+        src: ../roles/k3s/templates/k3s-api-firewall.service.j2
+        dest: /etc/systemd/system/k3s-api-firewall.service
+        owner: root
+        group: root
+        mode: "0644"
+      register: firewall_unit
+
+    - name: Recarregar systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: firewall_unit.changed
+
+    - name: Habilitar e aplicar proteção
+      ansible.builtin.systemd:
+        name: k3s-api-firewall.service
+        enabled: true
+        state: "{{ 'restarted' if firewall_unit.changed else 'started' }}"

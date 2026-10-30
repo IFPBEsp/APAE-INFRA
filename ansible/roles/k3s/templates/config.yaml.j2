@@ -1,0 +1,12 @@
+# Gerenciado pelo Ansible - APAE-INFRA
+# Issue #90
+
+disable:
+{% for component in k3s_disable_components %}
+  - {{ component }}
+{% endfor %}
+
+write-kubeconfig-mode: "0600"
+cluster-cidr: "{{ k3s_cluster_cidr }}"
+service-cidr: "{{ k3s_service_cidr }}"
+secrets-encryption: true

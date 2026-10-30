@@ -1,0 +1,148 @@
+
+---
+- name: Garantir diretório de configuração do k3s
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Verificar serviço de proteção da API
+  ansible.builtin.command:
+    cmd: systemctl is-active k3s-api-firewall.service
+  register: k3s_firewall_status
+  changed_when: false
+  failed_when: k3s_firewall_status.rc != 0
+  check_mode: false
+
+- name: Verificar bloqueios IPv4 e IPv6
+  ansible.builtin.command: >-
+    {{ item.0 }} -C INPUT -i {{ k3s_public_interface }}
+    -p {{ item.1.protocol }}
+    --dport {{ item.1.port }} -j DROP
+  loop: "{{ ['iptables', 'ip6tables'] | product(k3s_protected_ports) | list }}"
+  changed_when: false
+  check_mode: false
+
+- name: Verificar instalação existente do k3s
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+- name: Verificar serviço systemd do k3s
+  ansible.builtin.stat:
+    path: /etc/systemd/system/k3s.service
+  register: k3s_service_file
+
+- name: Calcular checksum do binário instalado
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+    checksum_algorithm: sha256
+    get_checksum: true
+  register: k3s_integrity
+  when: k3s_binary.stat.exists
+
+- name: Validar integridade do binário instalado
+  ansible.builtin.assert:
+    that:
+      - k3s_integrity.stat.checksum == k3s_sha256
+    fail_msg: >-
+      O checksum do k3s instalado não corresponde
+      ao esperado para {{ k3s_version }}.
+      A instalação não será modificada automaticamente.
+    success_msg: "Integridade do binário k3s confirmada."
+  when: k3s_binary.stat.exists
+
+- name: Baixar binário da versão fixada do k3s
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/k3s-io/k3s/releases/download/{{ k3s_version | replace('+', '%2B') }}/k3s
+    dest: /usr/local/bin/k3s
+    checksum: "sha256:{{ k3s_sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: not k3s_binary.stat.exists
+
+- name: Garantir permissões do binário k3s
+  ansible.builtin.file:
+    path: /usr/local/bin/k3s
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Instalar script versionado do k3s
+  ansible.builtin.copy:
+    src: install.sh
+    dest: /usr/local/src/install-k3s.sh
+    owner: root
+    group: root
+    mode: "0700"
+  when: not k3s_service_file.stat.exists
+
+- name: Instalar serviço k3s sem iniciar
+  ansible.builtin.command:
+    cmd: /bin/sh /usr/local/src/install-k3s.sh
+    creates: /etc/systemd/system/k3s.service
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_EXEC: "server"
+    INSTALL_K3S_SKIP_DOWNLOAD: "true"
+    INSTALL_K3S_SKIP_START: "true"
+  when: not k3s_service_file.stat.exists
+
+- name: Instalar configuração declarativa do k3s
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  register: k3s_config_result
+
+- name: Criar diretório de dependências systemd
+  ansible.builtin.file:
+    path: /etc/systemd/system/k3s.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Exigir firewall antes de iniciar k3s
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/k3s.service.d/10-firewall.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Requires=k3s-api-firewall.service
+      After=k3s-api-firewall.service
+  register: k3s_dependency
+
+- name: Recarregar configurações systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Iniciar e habilitar k3s
+  ansible.builtin.systemd_service:
+    name: k3s
+    state: started
+    enabled: true
+
+- name: Reiniciar k3s após alteração da configuração
+  ansible.builtin.systemd_service:
+    name: k3s
+    state: restarted
+  when:
+    - k3s_service_file.stat.exists
+    - k3s_config_result.changed
+
+- name: Aguardar API Kubernetes local
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 6443
+    state: started
+    timeout: 180
+    delay: 2
