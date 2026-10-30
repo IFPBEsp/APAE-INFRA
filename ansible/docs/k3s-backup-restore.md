@@ -15,7 +15,7 @@ Antes de executar um procedimento de recuperação, confirmar o tipo de datastor
 ## Dados que precisam ser preservados
 
 | Caminho | Finalidade |
-|---|---|
+| --- | --- |
 | `/var/lib/rancher/k3s/server/db/` | Datastore SQLite do cluster |
 | `/var/lib/rancher/k3s/server/token` | Token original necessário à recuperação |
 | `/etc/rancher/k3s/config.yaml` | Configuração declarativa do servidor |

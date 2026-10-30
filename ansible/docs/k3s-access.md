@@ -10,7 +10,7 @@ O objetivo é garantir que o acesso ao cluster seja seguro, restrito, auditável
 ### Ambiente
 
 | Item | Configuração |
-|---|---|
+| --- | --- |
 | Ambiente | Produção |
 | Provedor | HostGator |
 | Arquitetura | k3s single-node |
@@ -304,7 +304,7 @@ A distribuição de kubeconfigs administrativos não faz parte do procedimento p
 O cluster utiliza as seguintes portas administrativas ou internas:
 
 | Porta | Protocolo | Finalidade | Política na interface pública |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 6443 | TCP | Kubernetes API | Bloquear |
 | 10250 | TCP | Kubelet API | Bloquear |
 | 8472 | UDP | Flannel VXLAN | Bloquear |
