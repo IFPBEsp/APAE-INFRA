@@ -1,0 +1,51 @@
+---
+- name: Validar requisitos para o k3s
+  hosts: production
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Validar recursos mínimos
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['processor_vcpus'] | int >= 2
+          - ansible_facts['memtotal_mb'] | int >= 2048
+          - ansible_facts['distribution'] == 'Ubuntu'
+        fail_msg: "A VPS não atende aos requisitos mínimos definidos."
+
+    - name: Verificar se k3s já está instalado
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Informar estado da instalação
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'k3s já instalado; validar integridade e serviço.'
+             if k3s_binary.stat.exists
+             else 'k3s não instalado; instalação inicial permitida.' }}
+
+    - name: Verificar cgroups v2
+      ansible.builtin.command: stat -fc %T /sys/fs/cgroup
+      register: cgroup_type
+      changed_when: false
+
+    - name: Validar cgroups
+      ansible.builtin.assert:
+        that:
+          - cgroup_type.stdout == "cgroup2fs"
+
+    - name: Verificar se porta 6443 está disponível
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 6443
+        state: stopped
+        timeout: 5
+
+    - name: Exibir configuração planejada
+      ansible.builtin.debug:
+        msg:
+          - "Versão: {{ k3s_version }}"
+          - "Componentes desabilitados: {{ k3s_disable_components }}"
+          - "CIDR pods: {{ k3s_cluster_cidr }}"
+          - "CIDR Services: {{ k3s_service_cidr }}"

@@ -1,0 +1,32 @@
+---
+common_packages:
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - unzip
+  - tar
+  - python3
+  - python3-apt
+  - openssl
+  - iproute2
+  - conntrack
+  - socat
+
+common_manage_hosts: true
+
+ssh_port: 22022
+
+k3s_sha256: "d73847bcd3c5fccef0115b372e2f9a91f3032dc84bbf71518a4617565294d313"
+k3s_version: "v1.36.5+k3s1"
+k3s_cluster_cidr: "10.42.0.0/16"
+k3s_service_cidr: "10.43.0.0/16"
+k3s_public_interface: "ens3"
+k3s_protected_ports:
+  - { protocol: tcp, port: "6443" }
+  - { protocol: tcp, port: "10250" }
+  - { protocol: udp, port: "8472" }
+
+k3s_disable_components:
+  - traefik
+  - servicelb

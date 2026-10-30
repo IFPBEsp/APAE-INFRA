@@ -1,0 +1,8 @@
+---
+- name: Preparar Ubuntu para o cluster k3s
+  hosts: production
+  become: true
+  gather_facts: true
+
+  roles:
+    - common

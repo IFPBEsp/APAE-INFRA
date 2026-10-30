@@ -1,0 +1,57 @@
+
+---
+- name: Validar cluster k3s de produção
+  hosts: production
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Verificar versão instalada do k3s
+      ansible.builtin.command: /usr/local/bin/k3s --version
+      register: version_result
+      changed_when: false
+
+    - name: Confirmar versão fixada
+      ansible.builtin.assert:
+        that:
+          - k3s_version in version_result.stdout
+        fail_msg: "A versão instalada do k3s não corresponde à versão fixada."
+        success_msg: "Versão do k3s validada: {{ k3s_version }}"
+
+    - name: Aguardar nó Kubernetes ficar Ready
+      ansible.builtin.command: >-
+        /usr/local/bin/k3s kubectl wait
+        --for=condition=Ready nodes --all
+        --timeout=120s
+      changed_when: false
+
+    - name: Aguardar pods essenciais
+      ansible.builtin.command: >-
+        /usr/local/bin/k3s kubectl rollout status
+        deployment/{{ item }} -n kube-system
+        --timeout=120s
+      loop:
+        - coredns
+        - local-path-provisioner
+        - metrics-server
+      changed_when: false
+
+    - name: Verificar criptografia de Secrets
+      ansible.builtin.command: /usr/local/bin/k3s secrets-encrypt status
+      register: encryption_result
+      changed_when: false
+
+    - name: Confirmar criptografia habilitada
+      ansible.builtin.assert:
+        that:
+          - "'Encryption Status: Enabled' in encryption_result.stdout"
+        fail_msg: "A criptografia dos Secrets não está habilitada."
+        success_msg: "Criptografia dos Secrets habilitada."
+
+    - name: Validar workload de teste
+      ansible.builtin.command: >-
+        /usr/local/bin/k3s kubectl rollout status
+        deployment/nginx-test -n smoke-test
+        --timeout=120s
+      changed_when: false
+      when: verify_smoke_test | default(false) | bool
