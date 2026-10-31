@@ -1,0 +1,71 @@
+---
+- name: Verificar readiness dos Deployments do ArgoCD
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - rollout
+      - status
+      - "deployment/{{ item }}"
+      - -n
+      - "{{ argocd_namespace }}"
+      - --timeout=180s
+  loop:
+    - "{{ argocd_release_name }}-server"
+    - "{{ argocd_release_name }}-repo-server"
+    - "{{ argocd_release_name }}-redis"
+  changed_when: false
+
+- name: Verificar readiness do Application Controller
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - rollout
+      - status
+      - "statefulset/{{ argocd_release_name }}-application-controller"
+      - -n
+      - "{{ argocd_namespace }}"
+      - --timeout=180s
+  changed_when: false
+
+- name: Verificar CRDs do ArgoCD
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - wait
+      - --for=condition=Established
+      - "crd/{{ item }}"
+      - --timeout=120s
+  loop:
+    - applications.argoproj.io
+    - appprojects.argoproj.io
+    - applicationsets.argoproj.io
+  changed_when: false
+
+- name: Listar pods do ArgoCD
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - get
+      - pods
+      - -n
+      - "{{ argocd_namespace }}"
+      - -o
+      - wide
+  register: argocd_pods_result
+  changed_when: false
+
+- name: Exibir estado dos pods
+  ansible.builtin.debug:
+    msg: "{{ argocd_pods_result.stdout_lines }}"

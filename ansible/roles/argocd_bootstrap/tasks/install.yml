@@ -1,0 +1,49 @@
+---
+- name: Instalar ou atualizar ArgoCD com Helm
+  kubernetes.core.helm:
+    binary_path: "{{ argocd_helm_binary }}"
+    name: "{{ argocd_release_name }}"
+    chart_ref: "{{ argocd_chart_name }}"
+    chart_repo_url: "{{ argocd_chart_repository }}"
+    chart_version: "{{ argocd_chart_version }}"
+    release_namespace: "{{ argocd_namespace }}"
+    create_namespace: true
+    release_state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+    release_values: >-
+      {{
+        lookup(
+          'ansible.builtin.template',
+          'values.yaml.j2'
+        ) | from_yaml
+      }}
+    reset_values: true
+    wait: "{{ argocd_helm_wait | bool }}"
+    wait_for_jobs: true
+    atomic: "{{ argocd_helm_atomic | bool }}"
+    timeout: "{{ argocd_helm_timeout }}"
+  environment:
+    HELM_PLUGINS: "{{ argocd_helm_plugins_dir }}"
+  register: argocd_helm_result
+
+- name: Consultar estado da release ArgoCD
+  ansible.builtin.command:
+    argv:
+      - "{{ argocd_helm_binary }}"
+      - status
+      - "{{ argocd_release_name }}"
+      - --namespace
+      - "{{ argocd_namespace }}"
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - --output
+      - json
+  register: argocd_release_status
+  changed_when: false
+
+- name: Confirmar release instalada e disponível
+  ansible.builtin.assert:
+    that:
+      - (argocd_release_status.stdout | from_json).info.status == 'deployed'
+    fail_msg: "A release do ArgoCD não está no estado deployed."
+    success_msg: "Release do ArgoCD validada."

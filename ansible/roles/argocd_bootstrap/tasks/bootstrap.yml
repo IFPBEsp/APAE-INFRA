@@ -1,0 +1,26 @@
+---
+- name: Aplicar objetos de bootstrap do ArgoCD
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - apply
+      - -f
+      - "-"
+    stdin: >-
+      {{
+        lookup(
+          'ansible.builtin.file',
+          playbook_dir ~ '/../../argocd/' ~ item
+        )
+      }}
+  loop:
+    - project.yaml
+    - project-infra.yaml
+    - app-of-apps.yaml
+  register: argocd_bootstrap_apply
+  changed_when: >-
+    'created' in argocd_bootstrap_apply.stdout
+    or 'configured' in argocd_bootstrap_apply.stdout
