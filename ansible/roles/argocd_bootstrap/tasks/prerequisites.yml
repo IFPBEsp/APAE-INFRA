@@ -1,0 +1,47 @@
+---
+- name: Verificar existência do kubeconfig do k3s
+  ansible.builtin.stat:
+    path: "{{ argocd_kubeconfig }}"
+  register: argocd_kubeconfig_stat
+
+- name: Validar kubeconfig do k3s
+  ansible.builtin.assert:
+    that:
+      - argocd_kubeconfig_stat.stat.exists
+      - argocd_kubeconfig_stat.stat.isreg
+    fail_msg: "Kubeconfig do k3s não encontrado na VPS."
+    success_msg: "Kubeconfig do k3s encontrado."
+
+- name: Verificar instalação do k3s
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: argocd_k3s_binary
+
+- name: Validar binário do k3s
+  ansible.builtin.assert:
+    that:
+      - argocd_k3s_binary.stat.exists
+      - argocd_k3s_binary.stat.executable
+    fail_msg: "k3s não está instalado ou não é executável."
+
+- name: Verificar disponibilidade da API Kubernetes
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - get
+      - --raw=/readyz
+  register: argocd_api_health
+  changed_when: false
+  retries: 5
+  delay: 5
+  until: argocd_api_health.rc == 0
+
+- name: Confirmar disponibilidade do cluster
+  ansible.builtin.assert:
+    that:
+      - argocd_api_health.stdout | trim == "ok"
+    fail_msg: "A API Kubernetes não está pronta."
+    success_msg: "API Kubernetes disponível."

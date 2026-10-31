@@ -1,0 +1,92 @@
+---
+# ArgoCD - APAE-INFRA
+# Gerenciado exclusivamente pelo Ansible.
+
+global:
+  domain: argocd.local
+
+crds:
+  install: true
+  keep: true
+
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+
+server:
+  replicas: 1
+
+  service:
+    type: {{ argocd_server_service_type }}
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 384Mi
+
+repoServer:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+redis-ha:
+  enabled: {{ argocd_redis_ha_enabled | lower }}
+
+redis:
+  enabled: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 192Mi
+
+dex:
+  enabled: {{ argocd_dex_enabled | lower }}
+
+notifications:
+  enabled: {{ argocd_notifications_enabled | lower }}
+
+applicationSet:
+  replicas: 0
+
+configs:
+  params:
+    server.insecure: false
+
+  cm:
+    admin.enabled: true
+    timeout.reconciliation: 180s
+
+  rbac:
+    policy.default: role:authenticated
+    policy.csv: |
+      p, role:apae-readonly, applications, get, */*, allow
+      p, role:apae-readonly, projects, get, *, allow
+      p, role:apae-readonly, repositories, get, *, allow
+      p, role:apae-readonly, logs, get, */*, allow
+
+  repositories:
+    apae-infra:
+      url: {{ argocd_git_repository | to_json }}
+      name: apae-infra
+      type: git
+
+  secret:
+    createSecret: true
+    argocdServerAdminPassword: ""

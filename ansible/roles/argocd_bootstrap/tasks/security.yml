@@ -1,0 +1,131 @@
+---
+- name: Consultar Secret administrativo do ArgoCD
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - -n
+      - "{{ argocd_namespace }}"
+      - get
+      - secret
+      - argocd-secret
+      - -o
+      - json
+  register: argocd_admin_secret
+  changed_when: false
+  no_log: true
+
+- name: Identificar hash administrativo atual
+  ansible.builtin.set_fact:
+    argocd_current_admin_hash: >-
+      {{
+        (
+          (argocd_admin_secret.stdout | from_json)
+          .get('data', {})
+          .get('admin.password', '')
+        ) | b64decode
+      }}
+  no_log: true
+
+- name: Atualizar senha administrativa quando necessário
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - -n
+      - "{{ argocd_namespace }}"
+      - patch
+      - secret
+      - argocd-secret
+      - --type=merge
+      - --patch-file=/dev/stdin
+    stdin: >-
+      {{
+        {
+          'stringData': {
+            'admin.password': argocd_admin_password_hash,
+            'admin.passwordMtime': now(
+              utc=true,
+              fmt='%Y-%m-%dT%H:%M:%SZ'
+            )
+          }
+        } | to_json
+      }}
+    stdin_add_newline: true
+  when: argocd_current_admin_hash != argocd_admin_password_hash
+  register: argocd_admin_password_update
+  changed_when: argocd_admin_password_update.rc == 0
+  no_log: true
+
+- name: Verificar hash administrativo após configuração
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - -n
+      - "{{ argocd_namespace }}"
+      - get
+      - secret
+      - argocd-secret
+      - -o
+      - json
+  register: argocd_admin_secret_verified
+  changed_when: false
+  no_log: true
+
+- name: Confirmar hash administrativo configurado
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          (
+            (argocd_admin_secret_verified.stdout | from_json)
+            .get('data', {})
+            .get('admin.password', '')
+          ) | b64decode
+        ) == argocd_admin_password_hash
+    fail_msg: "O hash administrativo não corresponde ao valor esperado."
+    success_msg: "Hash administrativo configurado corretamente."
+  no_log: true
+
+- name: Verificar existência da senha administrativa inicial
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - -n
+      - "{{ argocd_namespace }}"
+      - get
+      - secret
+      - argocd-initial-admin-secret
+      - --ignore-not-found
+      - -o
+      - name
+  register: argocd_initial_secret
+  changed_when: false
+  no_log: true
+
+- name: Remover Secret da senha administrativa inicial
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - --kubeconfig
+      - "{{ argocd_kubeconfig }}"
+      - -n
+      - "{{ argocd_namespace }}"
+      - delete
+      - secret
+      - argocd-initial-admin-secret
+  when: argocd_initial_secret.stdout | trim | length > 0
+  register: argocd_initial_secret_removal
+  changed_when: argocd_initial_secret_removal.rc == 0
+  no_log: true

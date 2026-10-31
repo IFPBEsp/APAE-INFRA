@@ -1,0 +1,24 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: apae-infra
+  namespace: argocd
+spec:
+  description: Projeto GitOps de infraestrutura da APAE
+
+  sourceRepos:
+    - https://github.com/IFPBEsp/APAE-INFRA.git
+
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+
+  clusterResourceWhitelist: []
+
+  namespaceResourceWhitelist:
+    - group: argoproj.io
+      kind: Application
+
+  orphanedResources:
+    warn: true

@@ -1,0 +1,67 @@
+---
+- name: Validar arquitetura da VPS
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['architecture'] == 'x86_64'
+      - ansible_facts['system'] == 'Linux'
+    fail_msg: "O Helm configurado requer Linux amd64."
+
+- name: Instalar dependência YAML do Ansible
+  ansible.builtin.apt:
+    name: python3-yaml
+    state: present
+    update_cache: false
+
+- name: Criar diretório de instalação do Helm
+  ansible.builtin.file:
+    path: "{{ argocd_helm_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Baixar Helm com verificação SHA-256
+  ansible.builtin.get_url:
+    url: >-
+      https://get.helm.sh/helm-{{ argocd_helm_version }}-linux-{{
+      argocd_helm_arch }}.tar.gz
+    dest: "{{ argocd_helm_install_dir }}/helm.tar.gz"
+    checksum: "sha256:{{ argocd_helm_archive_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extrair Helm
+  ansible.builtin.unarchive:
+    src: "{{ argocd_helm_install_dir }}/helm.tar.gz"
+    dest: "{{ argocd_helm_install_dir }}"
+    remote_src: true
+    creates: >-
+      {{ argocd_helm_install_dir }}/linux-{{
+      argocd_helm_arch }}/helm
+
+- name: Instalar binário Helm
+  ansible.builtin.copy:
+    src: >-
+      {{ argocd_helm_install_dir }}/linux-{{
+      argocd_helm_arch }}/helm
+    dest: "{{ argocd_helm_binary }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Verificar versão do Helm instalado
+  ansible.builtin.command:
+    argv:
+      - "{{ argocd_helm_binary }}"
+      - version
+      - --short
+  register: argocd_helm_installed_version
+  changed_when: false
+
+- name: Validar versão do Helm
+  ansible.builtin.assert:
+    that:
+      - argocd_helm_version in argocd_helm_installed_version.stdout
+    fail_msg: "A versão instalada do Helm não corresponde à versão fixada."

@@ -1,0 +1,31 @@
+---
+- name: Validar configuração da senha administrativa
+  ansible.builtin.assert:
+    that:
+      - argocd_admin_password_hash is defined
+      - argocd_admin_password_hash is string
+      - argocd_admin_password_hash is match('^\$2[aby]\$\d{2}\$.{53}$')
+    fail_msg: "Configure um hash bcrypt válido para o administrador."
+  no_log: true
+
+- name: Validar pré-requisitos do ArgoCD
+  ansible.builtin.import_tasks: prerequisites.yml
+
+- name: Instalar Helm na VPS
+  ansible.builtin.import_tasks: helm.yml
+
+- name: Instalar plugin helm-diff
+  ansible.builtin.import_tasks: helm-diff.yml
+
+- name: Instalar ou atualizar ArgoCD
+  ansible.builtin.import_tasks: install.yml
+
+- name: Validar saúde e CRDs do ArgoCD
+  ansible.builtin.import_tasks: verify.yml
+
+- name: Configurar segurança administrativa
+  ansible.builtin.import_tasks: security.yml
+
+- name: Aplicar AppProjects e Application raiz
+  ansible.builtin.import_tasks: bootstrap.yml
+  when: argocd_apply_bootstrap | default(true) | bool
