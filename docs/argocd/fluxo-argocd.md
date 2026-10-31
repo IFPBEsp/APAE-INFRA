@@ -53,8 +53,8 @@ A #92 contempla inicialmente os overlays `dev`; `hml` e `prod` e seu fluxo de pr
 
 O bootstrap da #91 aplica dois projetos Kubernetes no namespace `argocd`:
 
-- **`apae`** (`argocd/project.yaml`): projeto das Applications dos produtos e, na configuração inicial, da Application raiz. Restringe os repositórios à origem APAE-INFRA e os destinos aos namespaces permitidos, inclusive `argocd` para criação das definições das filhas. As permissões definitivas dos produtos serão alinhadas à #92.
-- **`apae-infra`** (`argocd/project-infra.yaml`): projeto de infraestrutura separado, inicialmente restrito à origem APAE-INFRA, ao namespace `argocd` e aos tipos estritamente necessários. As respectivas issues devem ampliar suas permissões **explicitamente** para cada novo componente; não se deve conceder acesso global indiscriminado.
+- **`apae`** (`argocd/project.yaml`): projeto das Applications dos produtos. Restringe os repositórios à origem APAE-INFRA e os destinos aos namespaces `apae-*`. As permissões definitivas dos produtos serão alinhadas à #92.
+- **`apae-infra`** (`argocd/project-infra.yaml`): projeto de infraestrutura ao qual pertence a Application raiz `apae-root`, inicialmente restrito à origem APAE-INFRA, ao namespace `argocd` e ao recurso `Application`. As respectivas issues devem ampliar suas permissões **explicitamente** para cada novo componente; não se deve conceder acesso global indiscriminado.
 
 Os `AppProject`s limitam o que o ArgoCD pode reconciliar, mas **não substituem** o RBAC nativo do Kubernetes, as permissões de serviço ou os controles de acesso administrativo.
 
@@ -72,8 +72,6 @@ spec:
   sourceRepos:
     - https://github.com/IFPBEsp/APAE-INFRA.git
   destinations:
-    - server: https://kubernetes.default.svc
-      namespace: argocd
     - server: https://kubernetes.default.svc
       namespace: 'apae-*'
   clusterResourceWhitelist: []
@@ -119,7 +117,7 @@ metadata:
   name: apae-root
   namespace: argocd
 spec:
-  project: apae
+  project: apae-infra
   source:
     repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
     targetRevision: main

@@ -14,7 +14,7 @@
       {{
         lookup(
           'ansible.builtin.template',
-          role_path ~ '/templates/values.yaml.j2'
+          'values.yaml.j2'
         ) | from_yaml
       }}
     reset_values: true
