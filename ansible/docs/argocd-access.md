@@ -30,7 +30,7 @@ sudo k3s kubectl -n argocd \
 
 Na máquina local, abrir:
 
-https://localhost:18080
+<https://localhost:18080>
 
 O certificado TLS poderá apresentar um aviso
 por não corresponder ao endereço localhost.
@@ -41,4 +41,3 @@ por não corresponder ao endereço localhost.
 - Não registrar senhas em logs ou scripts.
 - Não copiar o kubeconfig administrativo para o runner.
 - Encerrar o túnel e o port-forward após a administração.
-```
