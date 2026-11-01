@@ -10,7 +10,7 @@ on:
         default: ""
 
       validate-pr-title:
-        description: "Habilita a validação do título do Pull Request"
+        description: "Habilita a validação do formato do título do Pull Request"
         required: false
         type: boolean
         default: true
@@ -19,7 +19,7 @@ on:
         description: "Expressão regular (ERE) aplicada ao título do Pull Request"
         required: false
         type: string
-        default: '^\[(FEAT|FIX|DOCS|CHORE|CI|REFACTOR|TEST|BUILD)\] .+'
+        default: '^\[(FEAT|FIX|DOCS|CHORE|CI|REFACTOR|TEST|BUILD)\] [^[:space:]].*'
 
 permissions:
   contents: read
@@ -49,6 +49,13 @@ jobs:
           sparse-checkout: commitlint.config.js
           sparse-checkout-cone-mode: false
           persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          # O commitlint 19 exige Node >= 18. Fixar a versão evita que uma
+          # mudança no Node do ubuntu-latest quebre a instalação.
+          node-version: "22"
 
       - name: Install commitlint
         id: commitlint
@@ -104,7 +111,18 @@ jobs:
           fi
 
           # Apenas os commits do PR, sem commits de merge.
-          mapfile -t commits < <(git rev-list --no-merges --reverse "${BASE_SHA}..${HEAD_SHA}")
+          # A saída é capturada em variável para que uma falha do git rev-list
+          # (ex.: ref inválida) seja detectada, o que não ocorre com
+          # "mapfile < <(...)", que ignora o status do processo.
+          if ! rev_list="$(git rev-list --no-merges --reverse "${BASE_SHA}..${HEAD_SHA}")"; then
+            echo "::error::Falha ao listar os commits do Pull Request (${BASE_SHA}..${HEAD_SHA})."
+            exit 1
+          fi
+
+          commits=()
+          if [[ -n "$rev_list" ]]; then
+            mapfile -t commits <<< "$rev_list"
+          fi
 
           if [[ ${#commits[@]} -eq 0 ]]; then
             echo "::notice::Nenhum commit para validar neste Pull Request."

@@ -5,9 +5,11 @@
 O workflow `.github/workflows/commitlint-reusable.yml` valida, em cada Pull Request:
 
 1. as mensagens de todos os commits do PR, com [commitlint](https://commitlint.js.org/);
-2. o título do PR, no formato `[TIPO] Descrição` definido no [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
+2. o formato do título do PR, `[TIPO] Descrição`, definido no [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
 
 Ele roda a mesma validação em qualquer repositório da APAE. O padrão de commit é o da issue #5 e o de título de PR é o da issue #6.
+
+A validação do título é só de formato, feita por expressão regular. O workflow não confere se o título é igual ao da issue vinculada. Essa conferência continua sendo feita manualmente na revisão do PR.
 
 O workflow não escreve nada no repositório e usa apenas as permissões `contents: read` e `pull-requests: read`.
 
@@ -17,6 +19,7 @@ O workflow não escreve nada no repositório e usa apenas as permissões `conten
 
 - Valida só os commits do PR, do commit base até o head. Commits de merge são ignorados.
 - A configuração padrão do commitlint é o [`commitlint.config.js`](../../commitlint.config.js) da raiz do APAE-INFRA. O workflow baixa esse arquivo na mesma versão do próprio workflow, então fixar o SHA do workflow também fixa a configuração.
+- O Node.js é configurado com `actions/setup-node` em versão fixa (22), para que a instalação não dependa da versão que vem no `ubuntu-latest`.
 - O commitlint é instalado com versão fixa (`@commitlint/cli` e `@commitlint/config-conventional`).
 - Se os commits falharem, o título ainda é validado, para que os dois problemas apareçam na mesma execução.
 - PRs abertos por bots (como o Renovate) não são validados.
@@ -29,8 +32,8 @@ O workflow não escreve nada no repositório e usa apenas as permissões `conten
 | Input | Obrigatório | Padrão | Descrição |
 | --- | --- | --- | --- |
 | `config-file` | Não | configuração compartilhada do APAE-INFRA | Caminho, a partir da raiz do repositório chamador, de uma configuração própria do commitlint |
-| `validate-pr-title` | Não | `true` | Habilita a validação do título do PR |
-| `pr-title-pattern` | Não | `^\[(FEAT\|FIX\|DOCS\|CHORE\|CI\|REFACTOR\|TEST\|BUILD)\] .+` | Expressão regular (ERE do bash) aplicada ao título do PR |
+| `validate-pr-title` | Não | `true` | Habilita a validação do formato do título do PR |
+| `pr-title-pattern` | Não | `^\[(FEAT\|FIX\|DOCS\|CHORE\|CI\|REFACTOR\|TEST\|BUILD)\] [^[:space:]].*` | Expressão regular (ERE do bash) aplicada ao título do PR. A descrição precisa começar com um caractere que não seja espaço, então `[CI] ` é reprovado |
 
 ---
 
@@ -72,11 +75,13 @@ jobs:
 
 A configuração própria precisa estender apenas `@commitlint/config-conventional`, que já vem instalado. Plugins e outros presets não são instalados. O arquivo deve ser CommonJS (`.js` sem `"type": "module"`, ou `.cjs`).
 
+O workflow copia somente esse arquivo para o diretório de instalação do commitlint. Por isso a configuração precisa ser autocontida: não pode usar `require` em outros arquivos do repositório por caminho relativo (como `require('./regras.js')`), pois eles não existirão na execução.
+
 ### Outro padrão de título
 
 ```yaml
 with:
-  pr-title-pattern: '^\[(FEAT|FIX|DOCS)\] .+'
+  pr-title-pattern: '^\[(FEAT|FIX|DOCS)\] [^[:space:]].*'
 ```
 
 Para desligar a validação do título:
@@ -119,6 +124,8 @@ O log do check mostra qual commit foi reprovado e qual regra foi violada.
 ### Título do PR fora do padrão
 
 Edite o título do PR no GitHub, no formato `[TIPO] Descrição`, igual ao título da issue vinculada. O check roda de novo sozinho, sem novo push.
+
+O check só verifica o formato. Que o título seja igual ao da issue vinculada é conferido manualmente na revisão.
 
 ---
 
