@@ -33,7 +33,7 @@ O bootstrap inicial do ArgoCD será executado no **cluster k3s da VPS de produç
 
 1. **`targetRevision` da raiz:** branch onde ficam as definições das Applications filhas; inicialmente, `main`.
 2. **`targetRevision` da filha:** branch ou revisão que contém os manifests de workload dessa Application.
-3. **`source.path` da filha:** caminho do overlay Kustomize de destino, como `kubernetes/overlays/prod/apae`.
+3. **`source.path` da filha:** caminho do overlay Kustomize de destino, seguindo a estrutura `kubernetes/{produto}/overlays/{ambiente}` (por exemplo, `kubernetes/apae-geral/overlays/dev`).
 
 A branch da raiz **não seleciona automaticamente** o overlay `prod`. Isso depende de cada Application filha. Da mesma forma, um commit na `main` não significa, por si só, deploy automático em produção: uma filha com sincronização manual pode detectar `OutOfSync` sem aplicar a mudança.
 
@@ -87,7 +87,7 @@ Adotamos o padrão **[App of Apps](https://argo-cd.readthedocs.io/en/stable/oper
 
 Os **dois ciclos independentes** são:
 
-1. **Raiz:** observa alterações nas definições das Applications filhas sob `argocd/` e mantém esses objetos registrados no cluster.
+1. **Raiz:** observa exclusivamente as definições de Applications filhas permitidas pelo seu filtro de descoberta (na raiz de produção, `argocd/apps/prod/`) e mantém esses objetos registrados no cluster.
 2. **Filhas:** observam os overlays apontados em seus respectivos `spec.source.path` e sinalizam ou aplicam diferenças conforme sua política de sincronização.
 
 Alterar a imagem ou o digest em um overlay, sem mudar as definições das filhas, normalmente afeta apenas a reconciliação da Application filha correspondente; não altera a definição gerenciada pela raiz.
@@ -100,11 +100,16 @@ argocd/
 ├── project.yaml           # AppProject dos produtos, gerenciado pelo Ansible
 ├── project-infra.yaml     # AppProject de infraestrutura, gerenciado pelo Ansible
 ├── README.md
-└── {produto}/             # Diretórios de Applications filhas, escopo da #92
-    └── dev.yaml           # Exemplo de manifesto futuro; não é criado pela #91
+└── apps/
+    ├── dev/              # Applications de desenvolvimento, escopo da #92
+    │   ├── apae-geral-dev.yaml
+    │   ├── apae-atendimento-dev.yaml
+    │   └── site-comemorativo-dev.yaml
+    ├── hml/              # Futuro
+    └── prod/             # Futuro; único destino descoberto por apae-root
 ```
 
-A convenção e os diretórios concretos de Applications filhas serão definidos na #92. A #91 **não implanta os produtos nem cria seus overlays**.
+A issue #92 define as Applications de desenvolvimento em `argocd/apps/dev/`. A #91 **não implanta os produtos nem cria seus overlays**. Os diretórios `apps/hml/` e `apps/prod/` representam a organização prevista para os ambientes futuros.
 
 ### Application raiz de produção
 
@@ -124,7 +129,7 @@ spec:
     path: argocd
     directory:
       recurse: true
-      exclude: '{app-of-apps.yaml,project.yaml,project-infra.yaml}'
+      include: 'apps/prod/*.yaml'
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -136,9 +141,11 @@ spec:
       - CreateNamespace=false
 ```
 
-A exclusão explícita de `app-of-apps.yaml`, `project.yaml` e `project-infra.yaml` impede que a raiz tente reconciliar os objetos de bootstrap administrados pelo Ansible. Os manifestos de instalação Helm do próprio ArgoCD também devem ficar **fora de qualquer Application** reconciliada pelo ArgoCD.
+O filtro `include: 'apps/prod/*.yaml'` restringe a descoberta da raiz de produção aos manifests de Applications sob `argocd/apps/prod/`, mesmo com `recurse: true`. Assim, os objetos de bootstrap administrados pelo Ansible (`app-of-apps.yaml`, `project.yaml` e `project-infra.yaml`) e as Applications de `dev` e `hml` não entram no conjunto desejado da raiz. Os manifests de instalação Helm do próprio ArgoCD também devem permanecer **fora de qualquer Application** reconciliada pelo ArgoCD.
 
-**Ponto de atenção:** `path: argocd` com `recurse: true` **não filtra ambientes**. Se a `main` contiver Applications filhas de desenvolvimento, homologação e produção nesse caminho, a raiz poderá descobri-las independentemente do ambiente. Antes de adicionar essas filhas e habilitar a sincronização efetiva da raiz, é necessário revisar os arquivos publicados e restringir a descoberta às Applications destinadas ao cluster de produção. A separação definitiva entre clusters ficará em issue futura, mas o risco deve ser tratado antes de qualquer deploy com múltiplos ambientes.
+Enquanto não existirem Applications em `argocd/apps/prod/`, a raiz de produção não terá Applications filhas a descobrir. O bootstrap do ambiente de desenvolvimento deverá ser definido separadamente, acompanhando a revisão Git e o diretório adequados. A organização em pastas, sozinha, não produz isolamento: cada raiz precisa de um filtro de descoberta compatível com seu cluster.
+
+**Atenção antes de aplicar o filtro em uma raiz já ativa:** com `prune: true`, Applications filhas anteriormente gerenciadas pela raiz e agora excluídas podem ser removidas da reconciliação. É necessário inspecionar os recursos atualmente gerenciados e validar o efeito da mudança antes de sincronizar.
 
 ### Exemplo de Application filha de produção (futuro)
 
@@ -153,7 +160,7 @@ spec:
   source:
     repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
     targetRevision: main
-    path: kubernetes/overlays/prod/apae
+    path: kubernetes/apae-geral/overlays/prod
   destination:
     server: https://kubernetes.default.svc
     namespace: apae-prod
@@ -172,15 +179,20 @@ Os manifests comuns residem em diretórios base e as diferenças são definidas 
 
 ```text
 kubernetes/
-├── base/
-│   └── {produto}/
-└── overlays/
-    ├── dev/
-    │   └── {produto}/
-    ├── hml/             # futuro
-    │   └── {produto}/
-    └── prod/            # futuro
-        └── {produto}/
+├── apae-geral/
+│   ├── base/
+│   └── overlays/
+│       └── dev/
+├── apae-atendimento/
+│   ├── base/
+│   └── overlays/
+│       └── dev/
+└── site-comemorativo/
+    ├── base/
+    └── overlays/
+        └── dev/
+
+# Os overlays hml/ e prod/ de cada produto serão adicionados futuramente.
 ```
 
 O overlay define características específicas do ambiente, como namespace, réplicas, referências de imagem por digest e configurações não sensíveis. Secrets serão tratados pela estratégia definida na [#93](https://github.com/IFPBEsp/APAE-INFRA/issues/93).
@@ -196,7 +208,7 @@ Não é necessário duplicar todos os manifests base entre ambientes. Cada Appli
 | Applications filhas de homologação | Manual, conforme #106 | Aprovação e validação antes da promoção |
 | Applications filhas de produção | Manual, conforme #106 | Revisão humana obrigatória antes do deploy |
 
-`prune` automático na raiz pode **remover uma Application filha** quando seu manifesto sair do Git. Isso pode ter efeitos nos workloads dependendo das finalizers e configurações de deleção. Exclusões de filhas devem ser revisadas como mudanças potencialmente destrutivas.
+`prune` automático na raiz pode **remover uma Application filha** quando seu manifesto sair do Git ou deixar de corresponder ao filtro de descoberta. Isso pode ter efeitos nos workloads dependendo das finalizers e configurações de deleção. Exclusões de filhas devem ser revisadas como mudanças potencialmente destrutivas.
 
 Para produção, um novo commit poderá deixar a Application em `OutOfSync`, mas a reconciliação dos workloads deve depender de sincronização manual autorizada. Não habilitar `syncPolicy.automated` nas filhas de produção como consequência implícita da política da raiz.
 
@@ -258,7 +270,7 @@ Ao planejar a issue futura, deverão ser definidos:
 - Conectividade administrativa segura, sem depender de exposição pública da API Kubernetes.
 - Estratégia explícita para homologação (cluster próprio ou destino isolado), a ser decidida na issue correspondente.
 
-**Não adotar** indiscriminadamente `path: argocd` com busca recursiva em ambos os clusters sem filtros de ambiente. A mesma branch pode conter definições de múltiplos ambientes, e cada raiz deve gerenciar apenas suas próprias Applications.
+**Não adotar** indiscriminadamente `path: argocd` com busca recursiva em ambos os clusters sem filtros de ambiente. A raiz de produção utiliza inclusão explícita de `apps/prod/*.yaml`. A mesma branch pode conter definições de múltiplos ambientes, e cada raiz deve gerenciar apenas suas próprias Applications.
 
 ## Observabilidade
 

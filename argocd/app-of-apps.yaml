@@ -14,7 +14,7 @@ spec:
 
     directory:
       recurse: true
-      exclude: '{app-of-apps.yaml,project.yaml,project-infra.yaml}'
+      include: 'apps/prod/*.yaml'
 
   destination:
     server: https://kubernetes.default.svc
