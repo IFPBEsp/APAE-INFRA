@@ -39,6 +39,12 @@ on:
         type: boolean
         default: true
 
+      skip-dirs:
+        description: "Diretórios a ignorar durante o scan, separados por vírgula (ex: apps/api,vendor)"
+        required: false
+        type: string
+        default: ""
+
 permissions:
   contents: read
   security-events: write
@@ -131,6 +137,7 @@ jobs:
           ignore-unfixed: ${{ inputs.ignore-unfixed }}
           trivyignores: ${{ inputs.trivyignores }}
           exit-code: ${{ inputs.fail-on-vulnerabilities && '1' || '0' }}
+          skip-dirs: ${{ inputs.skip-dirs }}
 
       - name: Publish Step Summary
         if: always()
@@ -166,6 +173,7 @@ jobs:
           ignore-unfixed: ${{ inputs.ignore-unfixed }}
           trivyignores: ${{ inputs.trivyignores }}
           exit-code: "0"
+          skip-dirs: ${{ inputs.skip-dirs }}
 
       - name: Publish SARIF to GitHub Security
         if: >-
