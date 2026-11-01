@@ -33,7 +33,7 @@ O workflow não escreve nada no repositório e usa apenas as permissões `conten
 | --- | --- | --- | --- |
 | `config-file` | Não | configuração compartilhada do APAE-INFRA | Caminho, a partir da raiz do repositório chamador, de uma configuração própria do commitlint |
 | `validate-pr-title` | Não | `true` | Habilita a validação do formato do título do PR |
-| `pr-title-pattern` | Não | `^\[(FEAT\|FIX\|DOCS\|CHORE\|CI\|REFACTOR\|TEST\|BUILD)\] [^[:space:]].*` | Expressão regular (ERE do bash) aplicada ao título do PR. A descrição precisa começar com um caractere que não seja espaço, então `[CI] ` é reprovado |
+| `pr-title-pattern` | Não | `^\[(FEAT\|FIX\|DOCS\|CHORE\|CI\|REFACTOR\|TEST\|BUILD)\] [^[:space:]].*` | Expressão regular (ERE do bash) aplicada ao título do PR. A descrição precisa começar com um caractere que não seja espaço, então um título só com a tag, como `[CI]`, é reprovado |
 
 ---
 
