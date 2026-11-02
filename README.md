@@ -39,6 +39,7 @@ docs/             # documentação de padrões e boas práticas do repositório
   boas-praticas/  # padrões técnicos e operacionais
   argocd/         # documentação do fluxo do ArgoCD (GitOps)
   diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
+  docker/         # documentação de Docker, pipelines e assinatura de imagens
   nginx/          # estudo de NGINX Gateway Fabric e Gateway API
   terraform/      # estudo de Terraform e arquitetura GitOps
   workflows/      # guias dos workflows reutilizáveis
