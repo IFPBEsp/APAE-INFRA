@@ -126,6 +126,7 @@ jobs:
 ## 5. Pontos Decididos e Recomendações
 
 ### Rulesets recomendados por stack
+
 - **Stack Fullstack (Java + TypeScript / React):**  
   `p/default`, `p/java`, `p/typescript`, `p/react`
 - **Stack Backend (Java Spring):**  
@@ -134,4 +135,5 @@ jobs:
   `p/default`, `p/typescript`, `p/react`
 
 ### Sobreposição com SonarQube (#34)
+
 O Semgrep atua primariamente na camada de **SAST rápido e focado em padrões de segurança / AST matching** no ciclo de feedback do Pull Request (diff-aware, executando em poucos segundos e sem necessidade de compilação completa de dependências). Já o SonarQube (#34) complementa com métricas de cobertura de código, bugs funcionais, code smells e conformidade de qualidade geral.
