@@ -47,6 +47,8 @@ O PR #120 define três filhas em `argocd/apps/dev/`: `apae-geral-dev`,
 `apae-atendimento-dev` e `site-comemorativo-dev`. Seu registro efetivo no cluster
 ainda depende da integração do bootstrap; Gestão Escolar depende da #38/#92.
 
+No modelo de bootstrap proposto em [gerenciamento da VPS](../ansible/07-arquitetura-proposta-e-proximos-passos.md), um playbook Ansible instala ArgoCD, aplica o `AppProject` e registra a Application raiz. Como a configuração abaixo exclui `project.yaml` e `app-of-apps.yaml` do path reconciliado, esses objetos permanecem sob ownership do bootstrap Ansible; alterações neles exigem apply controlado do playbook. A raiz reconcilia as Applications filhas e, por elas, os recursos atribuídos ao ArgoCD.
+
 **Importante — são dois loops de sincronização independentes, rodando em paralelo o tempo todo:**
 
 1. **Loop da raiz**: mantém os objetos `Application` autorizados pelo seu filtro de descoberta. Alterar uma definição de Application afeta esse loop; atualizar apenas a imagem no overlay não o afeta.
@@ -158,11 +160,11 @@ Cada `Application` lê exclusivamente do próprio **APAE-INFRA**, usando **Kusto
 
 O overlay `dev` é a homologação; a branch dos manifests continua sendo `main`.
 O PR #97 implementa o receptor e rejeita `hml` e `prod`. A #106 implementará a
-publicação rastreável dos produtos na `main`, o envio do dispatch, a comprovação
-criptográfica de proveniência e a promoção dos mesmos digests para `prod`.
-Conferir a existência da tag e seu digest no GHCR não comprova a origem do build;
-os campos de origem do payload são declarações. A futura verificação deve ser
-inserida depois da consulta ao GHCR e antes da geração do token de escrita.
+integração dos produtos com publicação na `main`, envio do dispatch e promoção
+dos mesmos digests para `prod`. Após conferir a tag e o digest no GHCR, o
+receptor autentica a proveniência com GitHub Attestations antes de gerar o
+token de escrita. Também exige o HEAD atual da `main` do produto na recepção
+e antes da abertura ou atualização do PR.
 A #82 deve permanecer aberta até o aceite operacional com imagens reais.
 
 O PR #120 declara sync **automático** em `dev`, com `prune` e `selfHeal`, ao

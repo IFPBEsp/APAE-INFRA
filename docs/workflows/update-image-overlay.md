@@ -22,7 +22,7 @@ Não há auto-merge nem promoção para `hml` ou `prod`. Revisão humana é obri
 após o merge, o sync no ArgoCD continua manual.
 
 O PR #97 implementa somente o receptor GitOps. A #106 implementará a integração
-dos produtos após publicação na `main`, a comprovação de proveniência e a
+dos produtos após publicação na `main` e a
 promoção da combinação de digests validada de `dev` para `prod`, sem novo build.
 O receptor atual rejeita `hml` e `prod`; não será criado um ambiente `hml`.
 
@@ -42,10 +42,15 @@ ativação operacional; este PR não modifica as Applications ou o bootstrap.
    Inputs são tratados como dados, via variáveis de ambiente, sem interpolação
    em comandos. Os caminhos são definidos por uma tabela interna; não existe
    input para informar caminho arbitrário.
-3. Consulta o GHCR para verificar existência da tag e correspondência do digest.
-   Uma falha impede até a geração do token de escrita do App.
-4. Após checkout de `main`, exige o overlay existente e renderizável. Só então
+3. Confere se o commit informado é o HEAD atual da `main` do produto.
+4. Consulta o GHCR para verificar existência da tag e correspondência do digest
+   e autentica a proveniência com GitHub Attestations para o repositório,
+   workflow de publicação, ref `refs/heads/main` e commit declarados. Uma falha
+   impede até a geração do token de escrita do App.
+5. Após checkout de `main`, exige o overlay existente e renderizável. Só então
    edita seu `kustomization.yaml`, renderiza novamente e verifica o resultado.
+6. Antes de abrir ou atualizar o PR, confere novamente o HEAD da `main` do
+   produto e rejeita a atualização se o commit já estiver desatualizado.
 
 Os checkouts são separados: a raiz contém a automação na revisão da execução
 (`github.sha`, compartilhada pelo dispatcher e sua chamada local ao reutilizável),
@@ -69,8 +74,8 @@ atualizam o mesmo PR aberto. Backend e frontend usam branches separadas.
 Se o digest já estiver em `main`, não é necessário novo PR.
 
 A concorrência serializa execuções da mesma imagem, sem cancelar o job em
-andamento. Envie eventos na ordem de publicação: o workflow não ordena commits
-cronologicamente. PRs de imagens diferentes podem alterar o mesmo arquivo;
+andamento. As verificações do HEAD da `main` rejeitam eventos atrasados;
+o workflow não ordena commits cronologicamente. PRs de imagens diferentes podem alterar o mesmo arquivo;
 resolva conflitos e reexecute checks antes do merge.
 
 ## Conferência do GHCR e imagens privadas
@@ -89,8 +94,8 @@ A consulta tenta acesso anônimo primeiro. Se o GHCR retornar `401` ou `403`,
 tenta autenticação de leitura. Tag inexistente, falha HTTP, timeout, resposta
 inválida ou digest divergente interrompem a execução. Há limites de tamanho e
 timeout, redirects são recusados e corpos, headers de autenticação e tokens
-não são registrados nos logs. Não é feito `docker login` nem gravado arquivo
-local de credenciais.
+não são registrados nos logs. A etapa posterior de proveniência usa
+`docker/login-action` para autenticar a leitura de attestations no GHCR.
 
 Por padrão, o retry autenticado usa `github.actor` e o `GITHUB_TOKEN` do
 APAE-INFRA, com `packages: read`. Para imagens privadas, conceda explicitamente
@@ -109,12 +114,10 @@ O PAT de packages é separado tanto do App de PRs quanto do token de dispatch.
 Seu alcance depende dos packages acessíveis à conta; prefira `GITHUB_TOKEN`
 com concessões explícitas por package. Não conceda escrita ou exclusão de packages.
 
-**Limite de confiança:** existência da tag e correspondência do digest não
-comprovam quem produziu a imagem, se o commit declarado originou o build ou
-se o pipeline era confiável. `source_repository`, `source_commit` e a tag são
-declarações do remetente; a consistência entre eles não é prova de proveniência.
-A assinatura/verificação com Cosign depende da #64 e não é presumida disponível.
-A revisão humana do PR permanece obrigatória.
+**Limite de confiança:** a consulta da tag e do digest, isoladamente, não
+comprova quem produziu a imagem. Por isso, antes de gerar o token do App, o
+receptor também autentica a proveniência descrita abaixo. A revisão humana
+do PR permanece obrigatória.
 
 ## Kustomize reproduzível
 
@@ -184,23 +187,19 @@ caminhos seguem o [contrato do ArgoCD](../argocd/fluxo-argocd.md).
 `management-app:unpublished` permanece fora da allowlist enquanto não houver
 contrato de publicação definido.
 
-## Digest e proveniência: limites e integração com a #106
+## Digest e proveniência
 
-A conferência do GHCR comprova que a tag consultada aponta para os bytes do
-manifest/índice cujo digest foi informado. Ela não comprova que a imagem foi
-construída por um workflow autorizado ou por um commit da `main` do produto.
-`source_repository` e `source_commit` são declarações recebidas no payload,
-não evidências criptográficas de origem.
+Após a consulta ao GHCR e antes de gerar o token de escrita do App, a etapa
+`Verify image build provenance` executa `gh attestation verify` sobre o digest
+OCI. A verificação exige o repositório do produto, o workflow reutilizável
+`IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml`, a ref
+`refs/heads/main` e o commit completo informado. Falhas interrompem o job antes
+do acesso de escrita aos manifests.
 
-Na #106, inserir a verificação de proveniência após `Verify published image in
-GHCR` (`registry`) e antes de `Generate GitHub App token` (`app-token`). O checkout
-intermediário da automação usa apenas o `GITHUB_TOKEN` de leitura. A nova
-verificação deverá falhar antes de gerar o token de escrita, obter os manifests
-com ele ou criar branches/PRs. Esse ponto está indicado no YAML; não existe
-uma etapa fictícia de aprovação de proveniência no receptor atual.
-
-A escolha e validação operacional do mecanismo (por exemplo, Cosign ou GitHub
-Attestations) pertencem à #106 e ainda não foram realizadas por este PR.
+O commit também precisa corresponder ao HEAD atual da `main` do produto na
+recepção e imediatamente antes da abertura ou atualização do PR. Antes do merge
+humano, confirme se a `main` do produto não avançou desde a abertura do PR.
+A validação operacional com imagens reais continua necessária na #82/#106.
 
 ## Credenciais, permissões e revisão humana
 
@@ -243,7 +242,7 @@ Os testes locais não validam essas configurações nem o conteúdo dos secrets.
 
 O token de instalação solicita explicitamente somente esse repositório e as
 permissões de escrita acima. A action revoga o token ao terminar o job; o
-checkout não persiste credenciais. Actions externas são fixadas por SHA.
+checkout não persiste credenciais. As demais actions externas são fixadas por SHA; `docker/login-action` usa `@v3`.
 O App não precisa de administração, Actions, packages ou acesso ao cluster.
 A permissão `packages: read` do job pertence ao `GITHUB_TOKEN`, para consulta
 privada ao GHCR, e não amplia o App.

@@ -319,6 +319,106 @@ class RegistryTest(unittest.TestCase):
                 expected = b"package-reader:read-pat" if optional else b"infra-actor:infra-github-token"
                 self.assertEqual(request.get_header("Authorization"), "Basic " + base64.b64encode(expected).decode())
 
+class ProvenanceTest(unittest.TestCase):
+    def test_provenance_precedes_app_token(self):
+        names = [step.get("name") for step in STEPS]
+
+        registry = names.index("Verify published image in GHCR")
+        provenance = names.index("Verify image build provenance")
+        app_token = names.index("Generate GitHub App token")
+
+        self.assertLess(registry, provenance)
+        self.assertLess(provenance, app_token)
+
+    def test_provenance_requires_authenticated_origin(self):
+        step = next(
+            step for step in STEPS
+            if step.get("name") == "Verify image build provenance"
+        )
+
+        script = step["run"]
+
+        for required in (
+                "set -euo pipefail",
+                "gh attestation verify",
+                "--bundle-from-oci",
+                "--repo",
+                "--signer-workflow",
+                "--source-ref",
+                "--source-digest",
+                "refs/heads/main",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, script)
+
+    def test_provenance_verification_fails_closed(self):
+        step = next(
+            step for step in STEPS
+            if step.get("name") == "Verify image build provenance"
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            fake_gh = Path(directory) / "gh"
+
+            for exit_code in (0, 1):
+                with self.subTest(exit_code=exit_code):
+                    fake_gh.write_text(
+                        f"#!/bin/sh\nexit {exit_code}\n"
+                    )
+                    fake_gh.chmod(0o755)
+
+                    result = subprocess.run(
+                        ["bash", "-c", step["run"]],
+                        env={
+                            **os.environ,
+                            **ENV,
+                            "PATH": f"{directory}:{os.environ['PATH']}",
+                        },
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    if exit_code == 0:
+                        self.assertEqual(result.returncode, 0)
+                        self.assertIn(
+                            "Proveniência autenticada com sucesso",
+                            result.stdout,
+                        )
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertNotIn(
+                            "Proveniência autenticada com sucesso",
+                            result.stdout,
+                        )
+
+class PublisherSecurityTest(unittest.TestCase):
+    def test_cosign_sign_and_verify_before_promotion(self):
+        publisher = yaml.safe_load(
+            (ROOT / ".github/workflows/docker-build-publish-image.yml").read_text()
+        )
+
+        publish_steps = publisher["jobs"]["publish"]["steps"]
+        names = [step["name"] for step in publish_steps]
+
+        sign = names.index("Sign candidate image with Cosign")
+        verify = names.index("Verify Cosign signature")
+        promote = names.index("Promote verified image to final tags")
+
+        self.assertLess(sign, verify)
+        self.assertLess(verify, promote)
+
+        script = publish_steps[verify]["run"]
+
+        for required in (
+                "cosign verify",
+                "--certificate-identity=",
+                "--certificate-oidc-issuer=",
+                "--certificate-github-workflow-repository=",
+                "--certificate-github-workflow-ref=",
+                "--certificate-github-workflow-sha=",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, script)
 
 class OverlayTest(unittest.TestCase):
     def setUp(self):
