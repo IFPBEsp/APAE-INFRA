@@ -59,9 +59,29 @@ on:
         description: "Tag humana baseada no commit"
         value: ${{ jobs.publish.outputs.sha-tag }}
 
+      source-repository:
+        description: "Repositório de origem da imagem"
+        value: ${{ jobs.publish.outputs.source-repository }}
+
+      source-commit:
+        description: "Commit completo de origem"
+        value: ${{ jobs.publish.outputs.source-commit }}
+
+      source-ref:
+        description: "Referência Git de origem"
+        value: ${{ jobs.publish.outputs.source-ref }}
+
+      workflow-run-id:
+        description: "ID da execução de publicação"
+        value: ${{ jobs.publish.outputs.workflow-run-id }}
+
+      workflow-run-url:
+        description: "URL da execução de publicação"
+        value: ${{ jobs.publish.outputs.workflow-run-url }}
+
 jobs:
   build-and-scan:
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     name: Build and scan (${{ matrix.platform }})
     runs-on: ubuntu-latest
 
@@ -77,6 +97,27 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Verify source is current main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
 
       - name: Normalize image owner
         id: image
@@ -222,14 +263,21 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
+      contents: read
       packages: write
       id-token: write
+      attestations: write
 
     outputs:
       image: ${{ steps.result.outputs.image }}
       digest: ${{ steps.result.outputs.digest }}
       immutable-reference: ${{ steps.result.outputs.immutable-reference }}
       sha-tag: ${{ steps.result.outputs.sha-tag }}
+      source-repository: ${{ steps.result.outputs.source-repository }}
+      source-commit: ${{ steps.result.outputs.source-commit }}
+      source-ref: ${{ steps.result.outputs.source-ref }}
+      workflow-run-id: ${{ steps.result.outputs.workflow-run-id }}
+      workflow-run-url: ${{ steps.result.outputs.workflow-run-url }}
 
     steps:
       - name: Normalize image owner
@@ -269,12 +317,13 @@ jobs:
       - name: Generate final tags
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        env:
+          DOCKER_METADATA_SHORT_SHA_LENGTH: 7
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=sha,format=short
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/dev' }}
-            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=sha,format=short,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Create candidate manifest
         id: candidate
@@ -335,6 +384,33 @@ jobs:
 
           docker buildx imagetools inspect "${IMAGE}@${DIGEST}" > /dev/null
 
+      - name: Attest image build provenance
+        id: provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.candidate.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify image build provenance
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.candidate.outputs.digest }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" \
+            --bundle-from-oci \
+            --repo "$SOURCE_REPOSITORY" \
+            --signer-workflow "IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml" \
+            --source-ref "$SOURCE_REF" \
+            --source-digest "$SOURCE_COMMIT"
+
       - name: Sign candidate image with Cosign
         shell: bash
         env:
@@ -350,13 +426,40 @@ jobs:
         env:
           IMAGE: ${{ steps.image.outputs.name }}
           DIGEST: ${{ steps.candidate.outputs.digest }}
+          CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_REF: ${{ github.ref }}
+          SOURCE_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
 
           cosign verify "${IMAGE}@${DIGEST}" \
-            --certificate-identity="https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main" \
+            --certificate-identity="$CERTIFICATE_IDENTITY" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-            --certificate-github-workflow-repository="${{ github.repository }}"
+            --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
+            --certificate-github-workflow-ref="$SOURCE_REF" \
+            --certificate-github-workflow-sha="$SOURCE_COMMIT"
+
+      - name: Recheck main before promotion
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
 
       - name: Promote verified image to final tags
         shell: bash
@@ -404,6 +507,10 @@ jobs:
           IMAGE: ${{ steps.image.outputs.name }}
           DIGEST: ${{ steps.candidate.outputs.digest }}
           COMMIT_SHA: ${{ github.sha }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_REF: ${{ github.ref }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
 
@@ -415,7 +522,12 @@ jobs:
             echo "digest=$DIGEST"
             echo "sha-tag=$sha_tag"
             echo "immutable-reference=${IMAGE}@${DIGEST}"
-          } >> "$GITHUB_OUTPUT"
+            echo "source-repository=$SOURCE_REPOSITORY"
+            echo "source-commit=$COMMIT_SHA"
+            echo "source-ref=$SOURCE_REF"
+            echo "workflow-run-id=$WORKFLOW_RUN_ID"
+            echo "workflow-run-url=$WORKFLOW_RUN_URL"
+          }  >> "$GITHUB_OUTPUT"
 
       - name: Publish workflow summary
         shell: bash
@@ -425,15 +537,43 @@ jobs:
           SHA_TAG: ${{ steps.result.outputs.sha-tag }}
           IMMUTABLE_REFERENCE: ${{ steps.result.outputs.immutable-reference }}
           TAGS: ${{ steps.meta.outputs.tags }}
+          SOURCE_REPOSITORY: ${{ steps.result.outputs.source-repository }}
+          SOURCE_COMMIT: ${{ steps.result.outputs.source-commit }}
+          SOURCE_REF: ${{ steps.result.outputs.source-ref }}
+          WORKFLOW_RUN_ID: ${{ steps.result.outputs.workflow-run-id }}
+          WORKFLOW_RUN_URL: ${{ steps.result.outputs.workflow-run-url }}
         run: |
+          set -euo pipefail
+
           {
             echo "## Docker image publication"
+            echo
+
+            echo "### Build origin"
+            echo
+            echo "- Repository: \`${SOURCE_REPOSITORY}\`"
+            echo "- Commit: \`${SOURCE_COMMIT}\`"
+            echo "- Git ref: \`${SOURCE_REF}\`"
+            echo "- Workflow run ID: \`${WORKFLOW_RUN_ID}\`"
+            echo "- Workflow execution: ${WORKFLOW_RUN_URL}"
+            echo
+
+            if [[ "$SOURCE_REF" == "refs/heads/main" ]]; then
+              echo "- Promotion eligibility: main publication candidate"
+            else
+              echo "- Promotion eligibility: development only"
+            fi
+
+            echo
+
+            echo "### Published image"
             echo
             echo "- Image: \`${IMAGE}\`"
             echo "- Commit tag: \`${SHA_TAG}\`"
             echo "- Digest: \`${DIGEST}\`"
             echo "- Immutable reference: \`${IMMUTABLE_REFERENCE}\`"
             echo
+
             echo "### Published tags"
             echo
 
@@ -441,4 +581,5 @@ jobs:
               [[ -z "$tag" ]] && continue
               echo "- \`${tag}\`"
             done <<< "$TAGS"
+
           } >> "$GITHUB_STEP_SUMMARY"
