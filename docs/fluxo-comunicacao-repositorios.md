@@ -26,31 +26,15 @@ Cada repositório de aplicação passa por um pipeline de CI em 3 estágios, con
 2. **Merge na `dev`** — abre um novo PR para a `main`, que dispara a pipeline de validação de integração: testes completos e testes de integração.
 3. **Merge na `main`** — dispara a pipeline de build da release: testes finais, build da imagem Docker, scan de segurança e versionamento.
 
-> **Origem da imagem:** a infraestrutura aceita somente imagens do commit atual
-> da `main` de cada produto, após as verificações de publicação. `dev`, quando
-> usado como nome de ambiente, significa homologação, não a branch do build.
+> **Observação:** o GitHub Actions também pode atuar como Image Updater no lugar do ArgoCD Image Updater (etapa 4), dependendo da decisão da equipe.
 
 ### 3. Push da imagem
 
-A pipeline da `main` chama o workflow reutilizável de publicação do APAE-INFRA,
-também referenciado em `@main`. Após build, scan, assinatura e verificação de
-proveniência, publica a tag por commit e expõe o digest OCI. O digest identifica
-o conteúdo exato que pode ser enviado para a infraestrutura.
+Ao final da pipeline de release (estágio 3 do CI), a imagem gerada recebe uma nova tag e é enviada ao **GHCR (GitHub Container Registry)**. Essa tag é o que identifica de forma única a nova versão da aplicação.
 
 ### 4. Detecção e atualização do APAE-INFRA
 
-O fluxo preparado usa GitHub Actions: o produto envia um evento
-`gitops-image-published` somente após a publicação aprovada. O receptor no
-APAE-INFRA confirma o digest no GHCR, autentica a proveniência da `main` e
-confere se o commit ainda é o HEAD atual da `main` do produto. Só então prepara
-um PR atualizando o digest no overlay. Eventos atrasados de builds antigos são
-recusados, inclusive quando o build terminou depois de uma revisão mais nova.
-
-O PR exige revisão e merge humanos; o sync no ArgoCD continua manual. Antes do
-merge, confirmar se não houve outra atualização da `main` do produto desde a
-abertura do PR. A ativação depende dos overlays, das credenciais e da
-publicação dos workflows descritos em
-[Publicação a partir da main](workflows/publicacao-main-produtos.md).
+O **ArgoCD Image Updater** monitora o GHCR e identifica que uma nova imagem foi publicada. Ele então abre um Pull Request no repositório APAE-INFRA (GitOps repo) atualizando a tag da imagem no manifesto correspondente. Esse PR passa por aprovação manual antes do merge — é essa aprovação que efetivamente confirma que a nova versão deve ir para o cluster.
 
 ### 5. ArgoCD detecta a mudança
 

@@ -161,7 +161,7 @@ sha256:<digest-da-imagem>
 
 ### Uso de `latest`
 
-A tag `latest` é uma tag flutuante: é publicada após um build aprovado da `main` do produto, em paralelo a `sha-<short-sha>`, e aponta para o build mais recente aprovado dessa branch.
+A tag `latest` é uma tag flutuante: é publicada em todo push em `dev`, sempre em paralelo a `sha-<short-sha>`, e aponta para o build mais recente de `dev`.
 
 Ela serve como atalho de conveniência para uso manual ou local e não faz parte da estratégia de rastreabilidade.
 
@@ -179,23 +179,15 @@ Por ser flutuante, `latest`:
 
 | Evento | Digest OCI | `sha-<short-sha>` | `latest` | `vX.Y.Z` |
 | --- | ---: | ---: | ---: | ---: |
-| Push ou merge em `main` | Sim | Sim | Sim (flutuante) | Não |
-| Tag Git `vX.Y.Z` | Reutiliza o do build de `main` | Reutiliza a existente | Não | Sim |
+| Push ou merge em `dev` | Sim | Sim | Sim (flutuante) | Não |
+| Tag Git `vX.Y.Z` | Reutiliza o do build de `dev` | Reutiliza a existente | Não | Sim |
 | Pull Request | Não | Não | Não | Não |
 
 O SHA utilizado deve corresponder ao commit que efetivamente originou o build.
-Publicações de `dev`, feature branches e tags Git não podem gerar candidatas para
-atualização da infraestrutura. Uma release semântica pode reutilizar o digest já
-aprovado da `main`, sem reconstruir a imagem.
-
-O ambiente de destino pode continuar sendo chamado `dev` (homologação); esse
-nome não altera a branch de origem, que é sempre `main`. Os manifests recebem
-o digest OCI verificado, nunca uma tag flutuante. O contrato e a ordem de
-ativação estão em [Publicação a partir da main](../workflows/publicacao-main-produtos.md).
 
 ## Estratégia recomendada de publicação
 
-Para cada build originado de `main`, o workflow deve publicar a imagem e registrar:
+Para cada build originado de `dev`, o workflow deve publicar a imagem e registrar:
 
 ```text
 ghcr.io/ifpbesp/<imagem>:sha-<short-sha>
@@ -342,8 +334,7 @@ O workflow reutilizável deverá ser responsável por:
 - obter e expor o digest OCI resultante;
 - impedir a reutilização indevida de tags `sha-*`;
 - adicionar `vX.Y.Z` à imagem já publicada quando uma tag Git de release for criada, sem novo build;
-- publicar `latest` somente para builds aprovados da `main`, em paralelo a `sha-<short-sha>`;
-- recusar publicação e atualização GitOps se o commit já não corresponder ao HEAD atual da `main` do produto;
+- publicar `latest` e a tag de compatibilidade `dev` em todo push em `dev`, em paralelo a `sha-<short-sha>`;
 - preencher automaticamente metadados OCI da imagem (`APP_VERSION`, `VCS_REF` e labels de rastreabilidade);
 - isolar artefatos de build por `image-name` para permitir execuções paralelas no mesmo workflow run;
 - disponibilizar o digest para etapas futuras de deployment ou GitOps.
@@ -405,7 +396,7 @@ A política definida é:
 digest OCI         -> identidade canônica e imutável
 sha-<short-sha>    -> rastreabilidade humana entre imagem e commit
 vX.Y.Z             -> referência semântica opcional para releases
-latest             -> tag flutuante do último build aprovado de `main`, sem uso em deployment ou auditoria
+latest             -> tag flutuante do último build de `dev`, sem uso em deployment ou auditoria
 ```
 
 Para deployments e GitOps:

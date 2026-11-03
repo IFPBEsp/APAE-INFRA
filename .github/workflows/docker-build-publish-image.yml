@@ -81,7 +81,7 @@ on:
 
 jobs:
   build-and-scan:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.event_name != 'pull_request'
     name: Build and scan (${{ matrix.platform }})
     runs-on: ubuntu-latest
 
@@ -97,27 +97,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Verify source is current main
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_REPOSITORY: ${{ github.repository }}
-          SOURCE_COMMIT: ${{ github.sha }}
-          SOURCE_REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-
-          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
-            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
-            exit 1
-          fi
-
-          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
-            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
-            exit 1
-          fi
 
       - name: Normalize image owner
         id: image
@@ -323,7 +302,8 @@ jobs:
           images: ${{ steps.image.outputs.name }}
           tags: |
             type=sha,format=short,prefix=sha-
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
 
       - name: Create candidate manifest
         id: candidate
@@ -439,27 +419,6 @@ jobs:
             --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
             --certificate-github-workflow-ref="$SOURCE_REF" \
             --certificate-github-workflow-sha="$SOURCE_COMMIT"
-
-      - name: Recheck main before promotion
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_REPOSITORY: ${{ github.repository }}
-          SOURCE_COMMIT: ${{ github.sha }}
-          SOURCE_REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-
-          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
-            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
-            exit 1
-          fi
-
-          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
-            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
-            exit 1
-          fi
 
       - name: Promote verified image to final tags
         shell: bash
