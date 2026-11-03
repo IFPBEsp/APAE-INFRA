@@ -317,7 +317,7 @@ A lógica de geração das tags e registro dos digests não deve ser reimplement
 A política será aplicada centralmente pelo workflow reutilizável de build e publicação de imagens do `APAE-INFRA`:
 
 ```text
-.github/workflows/build-publish-image.yml
+.github/workflows/docker-build-publish-image.yml
 ```
 
 A implementação desse workflow é responsabilidade da issue:
@@ -334,8 +334,9 @@ O workflow reutilizável deverá ser responsável por:
 - obter e expor o digest OCI resultante;
 - impedir a reutilização indevida de tags `sha-*`;
 - adicionar `vX.Y.Z` à imagem já publicada quando uma tag Git de release for criada, sem novo build;
-- publicar `latest` em todo push em `dev`, em paralelo a `sha-<short-sha>`;
-- preencher metadados OCI da imagem;
+- publicar `latest` e a tag de compatibilidade `dev` em todo push em `dev`, em paralelo a `sha-<short-sha>`;
+- preencher automaticamente metadados OCI da imagem (`APP_VERSION`, `VCS_REF` e labels de rastreabilidade);
+- isolar artefatos de build por `image-name` para permitir execuções paralelas no mesmo workflow run;
 - disponibilizar o digest para etapas futuras de deployment ou GitOps.
 
 ## Repositórios atualmente afetados
