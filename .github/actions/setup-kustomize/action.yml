@@ -1,0 +1,28 @@
+name: Set up approved Kustomize
+description: Install Kustomize v5.8.1 on Linux x86_64, verifying the release checksum
+runs:
+  using: composite
+  steps:
+    - name: Install Kustomize v5.8.1
+      shell: bash
+      env:
+        KUSTOMIZE_VERSION: '5.8.1'
+        KUSTOMIZE_SHA256: '029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d'
+      run: |
+        set -euo pipefail
+        if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
+          echo "::error::Este instalador exige Linux x86_64."
+          exit 1
+        fi
+        tools="$RUNNER_TEMP/gitops-tools"
+        mkdir -p "$tools"
+        archive="$tools/kustomize.tar.gz"
+        curl --fail --silent --show-error --location \
+          --retry 3 --connect-timeout 10 --max-time 120 \
+          "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" \
+          --output "$archive"
+        echo "${KUSTOMIZE_SHA256}  ${archive}" | sha256sum --check -
+        tar -xzf "$archive" -C "$tools" kustomize
+        chmod 0755 "$tools/kustomize"
+        [[ "$("$tools/kustomize" version)" == "v${KUSTOMIZE_VERSION}" ]]
+        echo "$tools" >> "$GITHUB_PATH"
