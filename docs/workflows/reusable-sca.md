@@ -77,6 +77,7 @@ on:
     paths:
       - "apps/api/**"
       - "apps/apae/**"
+      - "pnpm-lock.yaml"
       - ".trivyignore"
 
 permissions:
@@ -96,7 +97,8 @@ jobs:
     name: SCA pnpm (apps/apae)
     uses: IFPBEsp/APAE-INFRA/.github/workflows/sca-reusable.yml@<commit-sha>
     with:
-      scan-path: "apps/apae"
+      scan-path: "."
+      skip-dirs: "apps/api"
       severity: "HIGH,CRITICAL"
       ignore-unfixed: true
 ```
