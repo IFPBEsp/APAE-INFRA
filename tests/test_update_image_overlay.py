@@ -82,6 +82,7 @@ class InputsTest(unittest.TestCase):
             {"ENVIRONMENT": ""},
             {"IMAGE_DIGEST": "sha256:bad"},
             {"IMAGE_TAG": "sha-1234567"},
+            {"IMAGE_TAG": "latest"},
             {"SOURCE_COMMIT": "invalid"},
             {"SOURCE_REPOSITORY": "IFPBEsp/APAE-atendimento"},
             {"CALLER_REPOSITORY": "other/repository"},
@@ -171,6 +172,13 @@ class DispatchTest(unittest.TestCase):
         self.assertLess(ids.index("registry"), ids.index("app-token"))
         self.assertLess(ids.index("registry"), ids.index("image-update"))
         self.assertLess(ids.index("registry"), ids.index("pull-request"))
+
+    def test_app_token_is_limited_to_infra(self):
+        token = next(step for step in STEPS if step.get("id") == "app-token")
+        self.assertEqual(token["with"]["owner"], "IFPBEsp")
+        self.assertEqual(token["with"]["repositories"], "APAE-INFRA")
+        permissions = {key: value for key, value in token["with"].items() if key.startswith("permission-")}
+        self.assertEqual(permissions, {"permission-contents": "write", "permission-pull-requests": "write"})
 
 
 class RegistryTest(unittest.TestCase):
@@ -317,7 +325,7 @@ class OverlayTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name)
-        self.relative_overlay = Path("kubernetes/overlays/dev/apae")
+        self.relative_overlay = Path("kubernetes/apae-geral/overlays/dev")
         self.manifests = self.workspace / MANIFESTS["with"]["path"]
         self.path = self.manifests / self.relative_overlay
         self.path.mkdir(parents=True)
@@ -418,6 +426,46 @@ class OverlayTest(unittest.TestCase):
         self.assertEqual(entry["digest"], DIGEST)
         self.assertNotIn("newTag", entry)
 
+    def test_resolves_only_paths_defined_in_pr_120(self):
+        for application, path in (
+            ("apae-geral", "kubernetes/apae-geral/overlays/dev"),
+            ("apae-atendimento", "kubernetes/apae-atendimento/overlays/dev"),
+            ("site-comemorativo", "kubernetes/site-comemorativo/overlays/dev"),
+        ):
+            with self.subTest(application=application):
+                target = self.manifests / path
+                target.mkdir(parents=True, exist_ok=True)
+                (target / "kustomization.yaml").touch()
+                self.output.unlink(missing_ok=True)
+                result = subprocess.run(
+                    ["bash", "-c", OVERLAY_STEP["run"]], text=True, capture_output=True,
+                    cwd=self.manifests,
+                    env={**os.environ, **ENV, "APPLICATION": application,
+                         "GITHUB_OUTPUT": str(self.output)},
+                )
+                self.assert_success(result)
+                self.assertEqual(self.output.read_text(), f"path={path}\n")
+
+    def test_rejects_unknown_paths_environments_and_undefined_school_overlay(self):
+        for overrides, message in (
+            ({"APPLICATION": "../../etc"}, "Aplicação não autorizada"),
+            ({"APPLICATION": "unknown"}, "Aplicação não autorizada"),
+            ({"APPLICATION": "kubernetes/apae-geral/overlays/dev"}, "Aplicação não autorizada"),
+            ({"ENVIRONMENT": "hml"}, "Somente dev"),
+            ({"ENVIRONMENT": "prod"}, "Somente dev"),
+            ({"APPLICATION": "apae-gestao-escolar"}, "issues #38 e #92"),
+        ):
+            with self.subTest(overrides=overrides):
+                self.output.unlink(missing_ok=True)
+                result = subprocess.run(
+                    ["bash", "-c", OVERLAY_STEP["run"]], text=True, capture_output=True,
+                    cwd=self.manifests,
+                    env={**os.environ, **ENV, **overrides, "GITHUB_OUTPUT": str(self.output)},
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stdout)
+                self.assertFalse(self.output.exists())
+
     def test_supports_existing_image_alias(self):
         deployment = self.path / "deployment.yaml"
         deployment.write_text(deployment.read_text().replace(IMAGE + ":dev", "api:dev"))
@@ -436,7 +484,9 @@ class OverlayTest(unittest.TestCase):
 
     def test_broken_overlay_cannot_proceed(self):
         self.kustomization.write_text("resources:\n- missing.yaml\n")
+        before = self.kustomization.read_bytes()
         self.assertNotEqual(self.edit().returncode, 0)
+        self.assertEqual(before, self.kustomization.read_bytes())
 
     def test_ambiguous_rules_fail_without_editing(self):
         data = yaml.safe_load(self.kustomization.read_text())

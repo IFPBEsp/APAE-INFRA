@@ -277,6 +277,8 @@ jobs:
           token: ${{ github.token }}
           persist-credentials: false
 
+      # #106: inserir a verificação criptográfica de proveniência após registry
+      # e antes deste step. Payload e digest não comprovam a origem do build.
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
@@ -315,16 +317,17 @@ jobs:
 
           case "$APPLICATION" in
             apae-geral)
-              overlay="kubernetes/overlays/dev/apae"
+              overlay="kubernetes/apae-geral/overlays/dev"
               ;;
             apae-atendimento)
-              overlay="kubernetes/overlays/dev/apae-atendimento"
+              overlay="kubernetes/apae-atendimento/overlays/dev"
               ;;
             apae-gestao-escolar)
-              overlay="kubernetes/overlays/dev/apae-gestao-escolar"
+              echo "::error::Overlay de Gestão Escolar ainda não definido; depende das issues #38 e #92."
+              exit 1
               ;;
             site-comemorativo)
-              overlay="kubernetes/overlays/dev/apae-site-comemorativo"
+              overlay="kubernetes/site-comemorativo/overlays/dev"
               ;;
             *)
               echo "::error::Aplicação não autorizada."

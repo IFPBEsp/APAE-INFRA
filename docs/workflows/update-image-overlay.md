@@ -14,12 +14,22 @@ de outro repositório são rejeitadas. A chave privada do App de PRs fica
 restrito à branch `dev`, sem distribuição aos produtos ou acesso por PRs.
 Não há ArgoCD Image Updater instalado no cluster.
 
-Apenas overlays de `dev` são atualizados, sempre por digest
+Apenas overlays de `dev` (homologação) são atualizados, sempre por digest
 `image@sha256:<digest>`. O ambiente `dev` não determina a branch Git: a base dos
 PRs continua sendo `main`. Tag `sha-*`, commit, produto e run são registrados
 no PR, seguindo a [política de imagens](../boas-praticas/16-politica-tags-imagens-docker.md).
 Não há auto-merge nem promoção para `hml` ou `prod`. Revisão humana é obrigatória;
 após o merge, o sync no ArgoCD continua manual.
+
+O PR #97 implementa somente o receptor GitOps. A #106 implementará a integração
+dos produtos após publicação na `main`, a comprovação de proveniência e a
+promoção da combinação de digests validada de `dev` para `prod`, sem novo build.
+O receptor atual rejeita `hml` e `prod`; não será criado um ambiente `hml`.
+
+**Dependência de sincronização:** o PR #120 declara `automated`, `prune` e
+`selfHeal` nas Applications `dev`. Isso diverge do sync manual requerido para
+homologação neste fluxo. A política deve ser alinhada com #92/#106 antes da
+ativação operacional; este PR não modifica as Applications ou o bootstrap.
 
 ## Validações antes da escrita
 
@@ -147,10 +157,16 @@ Todas as imagens abaixo têm prefixo `ghcr.io/ifpbesp/`.
 
 | Repositório declarado | `application` | Imagens autorizadas | Overlay |
 | --- | --- | --- | --- |
-| `IFPBEsp/APAE` | `apae-geral` | `apae-geral-backend`, `apae-geral-frontend` | `kubernetes/overlays/dev/apae` |
-| `IFPBEsp/APAE-atendimento` | `apae-atendimento` | `apae-atendimento-backend`, `apae-atendimento-frontend` | `kubernetes/overlays/dev/apae-atendimento` |
-| `IFPBEsp/APAE-gestao-escolar` | `apae-gestao-escolar` | `apae-gestao-escolar-backend`, `apae-gestao-escolar-frontend` | `kubernetes/overlays/dev/apae-gestao-escolar` |
-| `IFPBEsp/apae-site-comemorativo` | `site-comemorativo` | `apae-site-comemorativo` | `kubernetes/overlays/dev/apae-site-comemorativo` |
+| `IFPBEsp/APAE` | `apae-geral` | `apae-geral-backend`, `apae-geral-frontend` | `kubernetes/apae-geral/overlays/dev` |
+| `IFPBEsp/APAE-atendimento` | `apae-atendimento` | `apae-atendimento-backend`, `apae-atendimento-frontend` | `kubernetes/apae-atendimento/overlays/dev` |
+| `IFPBEsp/APAE-gestao-escolar` | `apae-gestao-escolar` | `apae-gestao-escolar-backend`, `apae-gestao-escolar-frontend` | `Pendente de #38/#92; sem caminho definido` |
+| `IFPBEsp/apae-site-comemorativo` | `site-comemorativo` | `apae-site-comemorativo` | `kubernetes/site-comemorativo/overlays/dev` |
+
+Os três caminhos implementados foram conferidos no [PR #120](https://github.com/IFPBEsp/APAE-INFRA/pull/120)
+(commit `0de829b6f8e11cfe391a077cfc7f30126311e953`). Gestão Escolar ainda não
+possui base/overlay definido nesse PR e depende da #38 e da #92. Suas imagens
+continuam na allowlist do contrato, mas a resolução do overlay falha
+explicitamente até que o caminho seja definido e revisado; não há fallback.
 
 Os nomes de Gestão Escolar foram confirmados no
 [workflow do produto](https://github.com/IFPBEsp/APAE-gestao-escolar/blob/dev/.github/workflows/docker-publish.yml)
@@ -167,6 +183,24 @@ não cria overlays definitivos, não altera bases e não acessa o cluster. Os
 caminhos seguem o [contrato do ArgoCD](../argocd/fluxo-argocd.md).
 `management-app:unpublished` permanece fora da allowlist enquanto não houver
 contrato de publicação definido.
+
+## Digest e proveniência: limites e integração com a #106
+
+A conferência do GHCR comprova que a tag consultada aponta para os bytes do
+manifest/índice cujo digest foi informado. Ela não comprova que a imagem foi
+construída por um workflow autorizado ou por um commit da `main` do produto.
+`source_repository` e `source_commit` são declarações recebidas no payload,
+não evidências criptográficas de origem.
+
+Na #106, inserir a verificação de proveniência após `Verify published image in
+GHCR` (`registry`) e antes de `Generate GitHub App token` (`app-token`). O checkout
+intermediário da automação usa apenas o `GITHUB_TOKEN` de leitura. A nova
+verificação deverá falhar antes de gerar o token de escrita, obter os manifests
+com ele ou criar branches/PRs. Esse ponto está indicado no YAML; não existe
+uma etapa fictícia de aprovação de proveniência no receptor atual.
+
+A escolha e validação operacional do mecanismo (por exemplo, Cosign ou GitHub
+Attestations) pertencem à #106 e ainda não foram realizadas por este PR.
 
 ## Credenciais, permissões e revisão humana
 
@@ -202,6 +236,10 @@ diretamente de `secrets`; as declarações opcionais em `workflow_call` document
 os nomes para validação estática, sem exigir envio pelo caller. O dispatcher
 não repassa essas credenciais. As regras do environment e a migração dos secrets
 são configurações administrativas, externas ao código deste PR.
+Confira manualmente no GitHub a regra exata de branch `dev` (sem tags), os dois
+nomes em **Environment secrets**, a ausência de cópias acessíveis em outros
+escopos e a instalação do App somente no APAE-INFRA com as permissões abaixo.
+Os testes locais não validam essas configurações nem o conteúdo dos secrets.
 
 O token de instalação solicita explicitamente somente esse repositório e as
 permissões de escrita acima. A action revoga o token ao terminar o job; o
@@ -248,7 +286,7 @@ name: Publish backend and notify GitOps
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
 
 permissions:
   contents: read
@@ -317,6 +355,10 @@ sem credenciais reais, acesso ao registro ou criação de PRs. Casos cobertos:
   bloqueio de redirects e ausência de credenciais nos logs.
 - Payloads inválidos, valores falsos de ambiente, campos extras e quebras de linha.
 - Allowlist incluindo Gestão Escolar, rejeição de `hml`/`prod` e caminhos arbitrários.
+- Resolução dos três caminhos definidos no PR #120 e falha explícita para
+  Gestão Escolar enquanto seu overlay não estiver definido (#38/#92).
+- Token do App restrito ao APAE-INFRA, com escrita apenas em contents e PRs,
+  gerado depois da consulta ao GHCR.
 - Overlay inexistente, erro de renderização, alias, idempotência e preservação
   das imagens de outros serviços.
 - Isolamento dos checkouts, acesso à action local sem ela existir na `main` e
@@ -333,8 +375,11 @@ execuções antecedem a nova validação do GHCR: os testes de `dev` com dados
 fictícios agora devem parar na consulta ao registro, antes do checkout.
 Para testar ausência de overlay ao vivo, forneça uma tag e digest reais válidos.
 
+A #82 permanece aberta até concluir os testes operacionais com imagens reais.
 Ainda dependem da integração completa: leitura de packages privados com as
-permissões reais, overlays da #92 em `main`, geração de PR após publicação real,
+permissões reais, overlays da #92/PR #120 em `main`, base/overlay de Gestão Escolar (#38),
+alinhamento da política de sync manual e integração dos produtos pela #106,
+geração de PR após publicação real,
 repetição da notificação para atualizar o mesmo PR e repetição após merge sem
 novo PR. Registre os links do run de publicação, run GitOps e PR na #82. Mantenha
 a issue aberta até concluir o aceite com imagem real; autenticação isolada e
