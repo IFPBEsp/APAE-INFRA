@@ -166,7 +166,7 @@ somente então
 automatizar apply
 ```
 
-O backend deverá ser externo à VPS e ao k3s. O HCP Terraform Free foi escolhido na issue #87 e sua implementação está no [PR #101](https://github.com/IFPBEsp/APAE-INFRA/pull/101), ainda pendente de integração à `dev`. A configuração e as validações de locking/recuperação do state pertencem à issue #87. Contabo Object Storage permanece apenas alternativa histórica.
+O backend deverá ser externo à VPS e ao k3s. O HCP Terraform Free foi escolhido na issue #87, que acompanha sua implementação. A configuração e as validações de locking/recuperação do state pertencem à issue #87. Contabo Object Storage permanece apenas alternativa histórica.
 
 ---
 

@@ -6,7 +6,7 @@ A decisão atual está em [Conclusão e próximos passos](06-conclusao-e-proximo
 
 Os documentos 01, 02, 03 e 04 preservam a análise conceitual da issue #59. Menções a provedores e infraestrutura fundacional nesses textos não confirmam contratação nem suporte da HostGator.
 
-O documento 03 será atualizado pelo [PR #101](https://github.com/IFPBEsp/APAE-INFRA/pull/101), que escolheu o HCP Terraform Free. Ele permanece sem alterações neste PR para evitar sobreposição; suas referências históricas não substituem a delimitação atual da HostGator.
+A decisão sobre o backend remoto é o HCP Terraform Free, conforme a issue #87. Referências históricas do [documento 03](03-bootstrap-state-locking-e-drift.md) a Contabo e à escolha de backend não substituem essa decisão nem a delimitação atual da HostGator.
 
 ## Pergunta central
 
@@ -39,12 +39,14 @@ O estudo cobre:
 O estudo original #59 não definiu os itens abaixo. A issue #86 delimita o papel do Ansible e a distribuição k3s como arquitetura-alvo; implementação e escolhas operacionais continuam nas issues específicas:
 
 - implementação do `terraform apply`;
-- implementação do backend remoto HCP Terraform (issue #87 / PR #101, ainda pendente de integração);
+- implementação do backend remoto HCP Terraform (issue #87);
 - configuração do bucket/state;
 - implementação de módulos Terraform;
 - provisionamento real da VPS ou de outros provedores;
 - implementação do k3s e homologação de capacidade (issue #90);
-- playbooks Ansible e mecanismo detalhado de bootstrap (issue #90, conforme ADR 004);
+- playbooks Ansible para o host e sua validação e aplicação protegida (issues #90, #109 e #110, conforme ADR 004);
+- instalação do ArgoCD e bootstrap com AppProjects e Application raiz pelo Ansible (issue #91);
+- implementação de Gateway, DNS/TLS e rotas HTTP/HTTPS (issues #111, #112 e #113, conforme ADR 003);
 - TFLint, Checkov, OPA ou outra estratégia de Policy as Code;
 - `terraform test` ou framework de testes;
 - Vault, External Secrets ou secret manager;

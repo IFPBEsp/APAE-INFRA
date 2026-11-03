@@ -103,7 +103,7 @@ O disco de 100 GB é compartilhado entre SO, imagens, datastore, volumes e logs;
 | --- | --- | --- |
 | Configurações dos repositórios GitHub | Primeiro escopo de implementação, issue #88 | Provider `integrations/github`; importar recursos existentes antes de aplicar, validar permissões e suporte às políticas no plano da organização |
 | DNS | Condicional | Identificar domínio, nameservers autoritativos e API/provider. Um provedor externo pode gerenciar a zona mediante delegação aprovada, sem migrar a VPS |
-| Backend remoto de state | Obrigatório antes do apply em CI, issue #87 | HCP Terraform Free, escolhido no [PR #101](https://github.com/IFPBEsp/APAE-INFRA/pull/101), ainda aberto; serviço externo à VPS, com integração e validações acompanhadas na issue #87 |
+| Backend remoto de state | Obrigatório antes do apply em CI, issue #87 | HCP Terraform Free, escolhido na issue #87; serviço externo à VPS, com integração e validações acompanhadas na issue #87 |
 | Infraestrutura do backend | Terraform se houver provider adequado | Bootstrap separado e documentado; criar o backend antes de migrar o state das demais stacks |
 | Helm e Kubernetes para bootstrap | Tecnicamente possíveis, não selecionados para esta VPS | Exigem cluster existente, API acessível e credenciais; duplicariam o bootstrap atribuído ao Ansible no ADR 004 |
 | VPS, rede, discos, snapshots e firewall HostGator | Integração Terraform não adotada nesta etapa | Operações pelo Portal/suporte; reavaliar apenas diante de necessidade concreta de automação |
@@ -114,9 +114,9 @@ Providers [Helm](https://registry.terraform.io/providers/hashicorp/helm/latest/d
 
 A implementação do GitHub deve ter state separado dos ambientes de aplicações; configurações da organização são compartilhadas. O isolamento por stack/ambiente, o versionamento dos providers e as permissões mínimas serão definidos nas issues #87 e #88. Segredos e conteúdo sensível de state/plan não serão publicados no Git ou em comentários de PR.
 
-O HCP Terraform Free é a solução escolhida na issue #87 e documentada no [PR #101](https://github.com/IFPBEsp/APAE-INFRA/pull/101), ainda pendente de integração à `dev`. A implementação e as evidências de locking e recuperação do state pertencem a esse PR; esta atualização não incorpora sua configuração nem comprova sua integração. Contabo Object Storage permanece apenas alternativa histórica do estudo #59. O backend deve ficar fora da VPS e do k3s; `concurrency` no Actions complementa o locking do backend.
+O HCP Terraform Free é a solução escolhida na issue #87. A implementação e as evidências de locking e recuperação do state são acompanhadas nessa issue. Contabo Object Storage permanece apenas alternativa histórica do estudo #59. O backend deve ficar fora da VPS e do k3s; `concurrency` no Actions complementa o locking do backend.
 
-O [documento 03](03-bootstrap-state-locking-e-drift.md) permanece sem alterações neste PR para evitar sobreposição com o #101. Até a integração daquele PR, suas referências a Contabo e à escolha de backend são históricas; para a divisão de responsabilidades na HostGator, prevalecem esta proposta e o ADR 004.
+Referências do [documento 03](03-bootstrap-state-locking-e-drift.md) a Contabo e à escolha de backend devem ser lidas como histórico do estudo #59. A decisão pelo HCP Terraform Free está na issue #87; para a divisão de responsabilidades na HostGator, prevalecem esta proposta e o ADR 004.
 
 ## 6. Responsabilidades e sequência de bootstrap
 
@@ -162,17 +162,18 @@ No desenho inicial, não há NGINX externo nem Certbot no host. A issue #90 deve
 | Identificar serviço de DNS e integração aplicável | Time de infraestrutura | Zona autoritativa e forma de gestão definidas, independentemente da VPS |
 | Ratificar esta divisão de responsabilidades | Time de infraestrutura, issue #86 | Review registrado no PR e decisão explícita sobre pendências |
 | Detalhar fluxo e arquitetura Terraform | Issue #11 | Guias alinhados ao escopo ratificado |
-| Integrar o HCP Terraform e concluir validações do state remoto | Issue #87 / PR #101 | Concorrência, isolamento, acesso e recuperação validados |
+| Integrar o HCP Terraform e concluir validações do state remoto | Issue #87 | Concorrência, isolamento, acesso e recuperação validados |
 | Implementar gestão GitHub | Issue #88 | Importação e plan revisados antes do apply |
-| Implementar configuração do host | Issue #90, conforme ADR 004 | Roles, inventários e execução protegida validados |
+| Implementar configuração do host | Issues #90, #109 e #110, conforme ADR 004 | Roles, inventários e execução protegida validados |
+| Instalar o ArgoCD e aplicar o bootstrap | Issue #91 | AppProjects e Application raiz aplicados pelo Ansible |
 | Provisionar k3s e homologar capacidade | Issue #90 | PoC, métricas, teste de carga e recuperação registrados |
-| Implementar entrada HTTP/HTTPS | Issue #90, conforme ADR 003 | Gateway, DNS, TLS, rotas e reinício testados |
+| Implementar entrada HTTP/HTTPS | Issues #111, #112 e #113, conforme ADR 003 | Gateway, DNS, TLS, rotas e reinício testados |
 
 Para concluir a issue #86, resta registrar a revisão e validação do time sobre o escopo, as operações pelo Portal/suporte e as limitações de capacidade. O teste prático de capacidade fica na #90; a estratégia de backup e recuperação, na #107; sua implementação e teste, na #108. A issue #87 cobre apenas o state Terraform. Inventário e acesso operacional privados não são critérios pendentes desta documentação.
 
 ## 8. Referências
 
-Fontes externas consultadas em 17/10/2026; links de produto podem mudar. Os ADRs consultados estão identificados na seção 1; encaminhamentos atualizados em 28/10/2026.
+Fontes externas consultadas em 17/10/2026; links de produto podem mudar. Os ADRs consultados estão identificados na seção 1; encaminhamentos atualizados em 02/11/2026.
 
 - [Issue #86 — capacidades da VPS e escopo Terraform](https://github.com/IFPBEsp/APAE-INFRA/issues/86)
 - [Issue #59 — estudo GitOps](https://github.com/IFPBEsp/APAE-INFRA/issues/59)
