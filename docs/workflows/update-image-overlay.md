@@ -10,7 +10,8 @@ consulta o GHCR e propõe um PR para `main`.
 
 O reutilizável exige execução no próprio `IFPBEsp/APAE-INFRA`: chamadas vindas
 de outro repositório são rejeitadas. A chave privada do App de PRs fica
-**exclusivamente no APAE-INFRA**, sem distribuição aos produtos.
+**exclusivamente no environment `gitops-image-updater` do APAE-INFRA**,
+restrito à branch `dev`, sem distribuição aos produtos ou acesso por PRs.
 Não há ArgoCD Image Updater instalado no cluster.
 
 Apenas overlays de `dev` são atualizados, sempre por digest
@@ -153,11 +154,13 @@ Todas as imagens abaixo têm prefixo `ghcr.io/ifpbesp/`.
 
 Os nomes de Gestão Escolar foram confirmados no
 [workflow do produto](https://github.com/IFPBEsp/APAE-gestao-escolar/blob/dev/.github/workflows/docker-publish.yml)
-(blob `5531a48f9aa138ffaec03635b01578801fde5d4d`, consultado em 15/10/2026).
-O workflow consultado publica somente `latest`. A allowlist aceita as duas
-imagens, mas o fluxo só poderá ser usado após a adoção de publicação com tags
-`sha-*`, digest final e notificação ao APAE-INFRA (#44). `latest` continua
-proibida como input deste fluxo.
+(blob `5c4f627d797d60083bfa971fc6813f8a270bbd4f`, consultado em 02/11/2026).
+O produto já publica backend e frontend pelo `docker-build-publish-image.yml`
+da #35, com tags `sha-*` e digest final. Falta adicionar a notificação ao
+APAE-INFRA nos produtos, integração já contemplada na
+[#106](https://github.com/IFPBEsp/APAE-INFRA/issues/106). A #44 foi encerrada e
+não cobre essa integração.
+`latest` continua proibida como input deste fluxo.
 
 Overlays e Applications dependem da #92 e precisam existir em `main`. Esta issue
 não cria overlays definitivos, não altera bases e não acessa o cluster. Os
@@ -175,10 +178,30 @@ Use um GitHub App instalado **somente no APAE-INFRA**:
 | Pull requests | Read and write | Criar/atualizar PR. |
 | Metadata | Read | Permissão implícita. |
 
-| Secret exclusivo do APAE-INFRA | Conteúdo |
+| Secret do environment `gitops-image-updater` no APAE-INFRA | Conteúdo |
 | --- | --- |
 | `IMAGE_UPDATER_APP_ID` | ID do App de PRs. |
 | `IMAGE_UPDATER_APP_PRIVATE_KEY` | Chave PEM do App de PRs. |
+
+Antes de habilitar o fluxo, configure em **Settings → Environments** o
+environment `gitops-image-updater`. Em **Deployment branches and tags**, use
+**Selected branches and tags** e permita somente a branch `dev`, sem regras
+para tags. O `repository_dispatch` executa na branch padrão `dev`; isso não
+altera a base `main` dos PRs de manifests. Chamadas pela branch de um PR não
+devem conseguir acessar esse environment.
+
+Recadastre os dois secrets acima no environment e remova as cópias de
+**Repository secrets** e qualquer concessão equivalente por **Organization
+secrets**. Somente declarar `environment` no YAML não protege cópias que
+continuem disponíveis em outros escopos. O GitHub não permite recuperar os
+valores existentes: use os valores originais ou substitua a chave do App.
+Não envie valores de secrets em issues, comentários ou logs.
+
+O job do reutilizável declara o environment fixo e lê suas credenciais
+diretamente de `secrets`; as declarações opcionais em `workflow_call` documentam
+os nomes para validação estática, sem exigir envio pelo caller. O dispatcher
+não repassa essas credenciais. As regras do environment e a migração dos secrets
+são configurações administrativas, externas ao código deste PR.
 
 O token de instalação solicita explicitamente somente esse repositório e as
 permissões de escrita acima. A action revoga o token ao terminar o job; o
@@ -211,7 +234,9 @@ O workflow não habilita auto-merge e não faz push na branch de destino.
 
 ## Integração recomendada após o publish
 
-Nos produtos (#44), use os outputs do workflow da #35. O exemplo completo abaixo
+Nos produtos, a adoção do dispatch deve ser acompanhada pela
+[#106](https://github.com/IFPBEsp/APAE-INFRA/issues/106); use os outputs do
+workflow da #35. O exemplo completo abaixo
 é para o backend do APAE; adapte aplicação, contexto e Dockerfile para o serviço.
 Substitua `<commit-sha>` pelo SHA completo aprovado no APAE-INFRA. O dispatcher
 deve estar na branch padrão para receber eventos. O código e a action local
@@ -314,6 +339,11 @@ repetição da notificação para atualizar o mesmo PR e repetição após merge
 novo PR. Registre os links do run de publicação, run GitOps e PR na #82. Mantenha
 a issue aberta até concluir o aceite com imagem real; autenticação isolada e
 mocks não substituem esse teste.
+
+O PR #97 deve manter apenas uma referência informativa à #82, sem vínculo de
+fechamento em **Development** e sem palavras-chave de fechamento na descrição.
+Remova o vínculo antes do merge em `dev`, para que a #82 permaneça aberta
+durante o aceite operacional.
 
 ## Referências
 

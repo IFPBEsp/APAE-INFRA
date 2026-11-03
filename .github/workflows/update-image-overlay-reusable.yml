@@ -46,10 +46,12 @@ on:
 
     secrets:
       IMAGE_UPDATER_APP_ID:
-        required: true
+        description: "Fornecido pelo environment gitops-image-updater; não repassar pelo caller"
+        required: false
 
       IMAGE_UPDATER_APP_PRIVATE_KEY:
-        required: true
+        description: "Fornecido pelo environment gitops-image-updater; não repassar pelo caller"
+        required: false
 
       GHCR_READ_USERNAME:
         description: "Usuário do PAT opcional para leitura de imagens privadas"
@@ -63,6 +65,7 @@ jobs:
   update-image:
     name: Update Kubernetes image
     runs-on: ubuntu-24.04
+    environment: gitops-image-updater
 
     permissions:
       contents: read

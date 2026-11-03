@@ -122,6 +122,15 @@ class InputsTest(unittest.TestCase):
 
 
 class DispatchTest(unittest.TestCase):
+    def test_app_credentials_are_scoped_to_fixed_environment(self):
+        self.assertEqual(WORKFLOW["jobs"]["update-image"]["environment"], "gitops-image-updater")
+        declared = WORKFLOW["on"]["workflow_call"]["secrets"] if "on" in WORKFLOW else WORKFLOW[True]["workflow_call"]["secrets"]
+        forwarded = DISPATCH["jobs"]["update-overlay"]["secrets"]
+        for name in ("IMAGE_UPDATER_APP_ID", "IMAGE_UPDATER_APP_PRIVATE_KEY"):
+            with self.subTest(secret=name):
+                self.assertFalse(declared[name]["required"])
+                self.assertNotIn(name, forwarded)
+
     def payload(self, payload):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"

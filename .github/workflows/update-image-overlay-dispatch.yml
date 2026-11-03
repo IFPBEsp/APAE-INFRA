@@ -66,7 +66,5 @@ jobs:
       source-repository: ${{ needs.validate-payload.outputs.source-repository }}
       source-commit: ${{ needs.validate-payload.outputs.source-commit }}
     secrets:
-      IMAGE_UPDATER_APP_ID: ${{ secrets.IMAGE_UPDATER_APP_ID }}
-      IMAGE_UPDATER_APP_PRIVATE_KEY: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
       GHCR_READ_USERNAME: ${{ secrets.GHCR_READ_USERNAME }}
       GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
