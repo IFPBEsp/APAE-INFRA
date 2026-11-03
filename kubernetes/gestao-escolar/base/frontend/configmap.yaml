@@ -6,4 +6,3 @@ metadata:
     app: gestao-escolar-frontend
 data:
   NODE_ENV: "production"
-  NEXT_PUBLIC_API_URL: "/gestao-escolar/api"

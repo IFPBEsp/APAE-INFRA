@@ -7,6 +7,7 @@ patches:
       - op: add
         path: /spec/template/spec/securityContext
         value:
+          fsGroup: 65532
           seccompProfile:
             type: RuntimeDefault
   - target:
@@ -15,6 +16,8 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/securityContext
         value:
+          runAsUser: 65532
+          runAsGroup: 65532
           runAsNonRoot: true
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: gestao-escolar-frontend
-          image: ghcr.io/ifpbesp/apae-gestao-escolar-frontend:latest
+          image: ghcr.io/ifpbesp/apae-gestao-escolar-frontend:dev
           imagePullPolicy: Always
           ports:
             - name: http
@@ -53,8 +53,12 @@ spec:
               cpu: 500m
               memory: 256Mi
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
             - name: next-cache
               mountPath: /app/.next/cache
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: next-cache
           emptyDir: {}
