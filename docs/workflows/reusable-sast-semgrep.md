@@ -74,7 +74,7 @@ Substitua pelo chamado do reusable workflow:
 # DEPOIS (Utilizando o reusable workflow centralizado):
 security:
   name: SAST (Semgrep)
-  uses: IFPBEsp/APAE-INFRA/.github/workflows/sast-semgrep.yml@dev
+  uses: IFPBEsp/APAE-INFRA/.github/workflows/sast-semgrep.yml@<SHA-commit-versão-completa>
   permissions:
     contents: read
     security-events: write
@@ -111,7 +111,7 @@ permissions:
 jobs:
   sast:
     name: Semgrep SAST
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/sast-semgrep.yml@dev
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/sast-semgrep.yml@<SHA-commit-versão-completa>
     with:
       rulesets: |
         p/default
