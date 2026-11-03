@@ -41,6 +41,8 @@ spec:
 
 Usaremos o padrão **[App of Apps](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)**: existe uma única `Application` raiz (`apae-root`), criada uma única vez no bootstrap do cluster, que aponta para o diretório `argocd/` do próprio APAE-INFRA com busca recursiva (`directory.recurse: true`). Todas as demais Applications (as **4 Applications filhas**: `apae`, `apae-gestao-escolar`, `apae-atendimento`, `apae-site-comemorativo`) são organizadas em pastas por aplicação (`argocd/{aplicacao}/`) e passam a existir no cluster assim que a raiz sincroniza.
 
+No modelo de bootstrap proposto em [gerenciamento da VPS](../ansible/07-arquitetura-proposta-e-proximos-passos.md), um playbook Ansible instala ArgoCD, aplica o `AppProject` e registra a Application raiz. Como a configuração abaixo exclui `project.yaml` e `app-of-apps.yaml` do path reconciliado, esses objetos permanecem sob ownership do bootstrap Ansible; alterações neles exigem apply controlado do playbook. A raiz reconcilia as Applications filhas e, por elas, os recursos atribuídos ao ArgoCD.
+
 **Importante — são dois loops de sincronização independentes, rodando em paralelo o tempo todo:**
 
 1. **Loop da raiz**: garante que os objetos `Application` (definições) existam no cluster exatamente como estão descritos nas subpastas `argocd/{aplicacao}/*.yaml`. Ela só entra em Out-of-Sync se alguém alterar/adicionar/remover um desses arquivos YAML (ex.: adicionar um ambiente `hml.yaml` ou criar uma 5ª Application). Um bump de tag de imagem **não afeta** esse loop.
