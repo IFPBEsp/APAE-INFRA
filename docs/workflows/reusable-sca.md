@@ -78,6 +78,7 @@ on:
       - "apps/api/**"
       - "apps/apae/**"
       - "pnpm-lock.yaml"
+      - "package-lock.json"
       - ".trivyignore"
 
 permissions:
