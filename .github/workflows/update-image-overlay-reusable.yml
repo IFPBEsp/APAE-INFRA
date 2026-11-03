@@ -151,6 +151,27 @@ jobs:
 
           echo "Inputs validados."
 
+      - name: Verify source is current main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          SOURCE_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
+
       - name: Verify published image in GHCR
         id: registry
         shell: bash
@@ -468,6 +489,27 @@ jobs:
               output.write(f"branch={branch}\n")
           PYTHON
 
+      - name: Recheck main before opening pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          SOURCE_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
+
       - name: Create or update image pull request
         id: pull-request
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
@@ -489,7 +531,8 @@ jobs:
             - Overlay: `${{ steps.overlay.outputs.path }}`
             - Execução: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-            A existência da tag e seu digest foram verificados no GHCR. Isso não comprova a proveniência do build.
+            A tag e o digest foram verificados no GHCR, e a proveniência foi autenticada para a main do produto.
+            O commit correspondia ao HEAD da main ao receber a imagem e antes de abrir este PR.
             O overlay foi renderizado com Kustomize e a referência resultante foi verificada.
             Requer revisão e merge humanos. O sync no ArgoCD permanece manual.
 
