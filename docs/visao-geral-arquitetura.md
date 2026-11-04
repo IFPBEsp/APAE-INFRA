@@ -21,15 +21,15 @@ O projeto APAE é composto por quatro repositórios de código-fonte, cada um re
 
 Cada repositório de aplicação segue o mesmo ciclo de vida, de forma completamente independente dos demais. Eles **não se comunicam entre si** nem aplicam nada diretamente no cluster — toda a orquestração passa pelo **APAE-INFRA**.
 
-### 2. Provisionamento de Infraestrutura — Terraform + GitHub Actions
+### 2. Provisionamento e Gerenciamento de Infraestrutura — Terraform, Ansible e GitHub Actions
 
-O Terraform é responsável pela **infraestrutura fundacional**: VPS, rede, firewall e bootstrap do host (incluindo a instalação inicial do Kubernetes e do ArgoCD). Após esse bootstrap, o ArgoCD passa a ser gerenciado exclusivamente via Git.
+A gestão da infraestrutura fundacional e do host é dividida de forma clara entre **Terraform** e **Ansible**, com orquestração via **GitHub Actions**:
 
-**Decisão arquitetural:** o Terraform é executado pelo GitHub Actions (workflows de `fmt`, `validate`, `plan` com aprovação manual e `apply`), **não** pelo ArgoCD. Isso evita o problema de bootstrap circular e mantém o ArgoCD focado na reconciliação de recursos Kubernetes.
+- **Terraform:** Responsável pelos recursos externos ao host (infraestrutura externa como VPS HostGator, rede, DNS e firewall do provedor quando houver API/provider suportado; caso contrário, registrado como exceção). O state é armazenado remotamente no **HCP Terraform Free** (workspace `apae-infra-dev` já configurado e validado para o ambiente de desenvolvimento, com workspaces para `hml` e `prod` planejados), oferecendo locking nativo e histórico centralizado fora da VPS e do cluster. O Terraform é executado pelo GitHub Actions (`fmt`, `validate`, `plan` e aprovação antes do `apply`), e não pelo ArgoCD, evitando dependências circulares de bootstrap.
+- **Ansible:** Responsável pela configuração e manutenção do sistema operacional da VPS HostGator (Ubuntu 22.04 LTS), usuários, SSH, pacotes, firewall local (UFW), instalação, versionamento e manutenção do cluster Kubernetes (**k3s single-node**), além da instalação inicial e atualizações do **ArgoCD** com versão fixada e validada.
+- **Objetos de bootstrap mantidos sob o Ansible:** O **AppProject de bootstrap**, o **AppProject de infraestrutura** (`project-infra.yaml`) e a **Application raiz** (`app-of-apps.yaml`) permanecem sob a responsabilidade do Ansible enquanto estiverem excluídos do caminho reconciliado pelo ArgoCD, garantindo que o ArgoCD não dispute o gerenciamento de sua própria base.
 
-O state do Terraform é armazenado remotamente no **Contabo Object Storage**, com locking habilitado para prevenir aplicações concorrentes.
-
-> Detalhes: [docs/terraform/](terraform/README.md)
+Após essa etapa de bootstrap realizada pelo Ansible, o ArgoCD passa a reconciliar exclusivamente os recursos e Applications sob seu escopo.
 
 ### 3. Build e Entrega de Imagens — GitHub Actions (CI)
 
@@ -99,26 +99,58 @@ Descoberta de alvos do Prometheus via **Prometheus Operator** (`ServiceMonitor` 
 
 ---
 
-## Estrutura do APAE-INFRA
+## Estrutura do Repositório APAE-INFRA
+
+Para assegurar clareza e transparência no ciclo de vida do repositório, distinguimos a **estrutura atualmente existente** da **organização planejada** (em fase de estudo ou com componentes pendentes de implementação):
+
+### Estrutura Atual (Existente)
+
+Atualmente, os manifests Kubernetes base estão organizados por produto (`kubernetes/{produto}/base/`), e diretórios como `argocd/` e `monitoring/` contêm documentação e estudos:
 
 ```text
 APAE-INFRA/
 ├── .github/
-│   └── workflows/          # Workflows reutilizáveis: build-publish, SCA, remoção de branches
-├── argocd/                 # App of Apps: project.yaml, app-of-apps.yaml, {app}/dev.yaml
+│   └── workflows/          # Workflows de CI, linting e validação
 ├── kubernetes/
-│   ├── base/{app}/         # Manifests Kubernetes comuns (Deployment, Service...)
-│   └── overlays/{env}/{app}/ # Patches de ambiente (réplicas, variáveis, tag de imagem)
-├── monitoring/
-│   ├── grafana/            # Datasources, dashboards e alertas provisionados via GitOps
-│   ├── prometheus/         # Prometheus Operator, ServiceMonitors/PodMonitors
-│   └── loki/               # Loki + Grafana Alloy (agente DaemonSet)
+│   ├── apae-geral/
+│   │   └── base/           # Manifests base do backend e microsserviços gerais
+│   ├── apae-atendimento/
+│   │   └── base/           # Manifests base do serviço de atendimento
+│   └── site-comemorativo/
+│       └── base/           # Manifests base do site comemorativo
 ├── terraform/
-│   ├── modules/            # Módulos reutilizáveis
-│   └── environments/       # Configuração por ambiente (dev/hml/prod)
-└── docs/                   # Documentação de padrões e fluxos
+│   ├── environments/       # Configuração por ambiente (dev com backend.tf configurado no HCP Terraform)
+│   └── modules/            # Módulos reutilizáveis
+├── argocd/                 # Documentação e especificações conceituais do ArgoCD
+├── monitoring/             # Documentação da stack de observabilidade (Grafana, Loki, Prometheus)
+└── docs/                   # Documentação arquitetural, ADRs e diagramas
     └── diagramas/          # Diagramas Excalidraw e SVG
 ```
+
+### Estrutura Planejada e Componentes Pendentes
+
+A arquitetura final do GitOps prevê a introdução de camadas e componentes que estão planejados ou em desenvolvimento:
+
+```text
+APAE-INFRA/
+├── argocd/                 # [Planejado] Manifests do App of Apps: project.yaml, project-infra.yaml, app-of-apps.yaml
+├── kubernetes/
+│   ├── {produto}/base/     # [Existente] Manifests comuns
+│   └── overlays/{env}/{app}/ # [Planejado] Kustomize overlays por ambiente (dev, hml, prod) para réplicas e tags
+├── monitoring/
+│   ├── grafana/            # [Planejado] Manifests de datasources, dashboards e alertas provisionados via GitOps
+│   ├── prometheus/         # [Planejado] Prometheus Operator, ServiceMonitors e PodMonitors
+│   └── loki/               # [Planejado] Workloads de Loki e Grafana Alloy (DaemonSet)
+├── ansible/                # [Planejado] Playbooks e roles de configuração do host, k3s e bootstrap do ArgoCD
+└── terraform/
+    └── environments/
+        ├── dev/            # [Configurado] Backend HCP Terraform e validações
+        ├── hml/            # [Planejado] Workspace apae-infra-hml
+        └── prod/           # [Planejado] Workspace apae-infra-prod
+```
+
+> [!NOTE]
+> Os overlays Kustomize por ambiente (`kubernetes/overlays/`), as Applications declarativas do ArgoCD (`argocd/*.yaml`), a stack ativa de observabilidade em cluster (`monitoring/*`) e a automação do host via Ansible estão formalizados conceitualmente em seus respectivos estudos arquiteturais e serão implementados nas próximas etapas da infraestrutura.
 
 ---
 
