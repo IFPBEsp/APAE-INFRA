@@ -1,6 +1,6 @@
 ---
 - name: Install base packages
-  ansible.builtin.apt:
-    name: "{{ base_packages }}"
+  apt:
+    pkg: curl
     state: present
     update_cache: true
