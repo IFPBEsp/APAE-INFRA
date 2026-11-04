@@ -5,17 +5,22 @@ on:
     inputs:
       image:
         description: "Imagem completa no GHCR"
-        required: true
+        required: false
         type: string
 
       image-tag:
         description: "Tag sha-<short-sha>"
-        required: true
+        required: false
         type: string
 
       image-digest:
         description: "Digest OCI da imagem publicada"
-        required: true
+        required: false
+        type: string
+
+      release-json:
+        description: "JSON da versao candidata com frontend e backend (mutuamente exclusivo com image*)"
+        required: false
         type: string
 
       application:
@@ -42,7 +47,7 @@ on:
     outputs:
       pull-request-url:
         description: "URL do PR criado ou atualizado; vazio quando não há diferença"
-        value: ${{ jobs.update-image.outputs.pull-request-url }}
+        value: ${{ jobs.update-image.outputs.pull-request-url || jobs.update-release.outputs.pull-request-url }}
 
     secrets:
       IMAGE_UPDATER_APP_ID:
@@ -64,6 +69,7 @@ on:
 jobs:
   update-image:
     name: Update Kubernetes image
+    if: inputs.release-json == ''
     runs-on: ubuntu-24.04
     environment: gitops-image-updater
 
@@ -73,7 +79,7 @@ jobs:
 
     timeout-minutes: 15
     concurrency:
-      group: gitops-${{ inputs.application }}-${{ inputs.environment }}-${{ inputs.image }}
+      group: gitops-${{ inputs.application }}-${{ inputs.environment }}
       cancel-in-progress: false
 
     outputs:
@@ -93,6 +99,11 @@ jobs:
           CALLER_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
+
+          if [[ -z "$IMAGE" || -z "$IMAGE_TAG" || -z "$IMAGE_DIGEST" ]]; then
+            echo "::error::Imagem, tag e digest sao obrigatorios no modo individual."
+            exit 1
+          fi
 
           if [[ "$ENVIRONMENT" != "dev" ]]; then
             echo "::error::Somente o ambiente dev é permitido."
@@ -130,16 +141,10 @@ jobs:
           fi
 
           case "$SOURCE_REPOSITORY:$APPLICATION:$IMAGE" in
-            IFPBEsp/APAE:apae-geral:ghcr.io/ifpbesp/apae-geral-backend|\
-            IFPBEsp/APAE:apae-geral:ghcr.io/ifpbesp/apae-geral-frontend|\
-            IFPBEsp/APAE-atendimento:apae-atendimento:ghcr.io/ifpbesp/apae-atendimento-backend|\
-            IFPBEsp/APAE-atendimento:apae-atendimento:ghcr.io/ifpbesp/apae-atendimento-frontend|\
-            IFPBEsp/APAE-gestao-escolar:apae-gestao-escolar:ghcr.io/ifpbesp/apae-gestao-escolar-backend|\
-            IFPBEsp/APAE-gestao-escolar:apae-gestao-escolar:ghcr.io/ifpbesp/apae-gestao-escolar-frontend|\
             IFPBEsp/apae-site-comemorativo:site-comemorativo:ghcr.io/ifpbesp/apae-site-comemorativo)
               ;;
             *)
-              echo "::error::Combinação de repositório, aplicação e imagem não autorizada."
+              echo "::error::Fluxo individual reservado ao Site Comemorativo."
               exit 1
               ;;
           esac
@@ -172,6 +177,16 @@ jobs:
             exit 1
           fi
 
+
+      - name: Checkout automation revision
+        id: automation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: ${{ github.sha }}
+          token: ${{ github.token }}
+          persist-credentials: false
+
       - name: Verify published image in GHCR
         id: registry
         shell: bash
@@ -185,121 +200,10 @@ jobs:
           REGISTRY_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 - <<'PYTHON'
-          import base64
-          import hashlib
-          import json
-          import os
-          import urllib.error
-          import urllib.parse
-          import urllib.request
-
-          MEDIA_TYPES = (
-              "application/vnd.oci.image.index.v1+json",
-              "application/vnd.oci.image.manifest.v1+json",
-              "application/vnd.docker.distribution.manifest.list.v2+json",
-              "application/vnd.docker.distribution.manifest.v2+json",
-          )
-
-          class NoRedirect(urllib.request.HTTPRedirectHandler):
-              # Credenciais só podem ser enviadas aos endpoints fixos do GHCR.
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  return None
-
-          def verify_published_image(image, tag, expected_digest, username="", password=""):
-              repository = image.removeprefix("ghcr.io/")
-              query = urllib.parse.urlencode({"service": "ghcr.io", "scope": f"repository:{repository}:pull"})
-              token_url = "https://ghcr.io/token?" + query
-              manifest_url = f"https://ghcr.io/v2/{repository}/manifests/{tag}"
-              opener = urllib.request.build_opener(NoRedirect())
-
-              def get(url, headers, limit):
-                  request = urllib.request.Request(url, headers=headers)
-                  with opener.open(request, timeout=30) as response:
-                      body = response.read(limit + 1)
-                      if len(body) > limit:
-                          raise ValueError("Resposta do GHCR excede o limite permitido.")
-                      return body, response.headers
-
-              def fetch_manifest(authenticated):
-                  headers = {"Accept": "application/json"}
-                  if authenticated:
-                      basic = base64.b64encode(f"{username}:{password}".encode()).decode()
-                      headers["Authorization"] = "Basic " + basic
-                  body, _ = get(token_url, headers, 1024 * 1024)
-                  payload = json.loads(body)
-                  if not isinstance(payload, dict):
-                      raise ValueError("Resposta de autenticação inválida do GHCR.")
-                  token = payload.get("token") or payload.get("access_token")
-                  if not isinstance(token, str) or not token or any(c in token for c in "\r\n"):
-                      raise ValueError("Token de leitura ausente ou inválido na resposta do GHCR.")
-                  return get(manifest_url, {
-                      "Accept": ", ".join(MEDIA_TYPES),
-                      "Accept-Encoding": "identity",
-                      "Authorization": "Bearer " + token,
-                  }, 8 * 1024 * 1024)
-
-              try:
-                  body, headers = fetch_manifest(False)
-              except urllib.error.HTTPError as error:
-                  if error.code not in (401, 403) or not username or not password:
-                      raise
-                  error.close()
-                  body, headers = fetch_manifest(True)
-
-              content_type = headers.get("Content-Type", "").split(";", 1)[0].strip()
-              if content_type not in MEDIA_TYPES or headers.get("Content-Encoding", "identity") != "identity":
-                  raise ValueError("Tipo de objeto ou codificação não suportados na resposta do GHCR.")
-              manifest = json.loads(body)
-              if not isinstance(manifest, dict) or manifest.get("schemaVersion") != 2:
-                  raise ValueError("Manifest publicado inválido.")
-              if manifest.get("mediaType", content_type) != content_type:
-                  raise ValueError("Media type do manifest diverge do cabeçalho do GHCR.")
-              # Hash dos bytes originais do objeto da tag, sem selecionar uma plataforma.
-              # Para multiarch, compara o índice completo, não um manifest filho.
-              actual_digest = "sha256:" + hashlib.sha256(body).hexdigest()
-              if headers.get("Docker-Content-Digest", actual_digest) != actual_digest:
-                  raise ValueError("Cabeçalho de digest do GHCR diverge do conteúdo recebido.")
-              if actual_digest != expected_digest:
-                  raise ValueError("Digest informado não corresponde ao objeto publicado para a tag.")
-
-          def main():
-              try:
-                  username = os.environ.get("GHCR_READ_USERNAME", "")
-                  password = os.environ.get("GHCR_READ_TOKEN", "")
-                  if bool(username) != bool(password):
-                      raise ValueError("Configure GHCR_READ_USERNAME e GHCR_READ_TOKEN em conjunto.")
-                  verify_published_image(
-                      os.environ["IMAGE"], os.environ["IMAGE_TAG"], os.environ["IMAGE_DIGEST"],
-                      username or os.environ.get("REGISTRY_USERNAME", ""),
-                      password or os.environ.get("REGISTRY_TOKEN", ""),
-                  )
-              except urllib.error.HTTPError as error:
-                  # Não registrar corpo, headers, tokens ou mensagens fornecidas pelo registro.
-                  print(f"::error::Consulta ao GHCR falhou (HTTP {error.code}). Verifique a tag e o acesso de leitura.")
-                  error.close()
-                  return 1
-              except (OSError, ValueError, KeyError):
-                  print("::error::Falha ao verificar a imagem no GHCR: conexão, resposta, credenciais ou digest inválidos.")
-                  return 1
-              print("Tag existente e digest do objeto publicado confirmados no GHCR.")
-              return 0
-
-          if __name__ == "__main__":
-              raise SystemExit(main())
-          PYTHON
-
-      - name: Checkout automation revision
-        id: automation
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: IFPBEsp/APAE-INFRA
-          ref: ${{ github.sha }}
-          token: ${{ github.token }}
-          persist-credentials: false
+          python3 scripts/ci/verify_ghcr_image.py
 
       - name: Authenticate to GHCR for provenance verification
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ secrets.GHCR_READ_USERNAME != '' && secrets.GHCR_READ_TOKEN != '' && secrets.GHCR_READ_USERNAME || github.actor }}
@@ -331,6 +235,25 @@ jobs:
 
           echo "Proveniência autenticada com sucesso."
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify published Cosign signature
+        shell: bash
+        env:
+          IMAGE: ${{ inputs.image }}
+          IMAGE_DIGEST: ${{ inputs.image-digest }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+        run: |
+          set -euo pipefail
+          cosign verify "${IMAGE}@${IMAGE_DIGEST}" \
+            --certificate-identity-regexp="^https://github[.]com/${SOURCE_REPOSITORY}/[.]github/workflows/[^/]+[.]ya?ml@refs/heads/main$" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
+            --certificate-github-workflow-ref="refs/heads/main" \
+            --certificate-github-workflow-sha="$SOURCE_COMMIT"
+
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
@@ -342,12 +265,12 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Checkout main manifests
+      - name: Checkout dev manifests
         id: manifests
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: IFPBEsp/APAE-INFRA
-          ref: main
+          ref: dev
           path: infra
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
@@ -417,9 +340,13 @@ jobs:
           IMAGE_DIGEST: ${{ inputs.image-digest }}
           APPLICATION: ${{ inputs.application }}
           ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          VERIFICATION_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/gitops-yaml/bin/python" - <<'PYTHON'
+          import json
           import os
           import subprocess
           from pathlib import Path
@@ -459,7 +386,7 @@ jobs:
 
           data = yaml.safe_load(path.read_text())
           entries = data.setdefault("images", [])
-          matches = [entry for entry in entries if entry.get("newName", entry["name"]) == image]
+          matches = [entry for entry in entries if entry.get("newName", entry.get("name")) == image]
           if len(matches) > 1:
               raise SystemExit("Múltiplas regras de imagem correspondem à imagem solicitada.")
           entry = matches[0] if matches else {"name": image}
@@ -468,25 +395,60 @@ jobs:
           entry.pop("newTag", None)
           entry["digest"] = digest
 
-          # Evita reformatar o arquivo quando o digest já está atualizado.
-          if yaml.safe_load(path.read_text()) != data:
-              path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+          original_bytes = path.read_bytes()
+          try:
+              # Evita reformatar o arquivo quando o digest já está atualizado.
+              if yaml.safe_load(path.read_text()) != data:
+                  path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
 
-          after = container_images()
-          expected = image + "@" + digest
-          if not any(reference == expected for reference in after):
-              raise SystemExit("O Kustomize não aplicou o digest solicitado.")
-          if any(image_name(reference) == image and reference != expected for reference in after):
-              raise SystemExit("Há workloads com referências inconsistentes à imagem solicitada.")
-          if sorted(ref for ref in before if image_name(ref) != image) != sorted(
-              ref for ref in after if image_name(ref) != image
-          ):
-              raise SystemExit("A atualização alterou imagens de outros serviços.")
+              after = container_images()
+              expected = image + "@" + digest
+              if not any(reference == expected for reference in after):
+                  raise SystemExit("O Kustomize não aplicou o digest solicitado.")
+              if any(image_name(reference) == image and reference != expected for reference in after):
+                  raise SystemExit("Há workloads com referências inconsistentes à imagem solicitada.")
+              if sorted(ref for ref in before if image_name(ref) != image) != sorted(
+                  ref for ref in after if image_name(ref) != image
+              ):
+                  raise SystemExit("A atualização alterou imagens de outros serviços.")
 
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              # Registra a versão candidata somente após validação do GHCR,
+              # da atestação e da renderização do Kustomize.
+              # O registro segue junto do overlay no mesmo PR para dev.
+              if os.environ["APPLICATION"] != "site-comemorativo":
+                  raise SystemExit("::error::Candidato individual não autorizado.")
+              commit = os.environ["SOURCE_COMMIT"]
+              tag = os.environ["IMAGE_TAG"]
+              candidate = {
+                  "application": "site-comemorativo",
+                  "source_repository": "IFPBEsp/apae-site-comemorativo",
+                  "source_commit": commit,
+                  "image": image,
+                  "tag": tag,
+                  "digest": digest,
+                  "verification_run": os.environ["VERIFICATION_RUN"],
+              }
+              candidate_path = Path("releases/candidates/site-comemorativo") / f"{commit}.json"
+              candidate_path.parent.mkdir(parents=True, exist_ok=True)
+              content = json.dumps(candidate, indent=2, sort_keys=True) + "\n"
+              if candidate_path.exists():
+                  existing = json.loads(candidate_path.read_text(encoding="utf-8"))
+                  if not isinstance(existing, dict) or set(existing) != set(candidate) or any(
+                      existing[key] != value for key, value in candidate.items() if key != "verification_run"
+                  ):
+                      raise SystemExit("::error::Candidato existente diverge do digest verificado.")
+              else:
+                  candidate_path.write_text(content, encoding="utf-8")
+
+          except BaseException:
+              path.write_bytes(original_bytes)
+              raise
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               image_id = image.rsplit("/", 1)[-1]
               branch = f"gitops/{os.environ['APPLICATION']}/{os.environ['ENVIRONMENT']}/{image_id}"
               output.write(f"branch={branch}\n")
+              output.write(f"candidate={candidate_path.as_posix()}\n")
           PYTHON
 
       - name: Recheck main before opening pull request
@@ -510,15 +472,18 @@ jobs:
             exit 1
           fi
 
+
       - name: Create or update image pull request
         id: pull-request
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
           token: ${{ steps.app-token.outputs.token }}
           path: infra
-          base: main
+          base: dev
           branch: ${{ steps.image-update.outputs.branch }}
-          add-paths: ${{ steps.overlay.outputs.path }}/kustomization.yaml
+          add-paths: |
+            ${{ steps.overlay.outputs.path }}/kustomization.yaml
+            ${{ steps.image-update.outputs.candidate }}
           commit-message: "chore(gitops): update ${{ inputs.application }} image to ${{ inputs.image-tag }}"
           title: "chore(gitops): update ${{ inputs.application }} (${{ inputs.image }}) to ${{ inputs.image-tag }}"
           body: |
@@ -529,10 +494,10 @@ jobs:
             - Tag: `${{ inputs.image-tag }}`
             - Referência imutável: `${{ inputs.image }}@${{ inputs.image-digest }}`
             - Overlay: `${{ steps.overlay.outputs.path }}`
+            - Registro candidato: `${{ steps.image-update.outputs.candidate }}`
             - Execução: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-            A tag e o digest foram verificados no GHCR, e a proveniência foi autenticada para a main do produto.
-            O commit correspondia ao HEAD da main ao receber a imagem e antes de abrir este PR.
+            A tag e seu digest foram verificados no GHCR; a atestação de proveniência também foi validada.
             O overlay foi renderizado com Kustomize e a referência resultante foi verificada.
             Requer revisão e merge humanos. O sync no ArgoCD permanece manual.
 
@@ -549,6 +514,411 @@ jobs:
             if [[ -n "$PR_URL" ]]; then
               echo "PR: $PR_URL"
             else
-              echo "Nenhuma diferença em relação à main; nenhum novo PR necessário."
+              echo "Nenhuma diferença em relação à dev; nenhum novo PR necessário."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  update-release:
+    name: Update complete release in homologation
+    if: inputs.release-json != ''
+    runs-on: ubuntu-24.04
+    environment: gitops-image-updater
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    concurrency:
+      group: gitops-${{ inputs.application }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    outputs:
+      pull-request-url: ${{ steps.pull-request.outputs.pull-request-url }}
+
+    steps:
+      - name: Validate release metadata and contract
+        shell: bash
+        env:
+          RELEASE_JSON: ${{ inputs.release-json }}
+          APPLICATION: ${{ inputs.application }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+          SINGLE_IMAGE: ${{ inputs.image }}
+          SINGLE_TAG: ${{ inputs.image-tag }}
+          SINGLE_DIGEST: ${{ inputs.image-digest }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import re
+
+          def fail(message):
+              raise SystemExit(f"::error::Release invalida: {message}")
+
+          if os.environ["CALLER_REPOSITORY"] != "IFPBEsp/APAE-INFRA":
+              fail("caller nao autorizado")
+          if os.environ["ENVIRONMENT"] != "dev":
+              fail("somente homologacao dev e permitida")
+          if any(os.environ[key] for key in ("SINGLE_IMAGE", "SINGLE_TAG", "SINGLE_DIGEST")):
+              fail("nao combine release-json com entradas individuais")
+          allowed_releases = {
+              "apae-geral": "IFPBEsp/APAE",
+              "apae-atendimento": "IFPBEsp/APAE-atendimento",
+              "apae-gestao-escolar": "IFPBEsp/APAE-gestao-escolar",
+          }
+          application = os.environ["APPLICATION"]
+          expected_repository = allowed_releases.get(application)
+          if expected_repository is None:
+              fail("aplicacao sem contrato de release conjunto")
+          if os.environ["SOURCE_REPOSITORY"] != expected_repository:
+              fail("repositorio de origem nao autorizado")
+          commit = os.environ["SOURCE_COMMIT"]
+          if not re.fullmatch(r"[a-f0-9]{40}", commit):
+              fail("commit invalido")
+
+          try:
+              release = json.loads(os.environ["RELEASE_JSON"])
+          except (ValueError, TypeError):
+              fail("JSON malformado")
+          if not isinstance(release, dict) or set(release) != {
+              "application", "source_repository", "source_commit", "workflow_run", "images"
+          }:
+              fail("campos da versao invalidos")
+          if (release["application"], release["source_repository"], release["source_commit"]) != (
+              application, expected_repository, commit
+          ):
+              fail("metadados inconsistentes")
+          run_url = release["workflow_run"]
+          if not isinstance(run_url, str) or not re.fullmatch(
+              r"https://github[.]com/" + re.escape(expected_repository) + r"/actions/runs/[0-9]+", run_url
+          ):
+              fail("execucao de publicacao invalida")
+          images = release["images"]
+          if not isinstance(images, dict) or set(images) != {"backend", "frontend"}:
+              fail("backend e frontend obrigatorios")
+
+          for component in ("backend", "frontend"):
+              item = images[component]
+              if not isinstance(item, dict) or set(item) != {"image", "tag", "digest", "workflow_run"}:
+                  fail(f"{component}: campos invalidos")
+              if item["image"] != f"ghcr.io/ifpbesp/{application}-{component}":
+                  fail(f"{component}: imagem nao autorizada")
+              if item["tag"] != "sha-" + commit[:7]:
+                  fail(f"{component}: tag divergente do commit")
+              if not isinstance(item["digest"], str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", item["digest"]):
+                  fail(f"{component}: digest invalido")
+              if item["workflow_run"] != run_url:
+                  fail(f"{component}: execucao divergente")
+
+          with open(os.environ["RUNNER_TEMP"] + "/verified-release-input.json", "w") as handle:
+              json.dump(release, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          print("Contrato de release validado; imagens ainda precisam de verificacao externa.")
+          PYTHON
+
+      - name: Verify source is current main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          SOURCE_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
+
+
+      - name: Checkout trusted automation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: ${{ github.sha }}
+          token: ${{ github.token }}
+          persist-credentials: false
+
+      - name: Verify both GHCR tags and digests
+        shell: bash
+        env:
+          GHCR_READ_USERNAME: ${{ secrets.GHCR_READ_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for component in backend frontend; do
+            export IMAGE="$(jq -er --arg component "$component" '.images[$component].image' "$RUNNER_TEMP/verified-release-input.json")"
+            export IMAGE_TAG="$(jq -er --arg component "$component" '.images[$component].tag' "$RUNNER_TEMP/verified-release-input.json")"
+            export IMAGE_DIGEST="$(jq -er --arg component "$component" '.images[$component].digest' "$RUNNER_TEMP/verified-release-input.json")"
+            python3 scripts/ci/verify_ghcr_image.py
+          done
+
+      - name: Authenticate to GHCR for attestation verification
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_READ_USERNAME != '' && secrets.GHCR_READ_TOKEN != '' && secrets.GHCR_READ_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_READ_USERNAME != '' && secrets.GHCR_READ_TOKEN != '' && secrets.GHCR_READ_TOKEN || github.token }}
+
+      - name: Verify both build attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+        run: |
+          set -euo pipefail
+          for component in backend frontend; do
+            image="$(jq -er --arg component "$component" '.images[$component].image' "$RUNNER_TEMP/verified-release-input.json")"
+            digest="$(jq -er --arg component "$component" '.images[$component].digest' "$RUNNER_TEMP/verified-release-input.json")"
+            gh attestation verify "oci://${image}@${digest}" \
+              --bundle-from-oci \
+              --repo "$SOURCE_REPOSITORY" \
+              --signer-workflow "IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml" \
+              --source-ref "refs/heads/main" \
+              --source-digest "$SOURCE_COMMIT" \
+              --format json > "$RUNNER_TEMP/$component-attestation.json"
+            run_url="$(jq -er '.workflow_run' "$RUNNER_TEMP/verified-release-input.json")"
+            invocation="$(jq -er --arg run "$run_url" '
+              [.[] | .verificationResult.statement.predicate.runDetails.metadata.invocationId
+               | select(type == "string")
+               | select(startswith($run + "/attempts/"))
+               | select(test("/attempts/[0-9]+$"))] | unique | if length == 1 then .[0] else error("execucao nao autenticada") end
+            ' "$RUNNER_TEMP/$component-attestation.json")"
+            if [[ "$component" == backend ]]; then
+              release_invocation="$invocation"
+            elif [[ "$invocation" != "$release_invocation" ]]; then
+              echo "::error::Backend e frontend pertencem a execucoes ou tentativas diferentes."
+              exit 1
+            fi
+          done
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify both Cosign signatures
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+        run: |
+          set -euo pipefail
+          for component in backend frontend; do
+            image="$(jq -er --arg component "$component" '.images[$component].image' "$RUNNER_TEMP/verified-release-input.json")"
+            digest="$(jq -er --arg component "$component" '.images[$component].digest' "$RUNNER_TEMP/verified-release-input.json")"
+            cosign verify "${image}@${digest}" \
+              --certificate-identity-regexp="^https://github[.]com/${SOURCE_REPOSITORY}/[.]github/workflows/[^/]+[.]ya?ml@refs/heads/main$" \
+              --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+              --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
+              --certificate-github-workflow-ref="refs/heads/main" \
+              --certificate-github-workflow-sha="$SOURCE_COMMIT"
+          done
+
+      - name: Generate image updater GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.IMAGE_UPDATER_APP_ID }}
+          private-key: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
+          owner: IFPBEsp
+          repositories: APAE-INFRA
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout homologation manifests
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: dev
+          path: infra
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Set up approved Kustomize
+        uses: ./.github/actions/setup-kustomize
+
+      - name: Install YAML editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/gitops-yaml"
+          "$RUNNER_TEMP/gitops-yaml/bin/pip" install --disable-pip-version-check 'PyYAML==6.0.3'
+
+      - name: Update both digests and record candidate atomically
+        id: release-update
+        shell: bash
+        working-directory: infra
+        env:
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          APPLICATION: ${{ inputs.application }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/gitops-yaml/bin/python" - <<'PYTHON'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          import yaml
+
+          release = json.loads((Path(os.environ["RUNNER_TEMP"]) / "verified-release-input.json").read_text())
+          application = os.environ["APPLICATION"]
+          if application not in {"apae-geral", "apae-atendimento", "apae-gestao-escolar"}:
+              raise SystemExit("::error::Aplicacao nao autorizada para release conjunta.")
+          overlay = Path("kubernetes") / application / "overlays/dev"
+          path = overlay / "kustomization.yaml"
+          if not path.is_file():
+              raise SystemExit("::error::Overlay dev ausente; depende da issue #92.")
+
+          def images_in_workloads():
+              rendered = subprocess.check_output(["kustomize", "build", str(overlay)], text=True)
+              found = []
+              def visit(value):
+                  if isinstance(value, dict):
+                      for key, child in value.items():
+                          if key in ("containers", "initContainers", "ephemeralContainers"):
+                              if not isinstance(child, list):
+                                  raise SystemExit("Lista de containers invalida")
+                              for container in child:
+                                  found.append(container["image"])
+                          else:
+                              visit(child)
+                  elif isinstance(value, list):
+                      for child in value:
+                          visit(child)
+              for document in yaml.safe_load_all(rendered):
+                  visit(document)
+              return found
+
+          targets = {release["images"][component]["image"]: release["images"][component]["digest"]
+                     for component in ("backend", "frontend")}
+          def image_name(reference):
+              return reference.split("@", 1)[0].split(":", 1)[0]
+
+          before = images_in_workloads()
+          for image in targets:
+              if not any(image_name(ref) == image for ref in before):
+                  raise SystemExit(f"::error::Imagem ausente nos workloads: {image}")
+
+          original = yaml.safe_load(path.read_text())
+          if not isinstance(original, dict):
+              raise SystemExit("::error::Kustomization invalido")
+          data = yaml.safe_load(path.read_text())
+          entries = data.setdefault("images", [])
+          if not isinstance(entries, list):
+              raise SystemExit("::error::images deve ser lista")
+          for image, digest in targets.items():
+              matches = [entry for entry in entries if isinstance(entry, dict) and entry.get("newName", entry.get("name")) == image]
+              if len(matches) > 1:
+                  raise SystemExit("::error::Regras duplicadas para imagem")
+              entry = matches[0] if matches else {"name": image}
+              if not matches:
+                  entries.append(entry)
+              entry.pop("newTag", None)
+              entry["digest"] = digest
+          original_bytes = path.read_bytes()
+          try:
+              if data != original:
+                  path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+
+              after = images_in_workloads()
+              for image, digest in targets.items():
+                  expected = image + "@" + digest
+                  if not any(ref == expected for ref in after):
+                      raise SystemExit(f"::error::Digest nao aplicado pelo Kustomize: {image}")
+                  if any(image_name(ref) == image and ref != expected for ref in after):
+                      raise SystemExit("::error::Referencia inconsistente em workload")
+              if sorted(ref for ref in before if image_name(ref) not in targets) != sorted(
+                  ref for ref in after if image_name(ref) not in targets
+              ):
+                  raise SystemExit("::error::Outras imagens foram alteradas")
+
+              candidate = Path("releases/candidates") / application / (release["source_commit"] + ".json")
+              candidate.parent.mkdir(parents=True, exist_ok=True)
+              content = json.dumps(release, indent=2, sort_keys=True) + "\n"
+              if candidate.exists() and candidate.read_text(encoding="utf-8") != content:
+                  raise SystemExit("::error::Candidato existente diverge da release verificada.")
+              if not candidate.exists():
+                  candidate.write_text(content, encoding="utf-8")
+          except BaseException:
+              path.write_bytes(original_bytes)
+              raise
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"candidate={candidate.as_posix()}\n")
+              output.write(f"overlay={path.as_posix()}\n")
+              output.write(f"branch=gitops/{application}/dev/release\n")
+          PYTHON
+
+      - name: Recheck main before opening pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          SOURCE_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
+
+
+      - name: Create or update complete release PR
+        id: pull-request
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          path: infra
+          base: dev
+          branch: ${{ steps.release-update.outputs.branch }}
+          add-paths: |
+            ${{ steps.release-update.outputs.overlay }}
+            ${{ steps.release-update.outputs.candidate }}
+          commit-message: "chore(gitops): update ${{ inputs.application }} homologation release"
+          title: "chore(gitops): update ${{ inputs.application }} complete release in dev"
+          body: |
+            Atualiza frontend e backend **juntos**, para uma unica versao candidata de homologacao.
+
+            - Repositorio de origem: `${{ inputs.source-repository }}`
+            - Commit: `${{ inputs.source-commit }}`
+            - Registro candidato: `${{ steps.release-update.outputs.candidate }}`
+            - Backend: digest verificado no GHCR e por atestacao
+            - Frontend: digest verificado no GHCR e por atestacao
+            - Workflow receptor: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            **Nao representa aprovacao de homologacao e nao autoriza promocao a producao.**
+            Requer revisao humana; ArgoCD segue a politica configurada no ambiente.
+
+      - name: Publish candidate summary
+        shell: bash
+        env:
+          PR_URL: ${{ steps.pull-request.outputs.pull-request-url }}
+          CANDIDATE: ${{ steps.release-update.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          echo "Registro candidato: $CANDIDATE" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$PR_URL" ]]; then
+            echo "PR: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Nenhuma mudanca pendente no overlay dev." >> "$GITHUB_STEP_SUMMARY"
+          fi

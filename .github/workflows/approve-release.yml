@@ -1,0 +1,274 @@
+name: Approve homologated release
+
+on:
+  workflow_dispatch:
+    inputs:
+      application:
+        description: "Produto a homologar"
+        required: true
+        type: choice
+        options:
+          - apae-geral
+          - apae-atendimento
+          - apae-gestao-escolar
+          - site-comemorativo
+      candidate_commit:
+        description: "SHA completo (40 caracteres) da release candidata integrada em dev"
+        required: true
+        type: string
+      evidence_url:
+        description: "URL do GitHub com evidencias da homologacao (issue, PR ou run)"
+        required: true
+        type: string
+      approval_reason:
+        description: "Resumo da validacao funcional e justificativa da aprovacao"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: approve-${{ inputs.application }}-${{ inputs.candidate_commit }}
+  cancel-in-progress: false
+
+jobs:
+  approve:
+    name: Validate candidate and request approval PR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release-approval
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout approved dev branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: dev
+          path: infra
+          persist-credentials: false
+
+      - name: Install YAML parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/release-validation"
+          "$RUNNER_TEMP/release-validation/bin/pip" install --disable-pip-version-check 'PyYAML==6.0.3'
+
+      - name: Validate candidate, deployed overlay intent and evidence
+        id: validation
+        shell: bash
+        working-directory: infra
+        env:
+          APPLICATION: ${{ inputs.application }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          EVIDENCE_URL: ${{ inputs.evidence_url }}
+          APPROVAL_REASON: ${{ inputs.approval_reason }}
+          APPROVER: ${{ github.actor }}
+          APPROVAL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PYTHON_EXECUTABLE: ${{ runner.temp }}/release-validation/bin/python
+        run: |
+          set -euo pipefail
+          "$PYTHON_EXECUTABLE" - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          from urllib.parse import urlsplit
+          import yaml
+
+          def fail(message):
+              raise SystemExit(f"::error::{message}")
+
+          allowed = {
+              "apae-geral": "IFPBEsp/APAE",
+              "apae-atendimento": "IFPBEsp/APAE-atendimento",
+              "apae-gestao-escolar": "IFPBEsp/APAE-gestao-escolar",
+              "site-comemorativo": "IFPBEsp/apae-site-comemorativo",
+          }
+          application = os.environ["APPLICATION"]
+          if application not in allowed:
+              fail("Aplicacao nao autorizada.")
+          expected_repository = allowed[application]
+
+          sha = os.environ["CANDIDATE_COMMIT"].strip()
+          if not re.fullmatch(r"[0-9a-f]{40}", sha):
+              fail("Forneca um commit completo de 40 caracteres hexadecimais minusculos.")
+
+          evidence = os.environ["EVIDENCE_URL"].strip()
+          parsed = urlsplit(evidence)
+          if (parsed.scheme != "https" or parsed.netloc != "github.com"
+                  or not parsed.path.startswith("/IFPBEsp/")
+                  or len(evidence) > 1000 or any(c in evidence for c in "\r\n")):
+              fail("A evidencia deve ser uma URL HTTPS do GitHub sob IFPBEsp.")
+
+          reason = os.environ["APPROVAL_REASON"].strip()
+          if not 20 <= len(reason) <= 2000:
+              fail("A justificativa da homologacao deve conter entre 20 e 2000 caracteres.")
+
+          candidate_path = Path("releases/candidates") / application / f"{sha}.json"
+          if not candidate_path.is_file():
+              fail("Candidato nao integrado em dev; conclua o PR de homologacao primeiro.")
+
+          try:
+              candidate_bytes = candidate_path.read_bytes()
+              candidate = json.loads(candidate_bytes)
+          except (OSError, ValueError) as exc:
+              fail(f"Registro candidato invalido: {type(exc).__name__}")
+
+          is_single_image = application == "site-comemorativo"
+          if is_single_image:
+              expected = {
+                  "application", "source_repository", "source_commit", "image", "tag",
+                  "digest", "verification_run",
+              }
+          else:
+              expected = {"application", "source_repository", "source_commit", "workflow_run", "images"}
+          if not isinstance(candidate, dict) or set(candidate) != expected:
+              fail("Contrato do registro candidato invalido.")
+          if (candidate["application"] != application
+                  or candidate["source_repository"] != expected_repository
+                  or candidate["source_commit"] != sha):
+              fail("Aplicacao, origem ou commit do candidato nao correspondem.")
+
+          overlay_path = Path("kubernetes") / application / "overlays/dev/kustomization.yaml"
+          if not overlay_path.is_file():
+              fail("Overlay de homologacao ausente em dev (dependencia da issue #92).")
+          try:
+              overlay = yaml.safe_load(overlay_path.read_text(encoding="utf-8"))
+          except (OSError, yaml.YAMLError) as exc:
+              fail(f"Kustomization invalido: {type(exc).__name__}")
+          if not isinstance(overlay, dict) or not isinstance(overlay.get("images"), list):
+              fail("Overlay de homologacao nao possui lista de imagens.")
+
+          def verify_overlay_image(image, digest):
+              matches = [entry for entry in overlay["images"]
+                         if isinstance(entry, dict)
+                         and (entry.get("name") == image
+                              or entry.get("newName") == image)]
+              if len(matches) != 1 or matches[0].get("digest") != digest:
+                  fail(f"Overlay dev nao corresponde ao digest candidato de {image}.")
+              if "newTag" in matches[0]:
+                  fail(f"Overlay dev nao pode manter tag mutavel para {image}.")
+
+          if is_single_image:
+              image = "ghcr.io/ifpbesp/apae-site-comemorativo"
+              if candidate["image"] != image or candidate["tag"] != f"sha-{sha[:7]}":
+                  fail("Imagem ou tag do Site Comemorativo divergente.")
+              digest = candidate["digest"]
+              if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                  fail("Digest do Site Comemorativo invalido.")
+              verification_run = candidate["verification_run"]
+              if not isinstance(verification_run, str) or not re.fullmatch(
+                      r"https://github[.]com/IFPBEsp/APAE-INFRA/actions/runs/[0-9]+", verification_run):
+                  fail("Registro de verificacao do APAE-INFRA invalido.")
+              verify_overlay_image(image, digest)
+          else:
+              run = candidate["workflow_run"]
+              if (not isinstance(run, str)
+                      or not re.fullmatch(r"https://github[.]com/" + re.escape(expected_repository) + r"/actions/runs/[0-9]+", run)):
+                  fail("Workflow de origem invalido.")
+              images = candidate["images"]
+              if not isinstance(images, dict) or set(images) != {"backend", "frontend"}:
+                  fail("Versao candidata incompleta: frontend e backend sao obrigatorios.")
+              for component in ("backend", "frontend"):
+                  item = images[component]
+                  expected_image = f"ghcr.io/ifpbesp/{application}-{component}"
+                  if not isinstance(item, dict) or set(item) != {"image", "tag", "digest", "workflow_run"}:
+                      fail(f"Contrato invalido para {component}.")
+                  if (item["image"] != expected_image or item["tag"] != f"sha-{sha[:7]}"
+                          or item["workflow_run"] != run):
+                      fail(f"Origem ou tag divergente para {component}.")
+                  digest = item["digest"]
+                  if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                      fail(f"Digest invalido para {component}.")
+                  verify_overlay_image(expected_image, digest)
+
+          approval_path = Path("releases/approved") / application / f"{sha}.json"
+          if approval_path.exists():
+              fail("Versao ja possui registro de aprovacao em dev.")
+
+          approval = {
+              "schema_version": 1,
+              "status": "approved",
+              "application": application,
+              "source_repository": candidate["source_repository"],
+              "source_commit": sha,
+              "candidate_path": candidate_path.as_posix(),
+              "candidate_sha256": "sha256:" + hashlib.sha256(candidate_bytes).hexdigest(),
+              "homologation": {
+                  "evidence_url": evidence,
+                  "approval_reason": reason,
+                  "requested_by": os.environ["APPROVER"],
+                  "approval_workflow_run": os.environ["APPROVAL_RUN"],
+              },
+          }
+          if is_single_image:
+              approval.update({
+                  "image": candidate["image"],
+                  "tag": candidate["tag"],
+                  "digest": candidate["digest"],
+                  "verification_run": candidate["verification_run"],
+              })
+          else:
+              approval.update({
+                  "workflow_run": candidate["workflow_run"],
+                  "images": candidate["images"],
+              })
+          approval_path.parent.mkdir(parents=True, exist_ok=True)
+          approval_path.write_text(json.dumps(approval, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"approved_path={approval_path.as_posix()}\n")
+          print("Release candidata coincide com os digests do overlay dev; aprovacao preparada para revisao.")
+          PYTHON
+
+      - name: Generate PR-only GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.IMAGE_UPDATER_APP_ID }}
+          private-key: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
+          owner: IFPBEsp
+          repositories: APAE-INFRA
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open approval record PR on dev
+        id: approval-pr
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          path: infra
+          base: dev
+          branch: release-approval/${{ inputs.application }}/${{ inputs.candidate_commit }}
+          add-paths: releases/approved/${{ inputs.application }}/${{ inputs.candidate_commit }}.json
+          commit-message: "chore(release): request approval for ${{ inputs.application }} ${{ inputs.candidate_commit }}"
+          title: "chore(release): approve ${{ inputs.application }} ${{ inputs.candidate_commit }}"
+          body: |
+            Solicita aprovacao explicita de uma versao homologada em `dev`.
+
+            - Aplicacao: `${{ inputs.application }}`
+            - Commit candidato: `${{ inputs.candidate_commit }}`
+            - Registro de aprovacao: `${{ steps.validation.outputs.approved_path }}`
+            - Evidencia: ${{ inputs.evidence_url }}
+            - Solicitante: `${{ github.actor }}`
+            - Execucao: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            **Revisar a evidencia de homologacao e os digests pertinentes antes do merge.**
+            A aprovacao somente se torna efetiva apos o merge deste PR em `dev`.
+
+      - name: Publish review summary
+        shell: bash
+        env:
+          PR_URL: ${{ steps.approval-pr.outputs.pull-request-url }}
+          APPROVED_PATH: ${{ steps.validation.outputs.approved_path }}
+        run: |
+          set -euo pipefail
+          echo "Registro de aprovacao proposto: $APPROVED_PATH" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$PR_URL" ]]; then
+            echo "PR para revisao: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Nenhum PR novo foi criado; verifique se ja existe alteracao pendente." >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -8,6 +8,10 @@ on:
       - 'tests/test_main_image_policy.py'
       - '.github/workflows/gitops-workflows-test.yml'
       - 'tests/test_update_image_overlay.py'
+      - '.github/workflows/approve-release.yml'
+      - '.github/workflows/promote-release.yml'
+      - '.github/workflows/rollback-release.yml'
+      - 'scripts/ci/**'
       - '.github/actions/setup-kustomize/**'
 
 permissions:

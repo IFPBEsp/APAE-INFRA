@@ -1,0 +1,375 @@
+name: Roll back production to previously deployed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      application:
+        description: 'Produto a ser restaurado em producao'
+        required: true
+        type: choice
+        options:
+          - apae-geral
+          - apae-atendimento
+          - apae-gestao-escolar
+          - site-comemorativo
+      candidate_commit:
+        description: 'SHA completo (40 caracteres) de uma versao aprovada e ja presente no historico de prod'
+        required: true
+        type: string
+      rollback_reason:
+        description: 'Motivo do rollback e referencia do incidente'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-promotion-${{ inputs.application }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Verify prior deployment and request rollback PR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production-promotion
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout trusted automation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Checkout merged approvals from dev
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: dev
+          path: approved-dev
+          persist-credentials: false
+
+      - name: Validate approved release record
+        id: approval
+        shell: bash
+        env:
+          APPLICATION: ${{ inputs.application }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          ROLLBACK_REASON: ${{ inputs.rollback_reason }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+
+          def fail(message):
+              raise SystemExit(f'::error::Rollback bloqueado: {message}')
+
+          sha = os.environ['CANDIDATE_COMMIT'].strip()
+          reason = os.environ['ROLLBACK_REASON'].strip()
+          if not re.fullmatch(r'[0-9a-f]{40}', sha):
+              fail('SHA do candidato invalido')
+          if not 20 <= len(reason) <= 2000 or '\r' in reason or '\n' in reason:
+              fail('motivo deve conter entre 20 e 2000 caracteres em uma linha')
+
+          application = os.environ['APPLICATION']
+          allowed_repositories = {
+              'apae-geral': 'IFPBEsp/APAE',
+              'apae-atendimento': 'IFPBEsp/APAE-atendimento',
+              'apae-gestao-escolar': 'IFPBEsp/APAE-gestao-escolar',
+              'site-comemorativo': 'IFPBEsp/apae-site-comemorativo',
+          }
+          if application not in allowed_repositories:
+              fail('aplicacao nao autorizada')
+          expected_repository = allowed_repositories[application]
+
+          base = Path('approved-dev')
+          relative_candidate = Path('releases/candidates') / application / f'{sha}.json'
+          relative_approval = Path('releases/approved') / application / f'{sha}.json'
+          if not (base / relative_candidate).is_file() or not (base / relative_approval).is_file():
+              fail('candidato e aprovacao precisam estar integrados em dev')
+          candidate_bytes = (base / relative_candidate).read_bytes()
+          try:
+              candidate = json.loads(candidate_bytes)
+              approved = json.loads((base / relative_approval).read_bytes())
+          except (ValueError, OSError):
+              fail('registros JSON invalidos')
+
+          is_site = application == 'site-comemorativo'
+          expected_candidate = (
+              {'application', 'source_repository', 'source_commit', 'image', 'tag', 'digest', 'verification_run'}
+              if is_site else
+              {'application', 'source_repository', 'source_commit', 'workflow_run', 'images'}
+          )
+          expected_approval = {
+              'schema_version', 'status', 'application', 'source_repository',
+              'source_commit', 'candidate_path', 'candidate_sha256', 'homologation',
+          } | ({'image', 'tag', 'digest', 'verification_run'} if is_site else {'workflow_run', 'images'})
+          if not isinstance(candidate, dict) or set(candidate) != expected_candidate:
+              fail('contrato de candidato invalido')
+          if not isinstance(approved, dict) or set(approved) != expected_approval:
+              fail('contrato de aprovacao invalido')
+          if type(approved['schema_version']) is not int or approved['schema_version'] != 1 or approved['status'] != 'approved':
+              fail('registro nao representa uma aprovacao valida')
+          if (candidate['application'], candidate['source_repository'], candidate['source_commit']) != (
+              application, expected_repository, sha,
+          ):
+              fail('aplicacao, repo ou SHA divergentes')
+          for field in expected_candidate:
+              if approved[field] != candidate[field]:
+                  fail(f'aprovacao diverge do candidato: {field}')
+          if approved['candidate_path'] != relative_candidate.as_posix():
+              fail('caminho do candidato divergente')
+          if approved['candidate_sha256'] != 'sha256:' + hashlib.sha256(candidate_bytes).hexdigest():
+              fail('integridade do candidato invalida')
+          homologation = approved['homologation']
+          if not isinstance(homologation, dict) or set(homologation) != {
+              'evidence_url', 'approval_reason', 'requested_by', 'approval_workflow_run',
+          } or not all(isinstance(value, str) and value.strip() for value in homologation.values()):
+              fail('evidencia de homologacao incompleta')
+          if is_site:
+              if candidate['image'] != 'ghcr.io/ifpbesp/apae-site-comemorativo':
+                  fail('imagem nao autorizada para o site comemorativo')
+              if candidate['tag'] != f'sha-{sha[:7]}':
+                  fail('tag da imagem do site divergente')
+              if not isinstance(candidate['digest'], str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', candidate['digest']):
+                  fail('digest invalido para o site')
+              if not isinstance(candidate['verification_run'], str) or not re.fullmatch(
+                  r'https://github[.]com/IFPBEsp/APAE-INFRA/actions/runs/[0-9]+', candidate['verification_run']
+              ):
+                  fail('verificacao da imagem do site invalida')
+          else:
+              run = candidate['workflow_run']
+              if not isinstance(run, str) or not re.fullmatch(
+                  r'https://github[.]com/' + re.escape(expected_repository) + r'/actions/runs/[0-9]+', run
+              ):
+                  fail('workflow de origem invalido')
+              images = candidate['images']
+              if not isinstance(images, dict) or set(images) != {'backend', 'frontend'}:
+                  fail('frontend e backend obrigatorios')
+              for component in ('backend', 'frontend'):
+                  item = images[component]
+                  if not isinstance(item, dict) or set(item) != {'image', 'tag', 'digest', 'workflow_run'}:
+                      fail(f'{component}: contrato invalido')
+                  if item['image'] != f'ghcr.io/ifpbesp/{application}-{component}':
+                      fail(f'{component}: imagem nao autorizada')
+                  if item['tag'] != f'sha-{sha[:7]}' or item['workflow_run'] != run:
+                      fail(f'{component}: tag ou workflow divergente')
+                  if not isinstance(item['digest'], str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', item['digest']):
+                      fail(f'{component}: digest invalido')
+
+          destination = Path(os.environ['RUNNER_TEMP']) / 'rollback-approved-release.json'
+          destination.write_text(json.dumps(candidate, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'commit={sha}\n')
+          print('Integridade dos registros de candidato e aprovacao confirmada.')
+          PYTHON
+
+      - name: Generate infra-only GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.IMAGE_UPDATER_APP_ID }}
+          private-key: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
+          owner: IFPBEsp
+          repositories: APAE-INFRA
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout production with complete history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: main
+          path: production
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Set up approved Kustomize
+        uses: ./.github/actions/setup-kustomize
+
+      - name: Install YAML parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/rollback-yaml"
+          "$RUNNER_TEMP/rollback-yaml/bin/pip" install --disable-pip-version-check 'PyYAML==6.0.3'
+
+      - name: Confirm historical production deployment and prepare rollback
+        id: rollback
+        shell: bash
+        working-directory: production
+        env:
+          PYTHON: ${{ runner.temp }}/rollback-yaml/bin/python
+        run: |
+          set -euo pipefail
+          "$PYTHON" - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import yaml
+
+          def fail(message):
+              raise SystemExit(f'::error::Rollback bloqueado: {message}')
+
+          release = json.loads((Path(os.environ['RUNNER_TEMP']) / 'rollback-approved-release.json').read_text())
+          path = Path('kubernetes') / release['application'] / 'overlays/prod/kustomization.yaml'
+          if not path.is_file():
+              fail(f'overlay de producao nao existe em main para {release["application"]}; depende dos manifests integrados')
+
+          if release['application'] == 'site-comemorativo':
+              targets = {release['image']: release['digest']}
+          else:
+              targets = {
+                  release['images'][component]['image']: release['images'][component]['digest']
+                  for component in ('backend', 'frontend')
+              }
+
+          def entries_for(content):
+              try:
+                  parsed = yaml.safe_load(content)
+              except yaml.YAMLError:
+                  fail('kustomization historico invalido')
+              if not isinstance(parsed, dict) or not isinstance(parsed.get('images'), list):
+                  fail('kustomization sem lista de imagens')
+              selected = {}
+              for image in targets:
+                  matches = [item for item in parsed['images'] if isinstance(item, dict)
+                             and item.get('newName', item.get('name')) == image]
+                  if len(matches) != 1:
+                      return None
+                  item = matches[0]
+                  if 'newTag' in item or not isinstance(item.get('digest'), str):
+                      return None
+                  selected[image] = item['digest']
+              return selected
+
+          current = entries_for(path.read_text(encoding='utf-8'))
+          if current is None:
+              fail('overlay prod atual nao possui regras imutaveis para todas as imagens da release')
+          if current == targets:
+              fail('versao ja esta declarada em producao; rollback sem alteracoes')
+
+          # Only merged history of the main branch qualifies as prior production intent.
+          # This is evidence of prior GitOps configuration, not proof of a healthy cluster deployment.
+          history = subprocess.run(
+              ['git', 'log', '--first-parent', '--format=%H', 'HEAD', '--', path.as_posix()],
+              check=True, text=True, capture_output=True,
+          ).stdout.splitlines()
+          prior_commit = None
+          for commit in history:
+              historical = subprocess.run(
+                  ['git', 'show', f'{commit}:{path.as_posix()}'],
+                  text=True, capture_output=True,
+              )
+              if historical.returncode != 0:
+                  continue
+              if entries_for(historical.stdout) == targets:
+                  prior_commit = commit
+                  break
+          if not prior_commit:
+              fail('combinacao de digests nunca registrada no historico de main')
+
+          def render():
+              result = subprocess.run(
+                  ['kustomize', 'build', str(path.parent)], text=True, capture_output=True,
+              )
+              if result.returncode:
+                  fail('kustomize build falhou: ' + result.stderr[:500])
+              images = []
+              def visit(node):
+                  if isinstance(node, dict):
+                      for key, value in node.items():
+                          if key in ('containers', 'initContainers', 'ephemeralContainers'):
+                              if not isinstance(value, list):
+                                  fail('containers invalidos')
+                              for item in value:
+                                  if isinstance(item, dict) and isinstance(item.get('image'), str):
+                                      images.append(item['image'])
+                          else:
+                              visit(value)
+                  elif isinstance(node, list):
+                      for item in node:
+                          visit(item)
+              for document in yaml.safe_load_all(result.stdout):
+                  visit(document)
+              return images
+
+          def image_name(reference):
+              return reference.split('@', 1)[0].split(':', 1)[0]
+
+          before = render()
+          for image in targets:
+              if not any(image_name(ref) == image for ref in before):
+                  fail('imagem ausente nos workloads: ' + image)
+
+          data = yaml.safe_load(path.read_text(encoding='utf-8'))
+          for image, digest in targets.items():
+              match = next(item for item in data['images'] if isinstance(item, dict)
+                           and item.get('newName', item.get('name')) == image)
+              match.pop('newTag', None)
+              match['digest'] = digest
+          path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding='utf-8')
+
+          after = render()
+          for image, digest in targets.items():
+              wanted = f'{image}@{digest}'
+              if wanted not in after or any(image_name(ref) == image and ref != wanted for ref in after):
+                  fail('digest de rollback nao corresponde ao renderizado: ' + image)
+          if sorted(ref for ref in before if image_name(ref) not in targets) != sorted(
+              ref for ref in after if image_name(ref) not in targets
+          ):
+              fail('imagens nao relacionadas foram alteradas')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'previous_main_commit={prior_commit}\n')
+          print(f'Rollback preparado para versao previamente registrada em main: {prior_commit}.')
+          PYTHON
+
+      - name: Open rollback PR for production
+        id: rollback-pr
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          path: production
+          base: main
+          branch: rollback/${{ inputs.application }}/${{ steps.approval.outputs.commit }}
+          add-paths: kubernetes/${{ inputs.application }}/overlays/prod/kustomization.yaml
+          commit-message: 'chore(release): rollback ${{ inputs.application }} to ${{ steps.approval.outputs.commit }}'
+          title: 'chore(release): rollback ${{ inputs.application }} to approved ${{ steps.approval.outputs.commit }}'
+          body: |
+            Solicita rollback de producao para uma versao previamente aprovada e registrada em `main`.
+
+            - Produto: `${{ inputs.application }}`
+            - Versao alvo: `${{ steps.approval.outputs.commit }}`
+            - Registro aprovado: `releases/approved/${{ inputs.application }}/${{ steps.approval.outputs.commit }}.json` em `dev`
+            - Evidencia de configuracao anterior em `main`: `${{ steps.rollback.outputs.previous_main_commit }}`
+            - Imagem(ns) do produto: mesmos digests da versao aprovada
+            - Solicitante: `${{ github.actor }}`
+            - Motivo: ${{ inputs.rollback_reason }}
+            - Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            **Nao executa build, publicacao no GHCR nem deploy direto.** Exige revisao humana antes do merge.
+            Historico de `main` comprova configuracao declarada, nao saude ou execucao real do cluster.
+
+      - name: Summarize rollback request
+        shell: bash
+        env:
+          PR_URL: ${{ steps.rollback-pr.outputs.pull-request-url }}
+          SOURCE_COMMIT: ${{ steps.approval.outputs.commit }}
+        run: |
+          set -euo pipefail
+          echo "Release alvo: $SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$PR_URL" ]]; then
+            echo "PR de rollback: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Nenhum PR criado (sem diferencas ou PR ja aberto).' >> "$GITHUB_STEP_SUMMARY"
+          fi
