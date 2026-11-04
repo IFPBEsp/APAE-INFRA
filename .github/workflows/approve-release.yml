@@ -3,6 +3,15 @@ name: Approve homologated release
 on:
   workflow_dispatch:
     inputs:
+      application:
+        description: "Produto a homologar"
+        required: true
+        type: choice
+        options:
+          - apae-geral
+          - apae-atendimento
+          - apae-gestao-escolar
+          - site-comemorativo
       candidate_commit:
         description: "SHA completo (40 caracteres) da release candidata integrada em dev"
         required: true
@@ -20,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: approve-apae-geral-${{ inputs.candidate_commit }}
+  group: approve-${{ inputs.application }}-${{ inputs.candidate_commit }}
   cancel-in-progress: false
 
 jobs:
@@ -52,6 +61,7 @@ jobs:
         shell: bash
         working-directory: infra
         env:
+          APPLICATION: ${{ inputs.application }}
           CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
           EVIDENCE_URL: ${{ inputs.evidence_url }}
           APPROVAL_REASON: ${{ inputs.approval_reason }}
@@ -72,6 +82,17 @@ jobs:
           def fail(message):
               raise SystemExit(f"::error::{message}")
 
+          allowed = {
+              "apae-geral": "IFPBEsp/APAE",
+              "apae-atendimento": "IFPBEsp/APAE-atendimento",
+              "apae-gestao-escolar": "IFPBEsp/APAE-gestao-escolar",
+              "site-comemorativo": "IFPBEsp/apae-site-comemorativo",
+          }
+          application = os.environ["APPLICATION"]
+          if application not in allowed:
+              fail("Aplicacao nao autorizada.")
+          expected_repository = allowed[application]
+
           sha = os.environ["CANDIDATE_COMMIT"].strip()
           if not re.fullmatch(r"[0-9a-f]{40}", sha):
               fail("Forneca um commit completo de 40 caracteres hexadecimais minusculos.")
@@ -87,7 +108,7 @@ jobs:
           if not 20 <= len(reason) <= 2000:
               fail("A justificativa da homologacao deve conter entre 20 e 2000 caracteres.")
 
-          candidate_path = Path("releases/candidates/apae-geral") / f"{sha}.json"
+          candidate_path = Path("releases/candidates") / application / f"{sha}.json"
           if not candidate_path.is_file():
               fail("Candidato nao integrado em dev; conclua o PR de homologacao primeiro.")
 
@@ -97,23 +118,22 @@ jobs:
           except (OSError, ValueError) as exc:
               fail(f"Registro candidato invalido: {type(exc).__name__}")
 
-          expected = {"application", "source_repository", "source_commit", "workflow_run", "images"}
+          is_single_image = application == "site-comemorativo"
+          if is_single_image:
+              expected = {
+                  "application", "source_repository", "source_commit", "image", "tag",
+                  "digest", "verification_run",
+              }
+          else:
+              expected = {"application", "source_repository", "source_commit", "workflow_run", "images"}
           if not isinstance(candidate, dict) or set(candidate) != expected:
               fail("Contrato do registro candidato invalido.")
-          if (candidate["application"] != "apae-geral"
-                  or candidate["source_repository"] != "IFPBEsp/APAE"
+          if (candidate["application"] != application
+                  or candidate["source_repository"] != expected_repository
                   or candidate["source_commit"] != sha):
               fail("Aplicacao, origem ou commit do candidato nao correspondem.")
-          run = candidate["workflow_run"]
-          if (not isinstance(run, str)
-                  or not re.fullmatch(r"https://github[.]com/IFPBEsp/APAE/actions/runs/[0-9]+", run)):
-              fail("Workflow de origem invalido.")
 
-          images = candidate["images"]
-          if not isinstance(images, dict) or set(images) != {"backend", "frontend"}:
-              fail("Versao candidata incompleta: frontend e backend sao obrigatorios.")
-
-          overlay_path = Path("kubernetes/apae-geral/overlays/dev/kustomization.yaml")
+          overlay_path = Path("kubernetes") / application / "overlays/dev/kustomization.yaml"
           if not overlay_path.is_file():
               fail("Overlay de homologacao ausente em dev (dependencia da issue #92).")
           try:
@@ -123,39 +143,59 @@ jobs:
           if not isinstance(overlay, dict) or not isinstance(overlay.get("images"), list):
               fail("Overlay de homologacao nao possui lista de imagens.")
 
-          for component in ("backend", "frontend"):
-              item = images[component]
-              expected_image = f"ghcr.io/ifpbesp/apae-geral-{component}"
-              if not isinstance(item, dict) or set(item) != {"image", "tag", "digest", "workflow_run"}:
-                  fail(f"Contrato invalido para {component}.")
-              if (item["image"] != expected_image or item["tag"] != f"sha-{sha[:7]}"
-                      or item["workflow_run"] != run):
-                  fail(f"Origem ou tag divergente para {component}.")
-              digest = item["digest"]
-              if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
-                  fail(f"Digest invalido para {component}.")
-
+          def verify_overlay_image(image, digest):
               matches = [entry for entry in overlay["images"]
                          if isinstance(entry, dict)
-                         and (entry.get("name") == expected_image
-                              or entry.get("newName") == expected_image)]
+                         and (entry.get("name") == image
+                              or entry.get("newName") == image)]
               if len(matches) != 1 or matches[0].get("digest") != digest:
-                  fail(f"Overlay dev nao corresponde ao digest candidato de {component}.")
+                  fail(f"Overlay dev nao corresponde ao digest candidato de {image}.")
               if "newTag" in matches[0]:
-                  fail(f"Overlay dev nao pode manter tag mutavel para {component}.")
+                  fail(f"Overlay dev nao pode manter tag mutavel para {image}.")
 
-          approval_path = Path("releases/approved/apae-geral") / f"{sha}.json"
+          if is_single_image:
+              image = "ghcr.io/ifpbesp/apae-site-comemorativo"
+              if candidate["image"] != image or candidate["tag"] != f"sha-{sha[:7]}":
+                  fail("Imagem ou tag do Site Comemorativo divergente.")
+              digest = candidate["digest"]
+              if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                  fail("Digest do Site Comemorativo invalido.")
+              verification_run = candidate["verification_run"]
+              if not isinstance(verification_run, str) or not re.fullmatch(
+                      r"https://github[.]com/IFPBEsp/APAE-INFRA/actions/runs/[0-9]+", verification_run):
+                  fail("Registro de verificacao do APAE-INFRA invalido.")
+              verify_overlay_image(image, digest)
+          else:
+              run = candidate["workflow_run"]
+              if (not isinstance(run, str)
+                      or not re.fullmatch(r"https://github[.]com/" + re.escape(expected_repository) + r"/actions/runs/[0-9]+", run)):
+                  fail("Workflow de origem invalido.")
+              images = candidate["images"]
+              if not isinstance(images, dict) or set(images) != {"backend", "frontend"}:
+                  fail("Versao candidata incompleta: frontend e backend sao obrigatorios.")
+              for component in ("backend", "frontend"):
+                  item = images[component]
+                  expected_image = f"ghcr.io/ifpbesp/{application}-{component}"
+                  if not isinstance(item, dict) or set(item) != {"image", "tag", "digest", "workflow_run"}:
+                      fail(f"Contrato invalido para {component}.")
+                  if (item["image"] != expected_image or item["tag"] != f"sha-{sha[:7]}"
+                          or item["workflow_run"] != run):
+                      fail(f"Origem ou tag divergente para {component}.")
+                  digest = item["digest"]
+                  if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                      fail(f"Digest invalido para {component}.")
+                  verify_overlay_image(expected_image, digest)
+
+          approval_path = Path("releases/approved") / application / f"{sha}.json"
           if approval_path.exists():
               fail("Versao ja possui registro de aprovacao em dev.")
 
           approval = {
               "schema_version": 1,
               "status": "approved",
-              "application": "apae-geral",
+              "application": application,
               "source_repository": candidate["source_repository"],
               "source_commit": sha,
-              "workflow_run": run,
-              "images": images,
               "candidate_path": candidate_path.as_posix(),
               "candidate_sha256": "sha256:" + hashlib.sha256(candidate_bytes).hexdigest(),
               "homologation": {
@@ -165,6 +205,18 @@ jobs:
                   "approval_workflow_run": os.environ["APPROVAL_RUN"],
               },
           }
+          if is_single_image:
+              approval.update({
+                  "image": candidate["image"],
+                  "tag": candidate["tag"],
+                  "digest": candidate["digest"],
+                  "verification_run": candidate["verification_run"],
+              })
+          else:
+              approval.update({
+                  "workflow_run": candidate["workflow_run"],
+                  "images": candidate["images"],
+              })
           approval_path.parent.mkdir(parents=True, exist_ok=True)
           approval_path.write_text(json.dumps(approval, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
@@ -190,20 +242,21 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           path: infra
           base: dev
-          branch: release-approval/apae-geral/${{ inputs.candidate_commit }}
-          add-paths: releases/approved/apae-geral/*.json
-          commit-message: "chore(release): request approval for apae-geral ${{ inputs.candidate_commit }}"
-          title: "chore(release): approve apae-geral ${{ inputs.candidate_commit }}"
+          branch: release-approval/${{ inputs.application }}/${{ inputs.candidate_commit }}
+          add-paths: releases/approved/${{ inputs.application }}/${{ inputs.candidate_commit }}.json
+          commit-message: "chore(release): request approval for ${{ inputs.application }} ${{ inputs.candidate_commit }}"
+          title: "chore(release): approve ${{ inputs.application }} ${{ inputs.candidate_commit }}"
           body: |
             Solicita aprovacao explicita de uma versao homologada em `dev`.
 
+            - Aplicacao: `${{ inputs.application }}`
             - Commit candidato: `${{ inputs.candidate_commit }}`
             - Registro de aprovacao: `${{ steps.validation.outputs.approved_path }}`
             - Evidencia: ${{ inputs.evidence_url }}
             - Solicitante: `${{ github.actor }}`
             - Execucao: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-            **Revisar a evidencia de homologacao e ambos os digests antes do merge.**
+            **Revisar a evidencia de homologacao e os digests pertinentes antes do merge.**
             A aprovacao somente se torna efetiva apos o merge deste PR em `dev`.
 
       - name: Publish review summary

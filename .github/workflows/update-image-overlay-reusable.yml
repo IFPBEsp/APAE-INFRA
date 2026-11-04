@@ -141,16 +141,10 @@ jobs:
           fi
 
           case "$SOURCE_REPOSITORY:$APPLICATION:$IMAGE" in
-            IFPBEsp/APAE:apae-geral:ghcr.io/ifpbesp/apae-geral-backend|\
-            IFPBEsp/APAE:apae-geral:ghcr.io/ifpbesp/apae-geral-frontend|\
-            IFPBEsp/APAE-atendimento:apae-atendimento:ghcr.io/ifpbesp/apae-atendimento-backend|\
-            IFPBEsp/APAE-atendimento:apae-atendimento:ghcr.io/ifpbesp/apae-atendimento-frontend|\
-            IFPBEsp/APAE-gestao-escolar:apae-gestao-escolar:ghcr.io/ifpbesp/apae-gestao-escolar-backend|\
-            IFPBEsp/APAE-gestao-escolar:apae-gestao-escolar:ghcr.io/ifpbesp/apae-gestao-escolar-frontend|\
             IFPBEsp/apae-site-comemorativo:site-comemorativo:ghcr.io/ifpbesp/apae-site-comemorativo)
               ;;
             *)
-              echo "::error::Combinação de repositório, aplicação e imagem não autorizada."
+              echo "::error::Fluxo individual reservado ao Site Comemorativo."
               exit 1
               ;;
           esac
@@ -305,9 +299,13 @@ jobs:
           IMAGE_DIGEST: ${{ inputs.image-digest }}
           APPLICATION: ${{ inputs.application }}
           ENVIRONMENT: ${{ inputs.environment }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          VERIFICATION_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/gitops-yaml/bin/python" - <<'PYTHON'
+          import json
           import os
           import subprocess
           from pathlib import Path
@@ -347,7 +345,7 @@ jobs:
 
           data = yaml.safe_load(path.read_text())
           entries = data.setdefault("images", [])
-          matches = [entry for entry in entries if entry.get("newName", entry["name"]) == image]
+          matches = [entry for entry in entries if entry.get("newName", entry.get("name")) == image]
           if len(matches) > 1:
               raise SystemExit("Múltiplas regras de imagem correspondem à imagem solicitada.")
           entry = matches[0] if matches else {"name": image}
@@ -371,10 +369,34 @@ jobs:
           ):
               raise SystemExit("A atualização alterou imagens de outros serviços.")
 
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+          # Registra a versão candidata somente após validação do GHCR,
+          # da atestação e da renderização do Kustomize.
+          # O registro segue junto do overlay no mesmo PR para dev.
+          if os.environ["APPLICATION"] != "site-comemorativo":
+              raise SystemExit("::error::Candidato individual não autorizado.")
+          commit = os.environ["SOURCE_COMMIT"]
+          tag = os.environ["IMAGE_TAG"]
+          candidate = {
+              "application": "site-comemorativo",
+              "source_repository": "IFPBEsp/apae-site-comemorativo",
+              "source_commit": commit,
+              "image": image,
+              "tag": tag,
+              "digest": digest,
+              "verification_run": os.environ["VERIFICATION_RUN"],
+          }
+          candidate_path = Path("releases/candidates/site-comemorativo") / f"{commit}.json"
+          candidate_path.parent.mkdir(parents=True, exist_ok=True)
+          content = json.dumps(candidate, indent=2, sort_keys=True) + "\n"
+          if candidate_path.exists() and candidate_path.read_text(encoding="utf-8") != content:
+              raise SystemExit("::error::Candidato existente diverge do digest verificado.")
+          candidate_path.write_text(content, encoding="utf-8")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               image_id = image.rsplit("/", 1)[-1]
               branch = f"gitops/{os.environ['APPLICATION']}/{os.environ['ENVIRONMENT']}/{image_id}"
               output.write(f"branch={branch}\n")
+              output.write(f"candidate={candidate_path.as_posix()}\n")
           PYTHON
 
       - name: Create or update image pull request
@@ -385,7 +407,9 @@ jobs:
           path: infra
           base: dev
           branch: ${{ steps.image-update.outputs.branch }}
-          add-paths: ${{ steps.overlay.outputs.path }}/kustomization.yaml
+          add-paths: |
+            ${{ steps.overlay.outputs.path }}/kustomization.yaml
+            ${{ steps.image-update.outputs.candidate }}
           commit-message: "chore(gitops): update ${{ inputs.application }} image to ${{ inputs.image-tag }}"
           title: "chore(gitops): update ${{ inputs.application }} (${{ inputs.image }}) to ${{ inputs.image-tag }}"
           body: |
@@ -396,6 +420,7 @@ jobs:
             - Tag: `${{ inputs.image-tag }}`
             - Referência imutável: `${{ inputs.image }}@${{ inputs.image-digest }}`
             - Overlay: `${{ steps.overlay.outputs.path }}`
+            - Registro candidato: `${{ steps.image-update.outputs.candidate }}`
             - Execução: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
             A tag e seu digest foram verificados no GHCR; a atestação de proveniência também foi validada.
@@ -464,9 +489,16 @@ jobs:
               fail("somente homologacao dev e permitida")
           if any(os.environ[key] for key in ("SINGLE_IMAGE", "SINGLE_TAG", "SINGLE_DIGEST")):
               fail("nao combine release-json com entradas individuais")
-          if os.environ["APPLICATION"] != "apae-geral":
+          allowed_releases = {
+              "apae-geral": "IFPBEsp/APAE",
+              "apae-atendimento": "IFPBEsp/APAE-atendimento",
+              "apae-gestao-escolar": "IFPBEsp/APAE-gestao-escolar",
+          }
+          application = os.environ["APPLICATION"]
+          expected_repository = allowed_releases.get(application)
+          if expected_repository is None:
               fail("aplicacao sem contrato de release conjunto")
-          if os.environ["SOURCE_REPOSITORY"] != "IFPBEsp/APAE":
+          if os.environ["SOURCE_REPOSITORY"] != expected_repository:
               fail("repositorio de origem nao autorizado")
           commit = os.environ["SOURCE_COMMIT"]
           if not re.fullmatch(r"[a-f0-9]{40}", commit):
@@ -481,12 +513,12 @@ jobs:
           }:
               fail("campos da versao invalidos")
           if (release["application"], release["source_repository"], release["source_commit"]) != (
-              "apae-geral", "IFPBEsp/APAE", commit
+              application, expected_repository, commit
           ):
               fail("metadados inconsistentes")
           run_url = release["workflow_run"]
           if not isinstance(run_url, str) or not re.fullmatch(
-              r"https://github[.]com/IFPBEsp/APAE/actions/runs/[0-9]+", run_url
+              r"https://github[.]com/" + re.escape(expected_repository) + r"/actions/runs/[0-9]+", run_url
           ):
               fail("execucao de publicacao invalida")
           images = release["images"]
@@ -497,7 +529,7 @@ jobs:
               item = images[component]
               if not isinstance(item, dict) or set(item) != {"image", "tag", "digest", "workflow_run"}:
                   fail(f"{component}: campos invalidos")
-              if item["image"] != f"ghcr.io/ifpbesp/apae-geral-{component}":
+              if item["image"] != f"ghcr.io/ifpbesp/{application}-{component}":
                   fail(f"{component}: imagem nao autorizada")
               if item["tag"] != "sha-" + commit[:7]:
                   fail(f"{component}: tag divergente do commit")
@@ -598,6 +630,7 @@ jobs:
         working-directory: infra
         env:
           SOURCE_COMMIT: ${{ inputs.source-commit }}
+          APPLICATION: ${{ inputs.application }}
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/gitops-yaml/bin/python" - <<'PYTHON'
@@ -609,7 +642,10 @@ jobs:
           import yaml
 
           release = json.loads((Path(os.environ["RUNNER_TEMP"]) / "verified-release-input.json").read_text())
-          overlay = Path("kubernetes/apae-geral/overlays/dev")
+          application = os.environ["APPLICATION"]
+          if application not in {"apae-geral", "apae-atendimento", "apae-gestao-escolar"}:
+              raise SystemExit("::error::Aplicacao nao autorizada para release conjunta.")
+          overlay = Path("kubernetes") / application / "overlays/dev"
           path = overlay / "kustomization.yaml"
           if not path.is_file():
               raise SystemExit("::error::Overlay dev ausente; depende da issue #92.")
@@ -675,11 +711,13 @@ jobs:
           ):
               raise SystemExit("::error::Outras imagens foram alteradas")
 
-          candidate = Path("releases/candidates/apae-geral") / (release["source_commit"] + ".json")
+          candidate = Path("releases/candidates") / application / (release["source_commit"] + ".json")
           candidate.parent.mkdir(parents=True, exist_ok=True)
           candidate.write_text(json.dumps(release, indent=2, sort_keys=True) + "\n")
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"candidate={candidate.as_posix()}\n")
+              output.write(f"overlay={path.as_posix()}\n")
+              output.write(f"branch=gitops/{application}/dev/release\n")
           PYTHON
 
       - name: Create or update complete release PR
@@ -689,12 +727,12 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           path: infra
           base: dev
-          branch: gitops/apae-geral/dev/release
+          branch: ${{ steps.release-update.outputs.branch }}
           add-paths: |
-            kubernetes/apae-geral/overlays/dev/kustomization.yaml
-            releases/candidates/apae-geral/*.json
-          commit-message: "chore(gitops): update apae-geral homologation release"
-          title: "chore(gitops): update apae-geral complete release in dev"
+            ${{ steps.release-update.outputs.overlay }}
+            ${{ steps.release-update.outputs.candidate }}
+          commit-message: "chore(gitops): update ${{ inputs.application }} homologation release"
+          title: "chore(gitops): update ${{ inputs.application }} complete release in dev"
           body: |
             Atualiza frontend e backend **juntos**, para uma unica versao candidata de homologacao.
 

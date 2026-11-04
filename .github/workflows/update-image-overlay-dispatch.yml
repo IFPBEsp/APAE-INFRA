@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
+
     outputs:
       application: ${{ steps.payload.outputs.application }}
       environment: ${{ steps.payload.outputs.environment }}
@@ -25,6 +26,7 @@ jobs:
       image-digest: ${{ steps.payload.outputs.image_digest }}
       source-repository: ${{ steps.payload.outputs.source_repository }}
       source-commit: ${{ steps.payload.outputs.source_commit }}
+
     steps:
       - name: Validate single-image payload
         id: payload
@@ -33,60 +35,113 @@ jobs:
           PAYLOAD: ${{ toJSON(github.event.client_payload) }}
         run: |
           set -euo pipefail
+
           python3 - <<'PYTHON'
           import json
           import os
           import re
 
-          payload = json.loads(os.environ["PAYLOAD"])
+          def reject(reason):
+              raise SystemExit(f"::error::Payload de imagem inválido: {reason}")
+
+          try:
+              payload = json.loads(os.environ["PAYLOAD"])
+          except (KeyError, json.JSONDecodeError):
+              reject("JSON ausente ou inválido")
+
+          if not isinstance(payload, dict):
+              reject("estrutura principal inválida")
+
           required = {
-              "application", "image", "image_tag", "image_digest",
-              "source_repository", "source_commit",
+              "application",
+              "image",
+              "image_tag",
+              "image_digest",
+              "source_repository",
+              "source_commit",
           }
-          if not isinstance(payload, dict) or not required.issubset(payload):
-              raise SystemExit("::error::Payload de imagem incompleto.")
+
+          if not required.issubset(payload):
+              reject("campos obrigatórios ausentes")
+
           if set(payload) - required - {"environment"}:
-              raise SystemExit("::error::Payload de imagem contém campos desconhecidos.")
+              reject("campos desconhecidos")
+
           payload.setdefault("environment", "dev")
+
           if any(
-              not isinstance(value, str) or not value or len(value) > 255
+              not isinstance(value, str)
+              or not value
+              or len(value) > 255
               or any(char in value for char in "\r\n")
               for value in payload.values()
           ):
-              raise SystemExit("::error::Campos de imagem inválidos.")
+              reject("campos inválidos")
+
           if payload["environment"] != "dev":
-              raise SystemExit("::error::Notificação comum não pode atualizar produção.")
-          if payload["application"] in {
-              "apae-geral", "apae-atendimento", "apae-gestao-escolar"
-          }:
-              raise SystemExit(
-                  "::error::Aplicações com múltiplos componentes devem notificar "
-                  "uma versão completa via gitops-release-published."
-              )
-          if not re.fullmatch(r"[0-9a-f]{40}", payload["source_commit"]):
-              raise SystemExit("::error::Commit de origem inválido.")
-          if not re.fullmatch(r"sha-[0-9a-f]{7,40}", payload["image_tag"]):
-              raise SystemExit("::error::Tag inválida.")
-          if payload["image_tag"][4:] != payload["source_commit"][:len(payload["image_tag"]) - 4]:
-              raise SystemExit("::error::Tag divergente do commit.")
-          if not re.fullmatch(r"sha256:[0-9a-f]{64}", payload["image_digest"]):
-              raise SystemExit("::error::Digest inválido.")
-          allowed = {
-              ("IFPBEsp/apae-site-comemorativo", "site-comemorativo", "ghcr.io/ifpbesp/apae-site-comemorativo"),
+              reject("atualização direta de produção não permitida")
+
+          # Somente produtos com uma imagem podem usar
+          # o fluxo individual.
+          allowed_images = {
+              "site-comemorativo": {
+                  "repository": "IFPBEsp/apae-site-comemorativo",
+                  "image": "ghcr.io/ifpbesp/apae-site-comemorativo",
+              },
           }
-          actual = (payload["source_repository"], payload["application"], payload["image"])
-          if actual not in allowed:
-              raise SystemExit("::error::Imagem ou origem não autorizada no fluxo individual.")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+
+          application = payload["application"]
+
+          if application not in allowed_images:
+              reject(
+                  "aplicação não autorizada no fluxo individual; "
+                  "produtos com frontend e backend devem enviar "
+                  "gitops-release-published"
+              )
+
+          authorized = allowed_images[application]
+
+          if payload["source_repository"] != authorized["repository"]:
+              reject("repositório de origem não autorizado")
+
+          if payload["image"] != authorized["image"]:
+              reject("imagem não autorizada")
+
+          commit = payload["source_commit"]
+          image_tag = payload["image_tag"]
+          digest = payload["image_digest"]
+
+          if not re.fullmatch(r"[a-f0-9]{40}", commit):
+              reject("commit inválido")
+
+          if not re.fullmatch(r"sha-[a-f0-9]{7,40}", image_tag):
+              reject("tag inválida")
+
+          if image_tag[4:] != commit[:len(image_tag) - 4]:
+              reject("tag divergente do commit")
+
+          if not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
+              reject("digest inválido")
+
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
               for key in sorted(payload):
                   output.write(f"{key}={payload[key]}\n")
-          print("Payload individual válido; verificações criptográficas ficam no reutilizável.")
+
+          print(
+              f"Payload individual autorizado: {application}. "
+              "Verificação criptográfica pendente."
+          )
           PYTHON
 
   update-overlay:
     name: Update single image overlay
     needs: validate-payload
     uses: ./.github/workflows/update-image-overlay-reusable.yml
+
     with:
       application: ${{ needs.validate-payload.outputs.application }}
       environment: ${{ needs.validate-payload.outputs.environment }}
@@ -95,6 +150,7 @@ jobs:
       image-digest: ${{ needs.validate-payload.outputs.image-digest }}
       source-repository: ${{ needs.validate-payload.outputs.source-repository }}
       source-commit: ${{ needs.validate-payload.outputs.source-commit }}
+
     secrets:
       GHCR_READ_USERNAME: ${{ secrets.GHCR_READ_USERNAME }}
       GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
@@ -105,12 +161,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
+
     outputs:
       application: ${{ steps.release.outputs.application }}
       environment: ${{ steps.release.outputs.environment }}
       source-repository: ${{ steps.release.outputs.source_repository }}
       source-commit: ${{ steps.release.outputs.source_commit }}
       release-json: ${{ steps.release.outputs.release_json }}
+
     steps:
       - name: Validate release contract
         id: release
@@ -119,79 +177,181 @@ jobs:
           PAYLOAD: ${{ toJSON(github.event.client_payload) }}
         run: |
           set -euo pipefail
+
           python3 - <<'PYTHON'
           import json
           import os
           import re
 
           def reject(reason):
-              raise SystemExit(f"::error::Payload de versão inválido: {reason}")
+              raise SystemExit(
+                  f"::error::Payload de release inválido: {reason}"
+              )
 
-          payload = json.loads(os.environ["PAYLOAD"])
+          try:
+              payload = json.loads(os.environ["PAYLOAD"])
+          except (KeyError, json.JSONDecodeError):
+              reject("JSON ausente ou inválido")
+
           if not isinstance(payload, dict):
               reject("estrutura principal inválida")
-          expected = {
-              "application", "source_repository", "source_commit",
-              "workflow_run", "images",
+
+          expected_fields = {
+              "application",
+              "source_repository",
+              "source_commit",
+              "workflow_run",
+              "images",
           }
-          if set(payload) != expected:
-              reject("campos obrigatórios ausentes ou campos desconhecidos")
-          if payload["application"] != "apae-geral":
-              reject("aplicação ainda não habilitada para versões completas")
-          if payload["source_repository"] != "IFPBEsp/APAE":
-              reject("repositório não autorizado")
+
+          if set(payload) != expected_fields:
+              reject("campos obrigatórios ausentes ou desconhecidos")
+
+          # Relação explícita entre produto, repositório
+          # e prefixo das imagens autorizadas.
+          allowed_releases = {
+              "apae-geral": {
+                  "repository": "IFPBEsp/APAE",
+                  "image_prefix": "ghcr.io/ifpbesp/apae-geral",
+              },
+              "apae-atendimento": {
+                  "repository": "IFPBEsp/APAE-atendimento",
+                  "image_prefix": "ghcr.io/ifpbesp/apae-atendimento",
+              },
+              "apae-gestao-escolar": {
+                  "repository": "IFPBEsp/APAE-gestao-escolar",
+                  "image_prefix": "ghcr.io/ifpbesp/apae-gestao-escolar",
+              },
+          }
+
+          application = payload["application"]
+
+          if (
+              not isinstance(application, str)
+              or application not in allowed_releases
+          ):
+              reject("aplicação não autorizada para release conjunta")
+
+          authorized = allowed_releases[application]
+          expected_repository = authorized["repository"]
+          image_prefix = authorized["image_prefix"]
+
+          if payload["source_repository"] != expected_repository:
+              reject("repositório de origem não autorizado")
+
           commit = payload["source_commit"]
-          if not isinstance(commit, str) or not re.fullmatch(r"[a-f0-9]{40}", commit):
-              reject("commit inválido")
+
+          if (
+              not isinstance(commit, str)
+              or not re.fullmatch(r"[a-f0-9]{40}", commit)
+          ):
+              reject("commit de origem inválido")
+
           run_url = payload["workflow_run"]
-          if not isinstance(run_url, str) or not re.fullmatch(
-              r"https://github[.]com/IFPBEsp/APAE/actions/runs/[0-9]+", run_url
+
+          expected_run_pattern = (
+              r"https://github[.]com/"
+              + re.escape(expected_repository)
+              + r"/actions/runs/[0-9]+"
+          )
+
+          if (
+              not isinstance(run_url, str)
+              or not re.fullmatch(expected_run_pattern, run_url)
           ):
               reject("URL de execução inválida")
+
           images = payload["images"]
-          if not isinstance(images, dict) or set(images) != {"backend", "frontend"}:
-              reject("frontend e backend são obrigatórios")
+
+          if (
+              not isinstance(images, dict)
+              or set(images) != {"backend", "frontend"}
+          ):
+              reject("release deve conter frontend e backend")
+
+          expected_tag = f"sha-{commit[:7]}"
+
           for component in ("backend", "frontend"):
               item = images[component]
-              if not isinstance(item, dict) or set(item) != {
-                  "image", "tag", "digest", "workflow_run"
-              }:
+
+              required_image_fields = {
+                  "image",
+                  "tag",
+                  "digest",
+                  "workflow_run",
+              }
+
+              if (
+                  not isinstance(item, dict)
+                  or set(item) != required_image_fields
+              ):
                   reject(f"campos inválidos em {component}")
-              if item["image"] != f"ghcr.io/ifpbesp/apae-geral-{component}":
+
+              expected_image = f"{image_prefix}-{component}"
+
+              if item["image"] != expected_image:
                   reject(f"imagem não autorizada em {component}")
-              if item["tag"] != f"sha-{commit[:7]}":
+
+              if item["tag"] != expected_tag:
                   reject(f"tag divergente em {component}")
-              if not isinstance(item["digest"], str) or not re.fullmatch(
-                  r"sha256:[a-f0-9]{64}", item["digest"]
+
+              digest = item["digest"]
+
+              if (
+                  not isinstance(digest, str)
+                  or not re.fullmatch(
+                      r"sha256:[a-f0-9]{64}",
+                      digest,
+                  )
               ):
                   reject(f"digest inválido em {component}")
+
               if item["workflow_run"] != run_url:
                   reject(f"execução divergente em {component}")
 
-          # O payload é não confiável. O reutilizável verifica ambas as tags,
-          # os digests OCI e as atestações ANTES de obter a credencial do App.
-          compact = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+          # O repository_dispatch é uma entrada não confiável.
+          # As verificações reais de tag, digest e proveniência
+          # serão executadas no workflow reutilizável.
+          compact = json.dumps(
+              payload,
+              separators=(",", ":"),
+              ensure_ascii=True,
+          )
+
           if len(compact) > 10000:
               reject("payload excede o limite permitido")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write("application=apae-geral\n")
+
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
+              output.write(f"application={application}\n")
               output.write("environment=dev\n")
-              output.write("source_repository=IFPBEsp/APAE\n")
+              output.write(
+                  f"source_repository={expected_repository}\n"
+              )
               output.write(f"source_commit={commit}\n")
               output.write(f"release_json={compact}\n")
-          print("Contrato de versão conjunta válido; verificação do GHCR ainda pendente.")
+
+          print(
+              f"Release conjunta autorizada: {application}. "
+              "Verificação do GHCR e proveniência pendentes."
+          )
           PYTHON
 
   update-release-overlay:
     name: Verify release and create one homologation PR
     needs: validate-release
     uses: ./.github/workflows/update-image-overlay-reusable.yml
+
     with:
       application: ${{ needs.validate-release.outputs.application }}
       environment: ${{ needs.validate-release.outputs.environment }}
       source-repository: ${{ needs.validate-release.outputs.source-repository }}
       source-commit: ${{ needs.validate-release.outputs.source-commit }}
       release-json: ${{ needs.validate-release.outputs.release-json }}
+
     secrets:
       GHCR_READ_USERNAME: ${{ secrets.GHCR_READ_USERNAME }}
       GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
