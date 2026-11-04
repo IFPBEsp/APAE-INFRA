@@ -26,7 +26,7 @@ Permissões declaradas: somente `contents: read`. Actions externas são referenc
 | Collections | `validate.sh collections` | Todas as collections de `requirements.yml` com versão exata `X.Y.Z`; instalação das versões fixadas |
 | YAML | `validate.sh yaml` | `yamllint --strict` com [`ansible/.yamllint`](../../ansible/.yamllint) |
 | Lint | `validate.sh lint` | `ansible-lint` perfil `production` com [`ansible/.ansible-lint`](../../ansible/.ansible-lint) |
-| Sintaxe | `validate.sh syntax` | `ansible-inventory --list` e `ansible-playbook --syntax-check` para cada playbook em `ansible/playbooks/` contra cada `ansible/inventories/<ambiente>/hosts.yml` |
+| Sintaxe | `validate.sh syntax` | `ansible-inventory --list` e `ansible-playbook --syntax-check` para cada playbook em `ansible/playbooks/` contra cada `ansible/inventories/<ambiente>/hosts.yml`; inventário ilegível faz a etapa falhar |
 
 Enquanto não houver playbooks em `ansible/playbooks/` (estrutura da #90), as etapas de lint e sintaxe informam a ausência e passam. Havendo playbooks sem inventário, a etapa de sintaxe falha.
 
@@ -79,6 +79,7 @@ Para comprovar os checks, abra um PR de teste (não mesclar) com uma das altera�
 | --- | --- |
 | Espaços no fim de linha ou YAML inválido em um playbook | YAML lint |
 | Task sem `name` ou módulo sem FQCN (`apt:` em vez de `ansible.builtin.apt:`) | Ansible lint |
-| Palavra-chave inexistente em um play (`bogus_keyword: 1`) | Inventory and playbook syntax check |
+| Palavra-chave inexistente em um play (`bogus_keyword: 1`) | Ansible lint (o `ansible-lint` já executa o syntax-check e falha antes da etapa de sintaxe) |
+| Inventário com estrutura inválida (`hosts:` como lista em vez de mapa) | Inventory and playbook syntax check |
 | Collection com `version: ">=1.0.0"` em `requirements.yml` | Validate and install pinned collections |
 | Cabeçalho `-----BEGIN OPENSSH PRIVATE KEY-----` em qualquer arquivo de `ansible/` | Check for committed private keys |

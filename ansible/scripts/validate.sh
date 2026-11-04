@@ -14,6 +14,8 @@ cd "$ANSIBLE_DIR"
 export ANSIBLE_COLLECTIONS_PATH="$ANSIBLE_DIR/.collections"
 export ANSIBLE_HOST_KEY_CHECKING="False"
 export ANSIBLE_RETRY_FILES_ENABLED="False"
+# Inventario ilegivel deve falhar (por padrao o Ansible so emite aviso e segue).
+export ANSIBLE_INVENTORY_ANY_UNPARSED_IS_FAILED="True"
 export ANSIBLE_NOCOLOR="1"
 
 log() { printf '\n==> %s\n' "$*"; }
