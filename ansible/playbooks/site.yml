@@ -2,5 +2,6 @@
 - name: Configure VPS
   hosts: vps
   become: true
+  bogus_keyword: 1
   roles:
     - base
