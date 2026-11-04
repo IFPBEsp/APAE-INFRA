@@ -1,6 +1,6 @@
 ---
 - name: Configure VPS
-  hosts: vps
+  hosts: vps  
   become: true
   roles:
     - base
