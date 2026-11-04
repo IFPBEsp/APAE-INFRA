@@ -159,8 +159,8 @@ jobs:
           set -euo pipefail
 
           python3 - <<'PY'
-          import json
           import os
+          import json
           import subprocess
           import sys
 
