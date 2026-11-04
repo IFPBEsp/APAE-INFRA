@@ -1,8 +1,14 @@
 # ADR — Estratégia GitOps para Terraform e ArgoCD
 
 - **Status:** Proposto para aprovação do time
-- **Issue:** #59
+- **Issue:** #59; delimitação para HostGator na #86
 - **Data:** 23/09/2026
+
+## Atualização proposta — issue #86, 17/10/2026
+
+A atribuição genérica de toda a infraestrutura fundacional ao Terraform neste ADR é histórica. A [proposta para a HostGator](../terraform/06-conclusao-e-proximos-passos.md) redefine o escopo: Terraform gerencia recursos externos com API/provider validado; Ansible gerencia host, k3s e bootstrap do ArgoCD; ArgoCD reconcilia os recursos Kubernetes atribuídos às Applications. Por decisão do responsável em 17/10/2026, as operações HostGator serão realizadas pelo Portal/suporte e a integração Terraform com a VPS não será adotada nesta etapa. A existência de API/provider permanece não confirmada, mas sua investigação não é pré-requisito para concluir a issue #86. DNS e backend de state são decisões independentes.
+
+AppProject de bootstrap e Application raiz permanecem com Ansible enquanto excluídos da reconciliação. Providers Helm/Kubernetes não foram selecionados para bootstrap nesta VPS. A proposta segue os registros do [ADR 004 — Ansible e GitHub Actions](004-adocao-ansible-github-actions.md) e do [ADR 003 — NGINX Gateway Fabric e Gateway API](003-nginx-gateway-fabric-e-gateway-api.md), incorporados à `dev`, e aguarda validação do time na issue #86. O restante deste ADR preserva o registro original do estudo #59, não uma confirmação de implantação ou suporte da HostGator.
 
 ## Contexto
 

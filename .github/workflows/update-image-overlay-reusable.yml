@@ -156,6 +156,28 @@ jobs:
 
           echo "Inputs validados."
 
+      - name: Verify source is current main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          SOURCE_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
+
+
       - name: Checkout automation revision
         id: automation
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -212,6 +234,25 @@ jobs:
             --source-digest "$SOURCE_COMMIT"
 
           echo "Proveniência autenticada com sucesso."
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify published Cosign signature
+        shell: bash
+        env:
+          IMAGE: ${{ inputs.image }}
+          IMAGE_DIGEST: ${{ inputs.image-digest }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+        run: |
+          set -euo pipefail
+          cosign verify "${IMAGE}@${IMAGE_DIGEST}" \
+            --certificate-identity-regexp="^https://github[.]com/${SOURCE_REPOSITORY}/[.]github/workflows/[^/]+[.]ya?ml@refs/heads/main$" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
+            --certificate-github-workflow-ref="refs/heads/main" \
+            --certificate-github-workflow-sha="$SOURCE_COMMIT"
 
       - name: Generate GitHub App token
         id: app-token
@@ -354,43 +395,54 @@ jobs:
           entry.pop("newTag", None)
           entry["digest"] = digest
 
-          # Evita reformatar o arquivo quando o digest já está atualizado.
-          if yaml.safe_load(path.read_text()) != data:
-              path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+          original_bytes = path.read_bytes()
+          try:
+              # Evita reformatar o arquivo quando o digest já está atualizado.
+              if yaml.safe_load(path.read_text()) != data:
+                  path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
 
-          after = container_images()
-          expected = image + "@" + digest
-          if not any(reference == expected for reference in after):
-              raise SystemExit("O Kustomize não aplicou o digest solicitado.")
-          if any(image_name(reference) == image and reference != expected for reference in after):
-              raise SystemExit("Há workloads com referências inconsistentes à imagem solicitada.")
-          if sorted(ref for ref in before if image_name(ref) != image) != sorted(
-              ref for ref in after if image_name(ref) != image
-          ):
-              raise SystemExit("A atualização alterou imagens de outros serviços.")
+              after = container_images()
+              expected = image + "@" + digest
+              if not any(reference == expected for reference in after):
+                  raise SystemExit("O Kustomize não aplicou o digest solicitado.")
+              if any(image_name(reference) == image and reference != expected for reference in after):
+                  raise SystemExit("Há workloads com referências inconsistentes à imagem solicitada.")
+              if sorted(ref for ref in before if image_name(ref) != image) != sorted(
+                  ref for ref in after if image_name(ref) != image
+              ):
+                  raise SystemExit("A atualização alterou imagens de outros serviços.")
 
-          # Registra a versão candidata somente após validação do GHCR,
-          # da atestação e da renderização do Kustomize.
-          # O registro segue junto do overlay no mesmo PR para dev.
-          if os.environ["APPLICATION"] != "site-comemorativo":
-              raise SystemExit("::error::Candidato individual não autorizado.")
-          commit = os.environ["SOURCE_COMMIT"]
-          tag = os.environ["IMAGE_TAG"]
-          candidate = {
-              "application": "site-comemorativo",
-              "source_repository": "IFPBEsp/apae-site-comemorativo",
-              "source_commit": commit,
-              "image": image,
-              "tag": tag,
-              "digest": digest,
-              "verification_run": os.environ["VERIFICATION_RUN"],
-          }
-          candidate_path = Path("releases/candidates/site-comemorativo") / f"{commit}.json"
-          candidate_path.parent.mkdir(parents=True, exist_ok=True)
-          content = json.dumps(candidate, indent=2, sort_keys=True) + "\n"
-          if candidate_path.exists() and candidate_path.read_text(encoding="utf-8") != content:
-              raise SystemExit("::error::Candidato existente diverge do digest verificado.")
-          candidate_path.write_text(content, encoding="utf-8")
+              # Registra a versão candidata somente após validação do GHCR,
+              # da atestação e da renderização do Kustomize.
+              # O registro segue junto do overlay no mesmo PR para dev.
+              if os.environ["APPLICATION"] != "site-comemorativo":
+                  raise SystemExit("::error::Candidato individual não autorizado.")
+              commit = os.environ["SOURCE_COMMIT"]
+              tag = os.environ["IMAGE_TAG"]
+              candidate = {
+                  "application": "site-comemorativo",
+                  "source_repository": "IFPBEsp/apae-site-comemorativo",
+                  "source_commit": commit,
+                  "image": image,
+                  "tag": tag,
+                  "digest": digest,
+                  "verification_run": os.environ["VERIFICATION_RUN"],
+              }
+              candidate_path = Path("releases/candidates/site-comemorativo") / f"{commit}.json"
+              candidate_path.parent.mkdir(parents=True, exist_ok=True)
+              content = json.dumps(candidate, indent=2, sort_keys=True) + "\n"
+              if candidate_path.exists():
+                  existing = json.loads(candidate_path.read_text(encoding="utf-8"))
+                  if not isinstance(existing, dict) or set(existing) != set(candidate) or any(
+                      existing[key] != value for key, value in candidate.items() if key != "verification_run"
+                  ):
+                      raise SystemExit("::error::Candidato existente diverge do digest verificado.")
+              else:
+                  candidate_path.write_text(content, encoding="utf-8")
+
+          except BaseException:
+              path.write_bytes(original_bytes)
+              raise
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               image_id = image.rsplit("/", 1)[-1]
@@ -398,6 +450,28 @@ jobs:
               output.write(f"branch={branch}\n")
               output.write(f"candidate={candidate_path.as_posix()}\n")
           PYTHON
+
+      - name: Recheck main before opening pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          SOURCE_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
+
 
       - name: Create or update image pull request
         id: pull-request
@@ -544,6 +618,28 @@ jobs:
           print("Contrato de release validado; imagens ainda precisam de verificacao externa.")
           PYTHON
 
+      - name: Verify source is current main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          SOURCE_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
+
+
       - name: Checkout trusted automation
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -591,7 +687,42 @@ jobs:
               --repo "$SOURCE_REPOSITORY" \
               --signer-workflow "IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml" \
               --source-ref "refs/heads/main" \
-              --source-digest "$SOURCE_COMMIT"
+              --source-digest "$SOURCE_COMMIT" \
+              --format json > "$RUNNER_TEMP/$component-attestation.json"
+            run_url="$(jq -er '.workflow_run' "$RUNNER_TEMP/verified-release-input.json")"
+            invocation="$(jq -er --arg run "$run_url" '
+              [.[] | .verificationResult.statement.predicate.runDetails.metadata.invocationId
+               | select(type == "string")
+               | select(startswith($run + "/attempts/"))
+               | select(test("/attempts/[0-9]+$"))] | unique | if length == 1 then .[0] else error("execucao nao autenticada") end
+            ' "$RUNNER_TEMP/$component-attestation.json")"
+            if [[ "$component" == backend ]]; then
+              release_invocation="$invocation"
+            elif [[ "$invocation" != "$release_invocation" ]]; then
+              echo "::error::Backend e frontend pertencem a execucoes ou tentativas diferentes."
+              exit 1
+            fi
+          done
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify both Cosign signatures
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+        run: |
+          set -euo pipefail
+          for component in backend frontend; do
+            image="$(jq -er --arg component "$component" '.images[$component].image' "$RUNNER_TEMP/verified-release-input.json")"
+            digest="$(jq -er --arg component "$component" '.images[$component].digest' "$RUNNER_TEMP/verified-release-input.json")"
+            cosign verify "${image}@${digest}" \
+              --certificate-identity-regexp="^https://github[.]com/${SOURCE_REPOSITORY}/[.]github/workflows/[^/]+[.]ya?ml@refs/heads/main$" \
+              --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+              --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
+              --certificate-github-workflow-ref="refs/heads/main" \
+              --certificate-github-workflow-sha="$SOURCE_COMMIT"
           done
 
       - name: Generate image updater GitHub App token
@@ -696,29 +827,61 @@ jobs:
                   entries.append(entry)
               entry.pop("newTag", None)
               entry["digest"] = digest
-          if data != original:
-              path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+          original_bytes = path.read_bytes()
+          try:
+              if data != original:
+                  path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
 
-          after = images_in_workloads()
-          for image, digest in targets.items():
-              expected = image + "@" + digest
-              if not any(ref == expected for ref in after):
-                  raise SystemExit(f"::error::Digest nao aplicado pelo Kustomize: {image}")
-              if any(image_name(ref) == image and ref != expected for ref in after):
-                  raise SystemExit("::error::Referencia inconsistente em workload")
-          if sorted(ref for ref in before if image_name(ref) not in targets) != sorted(
-              ref for ref in after if image_name(ref) not in targets
-          ):
-              raise SystemExit("::error::Outras imagens foram alteradas")
+              after = images_in_workloads()
+              for image, digest in targets.items():
+                  expected = image + "@" + digest
+                  if not any(ref == expected for ref in after):
+                      raise SystemExit(f"::error::Digest nao aplicado pelo Kustomize: {image}")
+                  if any(image_name(ref) == image and ref != expected for ref in after):
+                      raise SystemExit("::error::Referencia inconsistente em workload")
+              if sorted(ref for ref in before if image_name(ref) not in targets) != sorted(
+                  ref for ref in after if image_name(ref) not in targets
+              ):
+                  raise SystemExit("::error::Outras imagens foram alteradas")
 
-          candidate = Path("releases/candidates") / application / (release["source_commit"] + ".json")
-          candidate.parent.mkdir(parents=True, exist_ok=True)
-          candidate.write_text(json.dumps(release, indent=2, sort_keys=True) + "\n")
+              candidate = Path("releases/candidates") / application / (release["source_commit"] + ".json")
+              candidate.parent.mkdir(parents=True, exist_ok=True)
+              content = json.dumps(release, indent=2, sort_keys=True) + "\n"
+              if candidate.exists() and candidate.read_text(encoding="utf-8") != content:
+                  raise SystemExit("::error::Candidato existente diverge da release verificada.")
+              if not candidate.exists():
+                  candidate.write_text(content, encoding="utf-8")
+          except BaseException:
+              path.write_bytes(original_bytes)
+              raise
+
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"candidate={candidate.as_posix()}\n")
               output.write(f"overlay={path.as_posix()}\n")
               output.write(f"branch=gitops/{application}/dev/release\n")
           PYTHON
+
+      - name: Recheck main before opening pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.source-repository }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          SOURCE_REF: refs/heads/main
+        run: |
+          set -euo pipefail
+
+          if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
+            echo "::error::Somente imagens originadas da main podem ser publicadas ou recebidas pela infraestrutura."
+            exit 1
+          fi
+
+          main_commit="$(gh api --method GET "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ ! "$main_commit" =~ ^[a-f0-9]{40}$ || "$main_commit" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::O commit da imagem não é mais o commit atual da main. Publique a revisão atual antes de atualizar a infraestrutura."
+            exit 1
+          fi
+
 
       - name: Create or update complete release PR
         id: pull-request

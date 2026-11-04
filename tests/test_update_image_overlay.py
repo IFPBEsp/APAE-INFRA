@@ -42,17 +42,17 @@ PAYLOAD_SCRIPT = DISPATCH["jobs"]["validate-payload"]["steps"][0]["run"]
 RELEASE_PAYLOAD_SCRIPT = DISPATCH["jobs"]["validate-release"]["steps"][0]["run"]
 RELEASE_STEPS = WORKFLOW["jobs"]["update-release"]["steps"]
 SETUP = yaml.safe_load((ROOT / ".github/actions/setup-kustomize/action.yml").read_text())
-IMAGE = "ghcr.io/ifpbesp/apae-geral-backend"
+IMAGE = "ghcr.io/ifpbesp/apae-site-comemorativo"
 OTHER = "ghcr.io/ifpbesp/apae-geral-frontend:dev"
 DIGEST = "sha256:" + "a" * 64
 ENV = {
-    "APPLICATION": "apae-geral",
+    "APPLICATION": "site-comemorativo",
     "ENVIRONMENT": "dev",
     "IMAGE": IMAGE,
     "IMAGE_DIGEST": DIGEST,
     "IMAGE_TAG": "sha-abcdef0",
     "SOURCE_COMMIT": "abcdef0" + "0" * 33,
-    "SOURCE_REPOSITORY": "IFPBEsp/APAE",
+    "SOURCE_REPOSITORY": "IFPBEsp/apae-site-comemorativo",
     "CALLER_REPOSITORY": "IFPBEsp/APAE-INFRA",
 }
 
@@ -98,7 +98,7 @@ class InputsTest(unittest.TestCase):
     def test_accepts_long_matching_sha_tag(self):
         self.assertEqual(self.validate(IMAGE_TAG="sha-" + ENV["SOURCE_COMMIT"]).returncode, 0)
 
-    def test_all_known_services_are_allowed(self):
+    def test_only_site_uses_single_image_and_joint_products_are_rejected(self):
         for repository, application, images in (
             ("IFPBEsp/APAE", "apae-geral", ("apae-geral-backend", "apae-geral-frontend")),
             ("IFPBEsp/APAE-atendimento", "apae-atendimento",
@@ -111,7 +111,10 @@ class InputsTest(unittest.TestCase):
                 with self.subTest(image=image):
                     result = self.validate(SOURCE_REPOSITORY=repository, APPLICATION=application,
                                            IMAGE="ghcr.io/ifpbesp/" + image)
-                    self.assertEqual(result.returncode, 0, result.stdout)
+                    if application == "site-comemorativo":
+                        self.assertEqual(result.returncode, 0, result.stdout)
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
 
     def test_missing_overlay_reports_issue_92(self):
         script = next(step["run"] for step in STEPS if step.get("id") == "overlay")
@@ -306,8 +309,8 @@ class ReleaseDispatchTest(unittest.TestCase):
         self.assertEqual(checkout["with"]["ref"], "dev")
         pr = next(step for step in RELEASE_STEPS if step["name"] == "Create or update complete release PR")
         self.assertEqual(pr["with"]["base"], "dev")
-        self.assertIn("kubernetes/apae-geral/overlays/dev/kustomization.yaml", pr["with"]["add-paths"])
-        self.assertIn("releases/candidates/apae-geral/*.json", pr["with"]["add-paths"])
+        self.assertEqual(pr["with"]["add-paths"].splitlines(), [
+            "${{ steps.release-update.outputs.overlay }}", "${{ steps.release-update.outputs.candidate }}"])
         self.assertNotIn("auto-merge", pr["with"])
         token_step = next(step for step in RELEASE_STEPS if step["name"] == "Generate image updater GitHub App token")
         self.assertEqual(token_step["with"]["repositories"], "APAE-INFRA")
@@ -392,7 +395,7 @@ class RegistryTest(unittest.TestCase):
                 self.assertEqual(token_request.get_header("Authorization"),
                                  "Basic " + base64.b64encode(b"reader:read-only-password").decode())
                 scope = urllib.parse.parse_qs(urllib.parse.urlsplit(token_request.full_url).query)["scope"]
-                self.assertEqual(scope, ["repository:ifpbesp/apae-geral-backend:pull"])
+                self.assertEqual(scope, ["repository:" + IMAGE.removeprefix("ghcr.io/") + ":pull"])
                 self.assertEqual(calls[1].args[0].get_header("Authorization"), "Bearer private-token")
 
     def test_authentication_failure_and_missing_credentials_rejected(self):
@@ -562,7 +565,7 @@ class OverlayTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name)
-        self.relative_overlay = Path("kubernetes/apae-geral/overlays/dev")
+        self.relative_overlay = Path("kubernetes/site-comemorativo/overlays/dev")
         self.manifests = self.workspace / MANIFESTS["with"]["path"]
         self.path = self.manifests / self.relative_overlay
         self.path.mkdir(parents=True)
@@ -594,7 +597,8 @@ class OverlayTest(unittest.TestCase):
             [sys.executable, "-c", EDITOR], text=True, capture_output=True,
             cwd=self.workspace / UPDATE_STEP["working-directory"],
             env={**os.environ, **ENV, "OVERLAY": str(self.relative_overlay),
-                 "GITHUB_OUTPUT": str(self.output), **overrides},
+                 "GITHUB_OUTPUT": str(self.output),
+                 "VERIFICATION_RUN": "https://github.com/IFPBEsp/APAE-INFRA/actions/runs/42", **overrides},
         )
 
     def assert_success(self, result):
@@ -608,7 +612,7 @@ class OverlayTest(unittest.TestCase):
         first = self.kustomization.read_bytes()
         self.assert_success(self.edit())
         self.assertEqual(first, self.kustomization.read_bytes())
-        self.assertIn("gitops/apae-geral/dev/apae-geral-backend", self.output.read_text())
+        self.assertIn("gitops/site-comemorativo/dev/apae-site-comemorativo", self.output.read_text())
 
     def test_separate_checkouts_preserve_local_action_and_scope_updates(self):
         self.assertEqual(AUTOMATION["with"].get("path", "."), ".")
@@ -632,7 +636,8 @@ class OverlayTest(unittest.TestCase):
         after = {path.relative_to(self.workspace): path.read_bytes()
                  for path in self.workspace.rglob("*") if path.is_file() and path != self.output}
         changed = {path for path in before.keys() | after.keys() if before.get(path) != after.get(path)}
-        self.assertEqual(changed, {self.kustomization.relative_to(self.workspace)})
+        self.assertEqual(changed, {self.kustomization.relative_to(self.workspace),
+            Path("infra/releases/candidates/site-comemorativo") / (ENV["SOURCE_COMMIT"] + ".json")})
 
     def test_overlay_resolution_and_pr_paths_are_relative_to_dev(self):
         result = subprocess.run(
@@ -648,11 +653,13 @@ class OverlayTest(unittest.TestCase):
         self.assertEqual(config["base"], "dev")
         self.assertEqual(config["token"], "${{ steps.app-token.outputs.token }}")
         self.assertEqual(config["branch"], "${{ steps.image-update.outputs.branch }}")
-        # This is a single literal pathspec, relative to the action's repo path;
-        # neither the automation checkout nor sibling overlays can be staged.
-        add_path = config["add-paths"].replace("${{ steps.overlay.outputs.path }}", overlay)
-        self.assertEqual(add_path, str(self.relative_overlay / "kustomization.yaml"))
-        self.assertEqual(self.workspace / config["path"] / add_path, self.kustomization)
+        # Both exact paths are relative to the manifests checkout.
+        self.assert_success(self.edit())
+        candidate = f"releases/candidates/site-comemorativo/{ENV['SOURCE_COMMIT']}.json"
+        paths = config["add-paths"].replace("${{ steps.overlay.outputs.path }}", overlay).replace(
+            "${{ steps.image-update.outputs.candidate }}", candidate).splitlines()
+        self.assertEqual(paths, [str(self.relative_overlay / "kustomization.yaml"), candidate])
+        self.assertEqual(self.workspace / config["path"] / paths[0], self.kustomization)
 
     def test_replaces_tag_and_previous_digest(self):
         data = yaml.safe_load(self.kustomization.read_text())
@@ -733,6 +740,297 @@ class OverlayTest(unittest.TestCase):
         before = self.kustomization.read_bytes()
         self.assertNotEqual(self.edit().returncode, 0)
         self.assertEqual(before, self.kustomization.read_bytes())
+
+    def test_new_receiver_run_preserves_original_candidate(self):
+        self.assert_success(self.edit())
+        candidate = self.manifests / "releases/candidates/site-comemorativo" / (ENV["SOURCE_COMMIT"] + ".json")
+        before = candidate.read_bytes()
+        self.assert_success(self.edit(VERIFICATION_RUN="https://github.com/IFPBEsp/APAE-INFRA/actions/runs/99"))
+        self.assertEqual(candidate.read_bytes(), before)
+
+    def test_existing_candidate_cannot_change_digest(self):
+        self.assert_success(self.edit())
+        before = self.kustomization.read_bytes()
+        self.assertNotEqual(self.edit(IMAGE_DIGEST="sha256:" + "b" * 64).returncode, 0)
+        self.assertEqual(self.kustomization.read_bytes(), before)
+
+
+def embedded_python(step):
+    return step["run"].split("<<'PYTHON'\n", 1)[1].rsplit("\nPYTHON", 1)[0]
+
+
+class CompleteReleaseTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.output = self.root / "outputs"
+        self.release = ReleaseDispatchTest().valid_release()
+        self.step = next(step for step in RELEASE_STEPS if step.get("id") == "release-update")
+
+    def fixture(self, application="apae-geral", repository="IFPBEsp/APAE"):
+        self.release.update(application=application, source_repository=repository,
+                            workflow_run=f"https://github.com/{repository}/actions/runs/123456")
+        for component, item in self.release["images"].items():
+            item.update(image=f"ghcr.io/ifpbesp/{application}-{component}",
+                        workflow_run=self.release["workflow_run"])
+        self.path = self.root / "kubernetes" / application / "overlays/dev/kustomization.yaml"
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text("apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n- deployment.yaml\n")
+        self.deployment = self.path.with_name("deployment.yaml")
+        self.deployment.write_text(yaml.safe_dump({
+            "apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "test"},
+            "spec": {"template": {"spec": {"containers": [
+                {"name": component, "image": item["image"] + ":dev"}
+                for component, item in self.release["images"].items()
+            ] + [{"name": "unrelated", "image": "ghcr.io/other/service:dev"}]}}},
+        }))
+        return self.release
+
+    def execute(self, step, **env):
+        return subprocess.run([sys.executable, "-c", embedded_python(step)], cwd=self.root,
+                              env={**os.environ, "RUNNER_TEMP": str(self.root),
+                                   "GITHUB_OUTPUT": str(self.output), **env},
+                              text=True, capture_output=True)
+
+    def update(self):
+        (self.root / "verified-release-input.json").write_text(json.dumps(self.release))
+        return self.execute(self.step, APPLICATION=self.release["application"])
+
+    def test_all_joint_products_validate_and_update_both_images_idempotently(self):
+        for application, repository in (("apae-geral", "IFPBEsp/APAE"),
+                                        ("apae-atendimento", "IFPBEsp/APAE-atendimento"),
+                                        ("apae-gestao-escolar", "IFPBEsp/APAE-gestao-escolar")):
+            with self.subTest(application=application):
+                release = self.fixture(application, repository)
+                dispatch, _ = ReleaseDispatchTest().validate(release)
+                self.assertEqual(dispatch.returncode, 0, dispatch.stderr)
+                contract = self.execute(RELEASE_STEPS[0], RELEASE_JSON=json.dumps(release),
+                    APPLICATION=application, SOURCE_REPOSITORY=repository,
+                    SOURCE_COMMIT=release["source_commit"], ENVIRONMENT="dev",
+                    CALLER_REPOSITORY="IFPBEsp/APAE-INFRA", SINGLE_IMAGE="", SINGLE_TAG="", SINGLE_DIGEST="")
+                self.assertEqual(contract.returncode, 0, contract.stderr)
+                result = self.update()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                candidate = self.root / "releases/candidates" / application / (release["source_commit"] + ".json")
+                self.assertEqual(json.loads(candidate.read_text()), release)
+                rendered = subprocess.check_output(["kustomize", "build", str(self.path.parent)], text=True)
+                for item in release["images"].values():
+                    self.assertIn(item["image"] + "@" + item["digest"], rendered)
+                self.assertIn("ghcr.io/other/service:dev", rendered)
+                original = self.path.read_bytes(), candidate.read_bytes()
+                self.assertEqual(self.update().returncode, 0)
+                self.assertEqual((self.path.read_bytes(), candidate.read_bytes()), original)
+
+    def test_missing_component_or_overlay_cannot_write_candidate(self):
+        self.fixture()
+        self.deployment.write_text(self.deployment.read_text().replace(
+            self.release["images"]["frontend"]["image"], "ghcr.io/other/frontend"))
+        before = self.path.read_bytes()
+        self.assertNotEqual(self.update().returncode, 0)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.path.unlink()
+        self.assertNotEqual(self.update().returncode, 0)
+        self.assertFalse((self.root / "releases").exists())
+
+    def test_conflicting_candidate_restores_overlay_and_preserves_record(self):
+        self.fixture()
+        candidate = self.root / "releases/candidates/apae-geral" / (self.release["source_commit"] + ".json")
+        candidate.parent.mkdir(parents=True)
+        candidate.write_text('{"unexpected": true}\n')
+        before = self.path.read_bytes(), candidate.read_bytes()
+        self.assertNotEqual(self.update().returncode, 0)
+        self.assertEqual((self.path.read_bytes(), candidate.read_bytes()), before)
+        self.assertFalse(self.output.exists())
+
+    def test_signature_checks_fail_closed_before_write_credentials(self):
+        for steps, name, token in ((STEPS, "Verify published Cosign signature", "Generate GitHub App token"),
+                                  (RELEASE_STEPS, "Verify both Cosign signatures", "Generate image updater GitHub App token")):
+            self.fixture()
+            (self.root / "verified-release-input.json").write_text(json.dumps(self.release))
+            verifier = next(step for step in steps if step["name"] == name)
+            names = [step["name"] for step in steps]
+            self.assertLess(names.index(name), names.index(token))
+            fake = self.root / "cosign"
+            fake.write_text('#!/bin/sh\nexit "$COSIGN_EXIT"\n')
+            fake.chmod(0o755)
+            for exit_code in (0, 1):
+                result = subprocess.run(["bash", "-c", verifier["run"]], cwd=self.root,
+                    env={**os.environ, **ENV, "RUNNER_TEMP": str(self.root),
+                         "PATH": str(self.root) + ":" + os.environ["PATH"], "COSIGN_EXIT": str(exit_code)},
+                    text=True, capture_output=True)
+                self.assertEqual(result.returncode == 0, exit_code == 0, result.stderr)
+            for flag in ("--certificate-identity-regexp", "--certificate-oidc-issuer", "--certificate-github-workflow-sha"):
+                self.assertIn(flag, verifier["run"])
+
+    def test_verified_attestations_must_match_run_and_attempt(self):
+        self.fixture()
+        (self.root / "verified-release-input.json").write_text(json.dumps(self.release))
+        fake = self.root / "gh"
+        fake.write_text('''#!/usr/bin/env python3
+import json, os, sys
+component = 'backend' if '-backend@' in ' '.join(sys.argv) else 'frontend'
+if os.environ.get('VERIFY_FAIL') == component:
+    raise SystemExit(1)
+invocation = os.environ['INVOCATION_' + component.upper()]
+print(json.dumps([{'verificationResult': {'statement': {'predicate': {
+    'runDetails': {'metadata': {'invocationId': invocation}}}}}}]))
+''')
+        fake.chmod(0o755)
+        verifier = next(step for step in RELEASE_STEPS if step["name"] == "Verify both build attestations")
+        run = self.release["workflow_run"]
+        for backend, frontend, failure, accepted in (
+            (run + "/attempts/1", run + "/attempts/1", "", True),
+            (run + "/attempts/1", run + "/attempts/2", "", False),
+            (run + "/attempts/1", run.replace("123456", "999") + "/attempts/1", "", False),
+            (run + "/attempts/1", "", "", False),
+            (run + "/attempts/1", run + "/attempts/1", "frontend", False),
+        ):
+            result = subprocess.run(["bash", "-c", verifier["run"]], cwd=self.root,
+                env={**os.environ, **ENV, "RUNNER_TEMP": str(self.root),
+                     "PATH": str(self.root) + ":" + os.environ["PATH"],
+                     "INVOCATION_BACKEND": backend, "INVOCATION_FRONTEND": frontend, "VERIFY_FAIL": failure},
+                text=True, capture_output=True)
+            self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
+
+
+class ProductionGatesTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.infra = self.root / "approved-dev"
+        self.infra.mkdir()
+        self.output = self.root / "outputs"
+        self.workflows = {name: yaml.safe_load((ROOT / f".github/workflows/{name}-release.yml").read_text())
+                          for name in ("approve", "promote", "rollback")}
+        self.release = ReleaseDispatchTest().valid_release()
+
+    def step(self, workflow, name):
+        job = next(iter(self.workflows[workflow]["jobs"].values()))
+        return next(step for step in job["steps"] if step.get("name") == name)
+
+    def execute(self, workflow, name, cwd=None):
+        return subprocess.run([sys.executable, "-c", embedded_python(self.step(workflow, name))],
+            cwd=cwd or self.root, text=True, capture_output=True,
+            env={**os.environ, "APPLICATION": self.release["application"],
+                 "CANDIDATE_COMMIT": self.release["source_commit"], "RUNNER_TEMP": str(self.root),
+                 "GITHUB_OUTPUT": str(self.output), "EVIDENCE_URL": "https://github.com/IFPBEsp/APAE/issues/106",
+                 "APPROVAL_REASON": "Homologacao concluida com evidencia revisada",
+                 "PROMOTION_REASON": "Promocao autorizada apos homologacao completa",
+                 "ROLLBACK_REASON": "Rollback por regressao identificada em producao",
+                 "APPROVER": "reviewer", "APPROVAL_RUN": "https://github.com/IFPBEsp/APAE-INFRA/actions/runs/55",
+                 "PATH": str(self.root) + ":" + os.environ["PATH"]})
+
+    def prepare_candidate(self):
+        sha = self.release["source_commit"]
+        application = self.release["application"]
+        self.candidate = self.infra / "releases/candidates" / application / (sha + ".json")
+        self.candidate.parent.mkdir(parents=True)
+        self.candidate.write_text(json.dumps(self.release, indent=2, sort_keys=True) + "\n")
+        self.approval = self.infra / "releases/approved" / application / (sha + ".json")
+        overlay = self.infra / "kubernetes" / application / "overlays/dev/kustomization.yaml"
+        overlay.parent.mkdir(parents=True)
+        targets = self.release.get("images", {"site": self.release})
+        overlay.write_text(yaml.safe_dump({"images": [{"name": item["image"], "digest": item["digest"]}
+                                                     for item in targets.values()]}))
+        return overlay
+
+    def test_approval_promotion_and_rollback_records_support_all_products(self):
+        products = (("apae-geral", "IFPBEsp/APAE"), ("apae-atendimento", "IFPBEsp/APAE-atendimento"),
+                    ("apae-gestao-escolar", "IFPBEsp/APAE-gestao-escolar"),
+                    ("site-comemorativo", "IFPBEsp/apae-site-comemorativo"))
+        for application, repository in products:
+            with self.subTest(application=application):
+                self.release = ReleaseDispatchTest().valid_release()
+                self.release.update(application=application, source_repository=repository,
+                                    workflow_run=f"https://github.com/{repository}/actions/runs/123456")
+                for component, item in self.release["images"].items():
+                    item.update(image=f"ghcr.io/ifpbesp/{application}-{component}", workflow_run=self.release["workflow_run"])
+                if application == "site-comemorativo":
+                    self.release.pop("images")
+                    self.release.pop("workflow_run")
+                    self.release.update(image=IMAGE, tag=ENV["IMAGE_TAG"], digest=DIGEST,
+                                        verification_run="https://github.com/IFPBEsp/APAE-INFRA/actions/runs/42")
+                self.prepare_candidate()
+                for workflow, step in (("promote", "Validate merged approval and candidate integrity"),
+                                       ("rollback", "Validate approved release record")):
+                    # A candidate alone cannot authorize a production change.
+                    result = self.execute(workflow, step)
+                    self.assertNotEqual(result.returncode, 0)
+                result = self.execute("approve", "Validate candidate, deployed overlay intent and evidence", self.infra)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for workflow, step in (("promote", "Validate merged approval and candidate integrity"),
+                                       ("rollback", "Validate approved release record")):
+                    result = self.execute(workflow, step)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    original = self.candidate.read_bytes()
+                    self.candidate.write_bytes(original + b" ")
+                    self.assertNotEqual(self.execute(workflow, step).returncode, 0)
+                    self.candidate.write_bytes(original)
+
+    def test_approval_rejects_overlay_that_does_not_match_candidate(self):
+        overlay = self.prepare_candidate()
+        overlay.write_text(overlay.read_text().replace("a" * 64, "c" * 64))
+        result = self.execute("approve", "Validate candidate, deployed overlay intent and evidence", self.infra)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.approval.exists())
+
+    def test_rollback_requires_joint_digests_in_same_main_history_revision(self):
+        self.prepare_candidate()
+        self.assertEqual(self.execute("approve", "Validate candidate, deployed overlay intent and evidence", self.infra).returncode, 0)
+        self.assertEqual(self.execute("rollback", "Validate approved release record").returncode, 0)
+        production = self.root / "production"
+        overlay = production / "kubernetes/apae-geral/overlays/prod/kustomization.yaml"
+        overlay.parent.mkdir(parents=True)
+        targets = self.release["images"]
+        overlay.write_text(yaml.safe_dump({
+            "apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization",
+            "resources": ["deployment.yaml"],
+            "images": [{"name": item["image"], "digest": "sha256:" + "c" * 64} for item in targets.values()]}))
+        overlay.with_name("deployment.yaml").write_text(yaml.safe_dump({
+            "apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "test"},
+            "spec": {"template": {"spec": {"containers": [
+                {"name": part, "image": item["image"] + ":dev"} for part, item in targets.items()]}}}}))
+        fake_git = self.root / "git"
+        fake_git.write_text('''#!/usr/bin/env python3
+import os, pathlib, sys
+root = pathlib.Path(os.environ['RUNNER_TEMP'])
+if sys.argv[1] == 'log':
+    assert '--first-parent' in sys.argv and 'HEAD' in sys.argv
+    print('d' * 40)
+elif sys.argv[1] == 'show':
+    sys.stdout.write((root / 'historical.yaml').read_text())
+else:
+    raise SystemExit(99)
+''')
+        fake_git.chmod(0o755)
+        historical = self.root / "historical.yaml"
+        initial = overlay.read_bytes()
+        historical.write_bytes(initial)
+        name = "Confirm historical production deployment and prepare rollback"
+        self.assertNotEqual(self.execute("rollback", name, production).returncode, 0)
+        self.assertEqual(overlay.read_bytes(), initial)
+        history = yaml.safe_load(initial)
+        # A partial historic release still cannot authorize rollback.
+        history["images"][0]["digest"] = targets["backend"]["digest"]
+        historical.write_text(yaml.safe_dump(history))
+        self.assertNotEqual(self.execute("rollback", name, production).returncode, 0)
+        history["images"][1]["digest"] = targets["frontend"]["digest"]
+        historical.write_text(yaml.safe_dump(history))
+        result = self.execute("rollback", name, production)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        applied = yaml.safe_load(overlay.read_text())["images"]
+        self.assertEqual([item["digest"] for item in applied], [item["digest"] for item in targets.values()])
+
+    def test_production_workflows_do_not_build_or_publish_images(self):
+        for name, workflow in self.workflows.items():
+            job = next(iter(workflow["jobs"].values()))
+            self.assertEqual(job["environment"], "release-approval" if name == "approve" else "production-promotion")
+            for step in job["steps"]:
+                self.assertNotIn("docker/build-push-action", step.get("uses", ""))
+                self.assertNotRegex(step.get("run", ""), r"docker (build|push)|cosign sign")
 
 
 if __name__ == "__main__":

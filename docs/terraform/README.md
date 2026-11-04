@@ -1,6 +1,12 @@
-# Issue #59 — Estudo de GitOps para Terraform e ArgoCD
+# Terraform — arquitetura GitOps e escopo na HostGator
 
-Este diretório contém a documentação do estudo arquitetural da issue #59 do `APAE-INFRA`.
+Este diretório contém o estudo arquitetural da issue #59 e sua atualização para a VPS HostGator na issue #86.
+
+A decisão atual está em [Conclusão e próximos passos](06-conclusao-e-proximos-passos.md): Terraform para recursos externos com integração validada, Ansible para host/k3s/bootstrap e ArgoCD para os recursos Kubernetes atribuídos às Applications. A proposta aguarda validação do time. Inventário e acesso operacional ficam fora da documentação pública; a estratégia de backup e recuperação foi encaminhada à issue #107 e sua implementação e teste à #108; a homologação prática de capacidade à #90.
+
+Os documentos 01, 02, 03 e 04 preservam a análise conceitual da issue #59. Menções a provedores e infraestrutura fundacional nesses textos não confirmam contratação nem suporte da HostGator.
+
+A decisão sobre o backend remoto é o HCP Terraform Free, conforme a issue #87. Referências históricas do [documento 03](03-bootstrap-state-locking-e-drift.md) a Contabo e à escolha de backend não substituem essa decisão nem a delimitação atual da HostGator.
 
 ## Pergunta central
 
@@ -30,15 +36,17 @@ O estudo cobre:
 
 ## Fora do escopo
 
-Não são definidos nesta issue:
+O estudo original #59 não definiu os itens abaixo. A issue #86 delimita o papel do Ansible e a distribuição k3s como arquitetura-alvo; implementação e escolhas operacionais continuam nas issues específicas:
 
 - implementação do `terraform apply`;
-- escolha final do backend remoto;
+- implementação do backend remoto HCP Terraform (issue #87);
 - configuração do bucket/state;
 - implementação de módulos Terraform;
-- provisionamento real da Contabo;
-- escolha entre k3s, kubeadm ou outra distribuição Kubernetes;
-- Ansible, cloud-init ou mecanismo detalhado de bootstrap;
+- provisionamento real da VPS ou de outros provedores;
+- implementação do k3s e homologação de capacidade (issue #90);
+- playbooks Ansible para o host e sua validação e aplicação protegida (issues #90, #109 e #110, conforme ADR 004);
+- instalação do ArgoCD e bootstrap com AppProjects e Application raiz pelo Ansible (issue #91);
+- implementação de Gateway, DNS/TLS e rotas HTTP/HTTPS (issues #111, #112 e #113, conforme ADR 003);
 - TFLint, Checkov, OPA ou outra estratégia de Policy as Code;
 - `terraform test` ou framework de testes;
 - Vault, External Secrets ou secret manager;
@@ -58,7 +66,7 @@ Esses assuntos podem ser derivados da decisão arquitetural, mas devem ser trata
 3. [`03-bootstrap-state-locking-e-drift.md`](./03-bootstrap-state-locking-e-drift.md)
 4. [`04-seguranca-ambientes-e-ciclo-terraform.md`](./04-seguranca-ambientes-e-ciclo-terraform.md)
 5. [`05-decisao-arquitetural.md`](./05-decisao-arquitetural.md)
-6. [`06-conclusao-e-proximos-passos.md`](./06-conclusao-e-proximos-passos.md)
+6. [`06-conclusao-e-proximos-passos.md`](./06-conclusao-e-proximos-passos.md) — capacidades da VPS, escopo da issue #86, responsabilidades e pendências de validação
 
 ## Resultado esperado
 

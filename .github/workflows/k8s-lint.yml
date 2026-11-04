@@ -20,6 +20,7 @@ jobs:
       kustomize-paths: |
         kubernetes/apae-atendimento/base
         kubernetes/apae-geral/base
+        kubernetes/gestao-escolar/base
         kubernetes/site-comemorativo/base
 
   argocd:
