@@ -7,4 +7,6 @@
 #   collections:
 #     - name: ansible.posix
 #       version: "x.y.z"
-collections: []
+collections:
+  - name: ansible.posix
+    version: ">=1.0.0"
