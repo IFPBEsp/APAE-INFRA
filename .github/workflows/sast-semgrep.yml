@@ -144,10 +144,10 @@ jobs:
           else:
               print("Diff-aware desativado ou executando fora do contexto de Pull Request. Executando scan completo.")
 
-          # Output CLI args as a single space-separated string or into GITHUB_OUTPUT
-          cli_args = " ".join(f'"{a}"' for a in args)
+          # Output CLI args as JSON list
+          cli_args_json = json.dumps(args)
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"cli_args={cli_args}\n")
+              f.write(f"cli_args={cli_args_json}\n")
           PY
 
       - name: Run Semgrep SAST scan
@@ -158,16 +158,36 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Executando Semgrep com argumentos:"
-          echo "$CLI_ARGS"
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
 
-          # Run semgrep generating SARIF output; do not fail here so SARIF can always be uploaded
-          eval "semgrep scan $CLI_ARGS --sarif --output semgrep.sarif" || true
+          cli_args_raw = os.environ.get("CLI_ARGS", "[]")
+          try:
+              extra_args = json.loads(cli_args_raw)
+          except Exception as exc:
+              print(f"::error::Falha ao decodificar argumentos do Semgrep: {exc}")
+              sys.exit(1)
 
-          if [[ ! -s semgrep.sarif ]]; then
-            echo "::error::Arquivo semgrep.sarif nao foi gerado ou esta vazio."
-            exit 1
-          fi
+          cmd = ["semgrep", "scan"] + extra_args + ["--sarif", "--output", "semgrep.sarif"]
+          print("Executando Semgrep com argumentos:")
+          print(" ".join(cmd))
+
+          result = subprocess.run(cmd)
+
+          # Exit code 0: execucao concluida sem findings ou findings sem flag --error
+          # Exit code 1: findings encontrados
+          # Exit codes >= 2 (ex: 7 para erro de configuracao): erros operacionais/execucao
+          if result.returncode not in (0, 1):
+              print(f"::error::Semgrep finalizou com erro de execucao (codigo de saida {result.returncode}).")
+              sys.exit(result.returncode)
+
+          if not os.path.isfile("semgrep.sarif") or os.path.getsize("semgrep.sarif") == 0:
+              print("::error::Arquivo semgrep.sarif nao foi gerado ou esta vazio.")
+              sys.exit(1)
+          PY
 
       - name: Upload SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
@@ -207,6 +227,7 @@ jobs:
 
           blocking_findings = []
           total_findings = 0
+          suppressed_findings = 0
 
           # Map SARIF levels to rank
           # SARIF levels: 'error', 'warning', 'note', 'none'
@@ -218,11 +239,48 @@ jobs:
           }
 
           for run in data.get("runs", []):
+              rules = run.get("tool", {}).get("driver", {}).get("rules", [])
+              rules_by_id = {}
+              for rule in rules:
+                  r_id = rule.get("id")
+                  if r_id:
+                      rules_by_id[r_id] = rule
+
               for result in run.get("results", []):
                   total_findings += 1
-                  raw_level = result.get("level", "warning").lower()
-                  finding_level = level_map.get(raw_level, 2)
-                  
+
+                  # Verifica supressoes efetivas (ex: // nosemgrep ou # nosemgrep)
+                  suppressions = result.get("suppressions", [])
+                  is_suppressed = any(
+                      isinstance(s, dict) and s.get("status", "accepted") != "rejected"
+                      for s in suppressions
+                  )
+                  if is_suppressed:
+                      suppressed_findings += 1
+                      continue
+
+                  # Resolve a severidade conforme especificacao SARIF e Semgrep:
+                  # 1. result.level se definido no resultado
+                  # 2. tool.driver.rules[].defaultConfiguration.level herdado da regra
+                  # 3. fallback para 'warning'
+                  raw_level = result.get("level")
+                  if not raw_level:
+                      rule_match = None
+                      rule_idx = result.get("ruleIndex")
+                      if isinstance(rule_idx, int) and 0 <= rule_idx < len(rules):
+                          rule_match = rules[rule_idx]
+                      elif result.get("ruleId") in rules_by_id:
+                          rule_match = rules_by_id[result["ruleId"]]
+
+                      if rule_match:
+                          raw_level = rule_match.get("defaultConfiguration", {}).get("level")
+
+                  if not raw_level:
+                      raw_level = "warning"
+
+                  raw_level_str = str(raw_level).lower()
+                  finding_level = level_map.get(raw_level_str, 2)
+
                   rule_id = result.get("ruleId", "unknown-rule")
                   msg = result.get("message", {}).get("text", "")
                   locs = result.get("locations", [])
@@ -236,12 +294,14 @@ jobs:
                   if finding_level >= min_level:
                       blocking_findings.append({
                           "rule": rule_id,
-                          "level": raw_level.upper(),
+                          "level": raw_level_str.upper(),
                           "location": loc_str,
                           "message": msg
                       })
 
           print(f"Total de findings reportados pelo Semgrep: {total_findings}")
+          if suppressed_findings:
+              print(f"Findings suprimidos (desconsiderados no bloqueio): {suppressed_findings}")
           print(f"Criterio de bloqueio (fail-severity): {fail_sev}")
 
           if blocking_findings:
