@@ -1,0 +1,502 @@
+name: Reusable Java Maven Backend CI
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Diretório do backend Maven, relativo à raiz do repositório"
+        required: true
+        type: string
+
+      java-version:
+        description: "Versão do JDK Temurin"
+        required: false
+        type: string
+        default: "21"
+
+      maven-args:
+        description: "Argumentos executados pelo Maven Wrapper"
+        required: false
+        type: string
+        default: "verify"
+
+      coverage-report-path:
+        description: "Caminho do relatório XML do JaCoCo, relativo ao working-directory"
+        required: false
+        type: string
+        default: "target/site/jacoco/jacoco.xml"
+
+      coverage-min:
+        description: "Cobertura mínima de linhas em percentual; vazio desabilita a verificação"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Validate inputs and project layout
+        id: validate
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          MAVEN_ARGS_INPUT: ${{ inputs.maven-args }}
+          COVERAGE_REPORT_PATH: ${{ inputs.coverage-report-path }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${WORKING_DIRECTORY//[[:space:]]/}" ]]; then
+            echo "::error::O input working-directory é obrigatório."
+            exit 1
+          fi
+
+          if [[ "$WORKING_DIRECTORY" = /* || "$WORKING_DIRECTORY" == *".."* ]]; then
+            echo "::error::working-directory deve ser relativo à raiz do repositório e não pode conter '..'."
+            exit 1
+          fi
+
+          project_dir="$GITHUB_WORKSPACE/$WORKING_DIRECTORY"
+
+          if [[ ! -d "$project_dir" ]]; then
+            echo "::error::Diretório não encontrado: $WORKING_DIRECTORY"
+            exit 1
+          fi
+
+          if [[ ! -f "$project_dir/pom.xml" ]]; then
+            echo "::error::pom.xml não encontrado em $WORKING_DIRECTORY."
+            exit 1
+          fi
+
+          if [[ ! -f "$project_dir/mvnw" ]]; then
+            echo "::error::Maven Wrapper (mvnw) não encontrado em $WORKING_DIRECTORY."
+            exit 1
+          fi
+
+          if [[ ! -x "$project_dir/mvnw" ]]; then
+            chmod +x "$project_dir/mvnw"
+          fi
+
+          if [[ -z "${MAVEN_ARGS_INPUT//[[:space:]]/}" ]]; then
+            echo "::error::O input maven-args não pode ser vazio."
+            exit 1
+          fi
+
+          if [[ -z "${COVERAGE_REPORT_PATH//[[:space:]]/}" ]]; then
+            echo "::error::O input coverage-report-path não pode ser vazio."
+            exit 1
+          fi
+
+          if [[ "$COVERAGE_REPORT_PATH" = /* || "$COVERAGE_REPORT_PATH" == *".."* ]]; then
+            echo "::error::coverage-report-path deve ser relativo ao working-directory e não pode conter '..'."
+            exit 1
+          fi
+
+      - name: Set up JDK Temurin
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+          cache: maven
+          cache-dependency-path: |
+            ${{ inputs.working-directory }}/pom.xml
+            ${{ inputs.working-directory }}/**/pom.xml
+
+      - name: Verify Docker availability for Testcontainers
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          docker version
+          docker info > /dev/null
+
+      - name: Build and test with Maven Wrapper
+        id: maven
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          MAVEN_ARGS_INPUT: ${{ inputs.maven-args }}
+        run: |
+          set -euo pipefail
+          read -r -a maven_args <<< "$MAVEN_ARGS_INPUT"
+          ./mvnw -B "${maven_args[@]}"
+
+      - name: Prepare JaCoCo coverage report
+        id: coverage
+        if: always() && steps.validate.outcome == 'success'
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          COVERAGE_REPORT_PATH: ${{ inputs.coverage-report-path }}
+          COVERAGE_MIN: ${{ inputs.coverage-min }}
+          JAVA_VERSION: ${{ inputs.java-version }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "$COVERAGE_REPORT_PATH" ]]; then
+            echo "::notice::Relatório JaCoCo não encontrado; tentando gerar com jacoco:report."
+            ./mvnw -B jacoco:report || true
+          fi
+
+          if [[ ! -f "$COVERAGE_REPORT_PATH" ]]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+
+            if [[ -n "${COVERAGE_MIN//[[:space:]]/}" ]]; then
+              echo "::error::Relatório JaCoCo não encontrado; coverage-min não pode ser verificado."
+              exit 1
+            fi
+
+            echo "::warning::Relatório JaCoCo não encontrado em $COVERAGE_REPORT_PATH."
+            exit 0
+          fi
+
+          report_dir="$(dirname "$COVERAGE_REPORT_PATH")"
+          safe_dir="${WORKING_DIRECTORY//\//-}"
+          safe_dir="${safe_dir//[^A-Za-z0-9._-]/-}"
+
+          if [[ -z "$safe_dir" || "$safe_dir" == "." ]]; then
+            safe_dir="root"
+          fi
+
+          artifact_path="$WORKING_DIRECTORY/$COVERAGE_REPORT_PATH"
+          if [[ "$report_dir" != "." ]]; then
+            artifact_path="$WORKING_DIRECTORY/$report_dir"
+          fi
+
+          {
+            echo "found=true"
+            echo "report-path=$GITHUB_WORKSPACE/$COVERAGE_REPORT_PATH"
+            echo "artifact-path=$artifact_path"
+            echo "artifact-name=jacoco-coverage-${safe_dir}-jdk${JAVA_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish JaCoCo coverage
+        if: always() && steps.coverage.outputs.found == 'true'
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          COVERAGE_REPORT_PATH: ${{ steps.coverage.outputs.report-path }}
+          COVERAGE_MIN: ${{ inputs.coverage-min }}
+        run: |
+          set -euo pipefail
+
+          python3 - "$COVERAGE_REPORT_PATH" "$COVERAGE_MIN" <<'PY'
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+          from decimal import Decimal, InvalidOperation
+          from pathlib import Path
+
+          report_path = Path(sys.argv[1])
+          minimum_raw = sys.argv[2].strip()
+
+          if not report_path.is_file():
+              print(f"::error::Relatório de cobertura não encontrado: {report_path}")
+              raise SystemExit(1)
+
+          try:
+              root = ET.parse(report_path).getroot()
+          except ET.ParseError as error:
+              print(f"::error::Falha ao ler o relatório JaCoCo: {error}")
+              raise SystemExit(1)
+
+          counters = {}
+          for counter in root.findall("counter"):
+              counter_type = counter.get("type")
+              if not counter_type:
+                  continue
+              covered = int(counter.get("covered", "0") or 0)
+              missed = int(counter.get("missed", "0") or 0)
+              counters[counter_type] = (covered, missed)
+
+          labels = [
+              ("INSTRUCTION", "Instruções"),
+              ("BRANCH", "Ramos"),
+              ("LINE", "Linhas"),
+              ("COMPLEXITY", "Complexidade"),
+              ("METHOD", "Métodos"),
+              ("CLASS", "Classes"),
+          ]
+
+          def percentage(covered, missed):
+              total = covered + missed
+              if total == 0:
+                  return Decimal("100.00")
+              return (Decimal(covered) * Decimal("100") / Decimal(total)).quantize(Decimal("0.01"))
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as summary:
+                  summary.write("## Cobertura JaCoCo\n\n")
+                  summary.write(f"Relatório: `{report_path}`\n\n")
+                  summary.write("| Métrica | Cobertura | Coberto | Perdido |\n")
+                  summary.write("| --- | ---: | ---: | ---: |\n")
+                  for counter_type, label in labels:
+                      if counter_type in counters:
+                          covered, missed = counters[counter_type]
+                          summary.write(
+                              f"| {label} | {percentage(covered, missed)}% | {covered} | {missed} |\n"
+                          )
+                  summary.write("\n")
+
+          if not minimum_raw:
+              raise SystemExit(0)
+
+          normalized = minimum_raw.rstrip("%").strip().replace(",", ".")
+          try:
+              minimum = Decimal(normalized)
+          except InvalidOperation:
+              print(
+                  f"::error::coverage-min inválido: {minimum_raw}. "
+                  "Informe um percentual entre 0 e 100."
+              )
+              raise SystemExit(1)
+
+          if minimum < 0 or minimum > 100:
+              print(f"::error::coverage-min deve estar entre 0 e 100: {minimum_raw}.")
+              raise SystemExit(1)
+
+          if "LINE" not in counters:
+              print("::error::O relatório JaCoCo não possui contador de linhas (LINE).")
+              raise SystemExit(1)
+
+          covered, missed = counters["LINE"]
+          line_coverage = percentage(covered, missed)
+
+          if line_coverage < minimum:
+              print(
+                  f"::error::Cobertura de linhas {line_coverage}% abaixo do mínimo de {minimum}%."
+              )
+              raise SystemExit(1)
+
+          print(f"Cobertura de linhas {line_coverage}% atende ao mínimo de {minimum}%.")
+          PY
+
+      - name: Upload JaCoCo coverage report
+        if: always() && steps.coverage.outputs.found == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.coverage.outputs.artifact-name }}
+          path: ${{ steps.coverage.outputs.artifact-path }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Prepare Surefire test report
+        id: surefire
+        if: always() && steps.validate.outcome == 'success'
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+
+          report_file="$RUNNER_TEMP/surefire-report.md"
+          rm -f "$report_file"
+
+          python3 - "$report_file" <<'PY'
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          output = Path(sys.argv[1])
+          workspace = Path.cwd()
+          report_files = sorted(workspace.glob("**/target/surefire-reports/TEST-*.xml"))
+
+          if not report_files:
+              raise SystemExit(0)
+
+          totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "time": 0.0}
+          suites = []
+          failed_cases = []
+
+          for report_file in report_files:
+              try:
+                  root = ET.parse(report_file).getroot()
+              except ET.ParseError as error:
+                  print(f"::warning::Não foi possível ler {report_file}: {error}")
+                  continue
+
+              suite_nodes = [root] if root.tag == "testsuite" else root.findall("testsuite")
+
+              for suite in suite_nodes:
+                  name = suite.get("name") or report_file.stem
+
+                  try:
+                      tests = int(float(suite.get("tests", 0) or 0))
+                      failures = int(float(suite.get("failures", 0) or 0))
+                      errors = int(float(suite.get("errors", 0) or 0))
+                      skipped = int(float(suite.get("skipped", 0) or 0))
+                      duration = float(suite.get("time", 0) or 0)
+                  except ValueError:
+                      tests = 0
+                      failures = 0
+                      errors = 0
+                      skipped = 0
+                      duration = 0.0
+
+                  totals["tests"] += tests
+                  totals["failures"] += failures
+                  totals["errors"] += errors
+                  totals["skipped"] += skipped
+                  totals["time"] += duration
+                  suites.append((name, tests, failures, errors, skipped, duration))
+
+                  for case in suite.findall("testcase"):
+                      problem = case.find("failure")
+                      if problem is None:
+                          problem = case.find("error")
+                      if problem is None:
+                          continue
+
+                      message = (problem.get("message") or problem.text or "").strip()
+                      message = " ".join(message.split())
+                      if len(message) > 500:
+                          message = message[:497] + "..."
+
+                      failed_cases.append(
+                          {
+                              "suite": name,
+                              "classname": case.get("classname", ""),
+                              "name": case.get("name", ""),
+                              "message": message,
+                          }
+                      )
+
+          def cell(value):
+              return str(value).replace("|", "\\|").replace("\n", " ")
+
+          lines = ["## Relatório de testes (Surefire)", ""]
+
+          if totals["tests"] == 0 and not suites:
+              lines.append("Nenhum teste foi encontrado nos relatórios Surefire.")
+          else:
+              status = "sucesso" if totals["failures"] == 0 and totals["errors"] == 0 else "falha"
+              lines.append(
+                  f"Status: **{status}**. Total de {totals['tests']} testes, "
+                  f"{totals['failures']} falhas, {totals['errors']} erros, "
+                  f"{totals['skipped']} ignorados, {totals['time']:.2f}s."
+              )
+              lines.append("")
+              lines.append("| Suíte | Testes | Falhas | Erros | Ignorados | Tempo (s) |")
+              lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+
+              for name, tests, failures, errors, skipped, duration in suites[:30]:
+                  lines.append(
+                      f"| {cell(name)} | {tests} | {failures} | {errors} | "
+                      f"{skipped} | {duration:.2f} |"
+                  )
+
+              if len(suites) > 30:
+                  lines.append("| ... | | | | | |")
+                  lines.append("")
+                  lines.append(f"Mais {len(suites) - 30} suítes não exibidas.")
+
+          if failed_cases:
+              lines.append("")
+              lines.append("### Falhas")
+              lines.append("")
+
+              for case in failed_cases[:20]:
+                  identifier = ".".join(
+                      part for part in (case["classname"], case["name"]) if part
+                  )
+                  lines.append(
+                      f"- `{cell(identifier)}`: {cell(case['message']) or 'sem mensagem'}"
+                  )
+
+              if len(failed_cases) > 20:
+                  lines.append(f"- Mais {len(failed_cases) - 20} falhas não exibidas.")
+
+          content = "\n".join(lines) + "\n"
+
+          if len(content) > 60000:
+              content = content[:59500] + "\n\n_Relatório truncado por limite de tamanho._\n"
+
+          output.write_text(content, encoding="utf-8")
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as summary:
+                  summary.write(content)
+          PY
+
+          if [[ -f "$report_file" ]]; then
+            {
+              echo "found=true"
+              echo "path=$report_file"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish Surefire report to Pull Request
+        if: always() && github.event_name == 'pull_request' && steps.surefire.outputs.found == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          REPORT_PATH: ${{ steps.surefire.outputs.path }}
+        with:
+          script: |
+            const fs = require("fs");
+
+            const marker = "<!-- apae-java-backend-ci:surefire -->";
+            const report = fs.readFileSync(process.env.REPORT_PATH, "utf8");
+            const body = `${marker}\n${report}`;
+            const issueNumber = context.issue.number;
+
+            if (!issueNumber) {
+              core.info("Evento sem Pull Request; comentário não será publicado.");
+              return;
+            }
+
+            try {
+              const comments = await github.paginate(
+                github.rest.issues.listComments,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  per_page: 100,
+                }
+              );
+
+              const existing = comments.find(
+                (comment) => comment.body && comment.body.includes(marker)
+              );
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+                core.info(`Relatório Surefire atualizado no comentário ${existing.html_url}.`);
+                return;
+              }
+
+              const response = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body,
+              });
+              core.info(`Relatório Surefire publicado no comentário ${response.data.html_url}.`);
+            } catch (error) {
+              core.warning(
+                `Não foi possível publicar o relatório Surefire no Pull Request: ${error.message}`
+              );
+            }
