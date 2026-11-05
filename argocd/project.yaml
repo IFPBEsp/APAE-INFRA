@@ -1,0 +1,44 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: apae
+  namespace: argocd
+spec:
+  description: Projeto GitOps dos produtos da APAE
+
+  sourceRepos:
+    - https://github.com/IFPBEsp/APAE-INFRA.git
+
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "apae-*"
+
+  clusterResourceWhitelist: []
+
+  orphanedResources:
+    warn: true
+
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: ""
+      kind: Secret
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: apps
+      kind: DaemonSet
+    - group: batch
+      kind: Job
+    - group: batch
+      kind: CronJob
+    - group: networking.k8s.io
+      kind: Ingress
