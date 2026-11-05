@@ -25,11 +25,20 @@ Os ambientes ficam em `/terraform/environments/` e cada um consome os módulos c
 
 ## Terraform State
 
-O state do Terraform é armazenado **localmente na própria VPS Contabo**, no caminho definido pelo backend do Terraform.
+A decisão atual é armazenar o state remotamente no **HCP Terraform**, fora da VPS e do cluster, conforme a implementação do [PR #101](https://github.com/IFPBEsp/APAE-INFRA/pull/101). A proposta anterior de manter `terraform.tfstate` na VPS foi substituída por esse backend.
 
-- **Localização:** arquivo `terraform.tfstate` na VPS Contabo
-- **Acesso:** o executor do Terraform (GitHub Actions) acessa o state via SSH ou mount remoto configurado no backend
-- **Concorrência:** apenas um `apply` deve ser executado por vez — o controle é feito pelo próprio fluxo GitOps, onde o `apply` só ocorre após merge na branch principal, evitando execuções simultâneas
+- **Ambientes:** o workspace `apae-infra-dev` está configurado e validado. Os workspaces independentes `apae-infra-hml` e `apae-infra-prod` permanecem planejados.
+- **Executor e acesso:** na CI de Pull Requests, o Terraform CLI executa no runner do GitHub Actions e acessa o HCP Terraform pela API autenticada do backend. O workspace usa o modo de execução local: o HCP armazena o state e controla seu lock, mas não executa o Terraform. Não há acesso ao state por SSH nem por montagem de um diretório da VPS.
+- **Credenciais:** a inicialização autenticada e o `plan` usam a credencial do HCP disponibilizada ao job aprovado no ambiente `terraform-plan`. A configuração do executor e das credenciais do futuro `apply` ainda precisa ser definida; não é implementada neste PR.
+
+### Concorrência, serialização e locking
+
+Executar o `apply` somente após o merge **não impede execuções simultâneas**: merges consecutivos, reexecuções e comandos locais podem disputar o mesmo state. O fluxo de aplicação deve combinar duas proteções:
+
+1. **Serialização no executor:** o futuro workflow de `apply` deverá usar um grupo de `concurrency` por ambiente/workspace, compartilhado pelas execuções que alteram o mesmo state, com `cancel-in-progress: false` para não interromper uma aplicação em andamento. Agrupar apenas pelo número do PR não serializa aplicações de PRs diferentes. Essa automação permanece pendente.
+2. **Locking no backend:** o locking nativo do HCP Terraform protege o state também contra operações concorrentes originadas fora daquele workflow. Todas as operações devem usar o workspace correto e manter o locking habilitado. Uma falha ao adquirir o lock deve interromper a operação; não deve ser contornada com `-lock=false`.
+
+O PR #101 registrou a validação do bloqueio administrativo e do desbloqueio do workspace `dev`. Não foi realizado um teste específico com duas operações concorrentes tentando adquirir o mesmo lock. Portanto, a configuração do backend não comprova que a serialização do futuro `apply` já esteja implementada ou validada.
 
 ## Fluxo de plan/apply
 
@@ -48,7 +57,9 @@ O `terraform apply` **não é executado nesta etapa**. O resultado do `plan` ser
 
 ### Etapa 2 — Apply pós-merge (GitOps)
 
-Após o merge na branch principal, o mecanismo de reconciliação executa o `terraform apply`, aplicando as mudanças na VPS Contabo. O Git é a fonte da verdade — toda mudança de infraestrutura passa obrigatoriamente por PR e revisão antes de ser aplicada.
+O fluxo desejado é aplicar as mudanças revisadas após o merge na branch principal. O mecanismo e o executor definitivo do `terraform apply`, suas aprovações e a serialização por workspace ainda precisam ser definidos e implementados; este PR não configura uma aplicação automática pós-merge.
+
+Antes de habilitar essa etapa, o executor deverá acessar o backend remoto autenticado e atender aos requisitos de serialização e locking descritos acima. O Git permanece como fonte da configuração desejada, com mudanças revisadas por PR antes da aplicação.
 
 ## Recursos Provisionados
 
