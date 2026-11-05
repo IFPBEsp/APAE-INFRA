@@ -10,7 +10,7 @@ As alterações persistentes nos workloads são propostas e revisadas no APAE-IN
 
 ![Diagrama do Fluxo do ArgoCD](../diagramas/fluxo-argocd.svg)
 
-> **Estado da implementação:** a issue [#91](https://github.com/IFPBEsp/APAE-INFRA/issues/91) implementa o bootstrap para o cluster k3s de produção. A estrutura de overlays e as Applications dos produtos são responsabilidade da [#92](https://github.com/IFPBEsp/APAE-INFRA/issues/92). O fluxo de homologação e promoção é tratado pela [#106](https://github.com/IFPBEsp/APAE-INFRA/issues/106). Os exemplos de ambientes futuros neste documento não indicam que seus clusters ou overlays já estejam implantados.
+> **Estado da implementação:** a issue [#91](https://github.com/IFPBEsp/APAE-INFRA/issues/91) implementa o bootstrap para o cluster k3s de produção. A estrutura de overlays e as Applications dos produtos são responsabilidade da [#92](https://github.com/IFPBEsp/APAE-INFRA/issues/92). O fluxo de homologação e promoção é tratado pela [#106](https://github.com/IFPBEsp/APAE-INFRA/issues/106). Os exemplos de ambientes futuros neste documento não indicam que seus namespaces ou overlays já estejam implantados. O cenário atual é um único cluster k3s, com ambientes separados por namespace, conforme a #90.
 
 ## Divisão de responsabilidades
 
@@ -25,9 +25,9 @@ Nenhum recurso deve ter dois controladores concorrentes. Alterações em compone
 
 ## Branch de referência e ambientes
 
-### Decisão da issue #91: raiz de produção na `main`
+### Decisão da issue #91: raiz do cluster único na `main`
 
-O bootstrap inicial do ArgoCD será executado no **cluster k3s da VPS de produção**. A Application raiz `apae-root` acompanhará a branch **`main` do APAE-INFRA**, que é a referência aprovada para as definições GitOps de produção.
+O bootstrap inicial do ArgoCD será executado no **cluster k3s único da VPS**, compartilhado pelos ambientes com separação por namespace. A Application raiz `apae-root` acompanhará a branch **`main` do APAE-INFRA**, que é a referência aprovada para as definições GitOps de produção.
 
 É importante distinguir três configurações:
 
@@ -87,7 +87,7 @@ Adotamos o padrão **[App of Apps](https://argo-cd.readthedocs.io/en/stable/oper
 
 Os **dois ciclos independentes** são:
 
-1. **Raiz:** observa exclusivamente as definições de Applications filhas permitidas pelo seu filtro de descoberta (na raiz de produção, `argocd/apps/prod/`) e mantém esses objetos registrados no cluster.
+1. **Raiz:** observa as definições de Applications filhas de todos os ambientes em `argocd/apps/*/*.yaml` e mantém esses objetos registrados no cluster único. A política de sincronização dos workloads é definida em cada filha.
 2. **Filhas:** observam os overlays apontados em seus respectivos `spec.source.path` e sinalizam ou aplicam diferenças conforme sua política de sincronização.
 
 Alterar a imagem ou o digest em um overlay, sem mudar as definições das filhas, normalmente afeta apenas a reconciliação da Application filha correspondente; não altera a definição gerenciada pela raiz.
@@ -106,12 +106,12 @@ argocd/
     │   ├── apae-atendimento-dev.yaml
     │   └── site-comemorativo-dev.yaml
     ├── hml/              # Futuro
-    └── prod/             # Futuro; único destino descoberto por apae-root
+    └── prod/             # Futuro
 ```
 
 A issue #92 define as Applications de desenvolvimento em `argocd/apps/dev/`. A #91 **não implanta os produtos nem cria seus overlays**. Os diretórios `apps/hml/` e `apps/prod/` representam a organização prevista para os ambientes futuros.
 
-### Application raiz de produção
+### Application raiz do cluster único
 
 O arquivo `argocd/app-of-apps.yaml`, administrado pelo Ansible, contém a seguinte configuração de origem:
 
@@ -129,7 +129,7 @@ spec:
     path: argocd
     directory:
       recurse: true
-      include: 'apps/prod/*.yaml'
+      include: 'apps/*/*.yaml'
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
@@ -141,9 +141,9 @@ spec:
       - CreateNamespace=false
 ```
 
-O filtro `include: 'apps/prod/*.yaml'` restringe a descoberta da raiz de produção aos manifests de Applications sob `argocd/apps/prod/`, mesmo com `recurse: true`. Assim, os objetos de bootstrap administrados pelo Ansible (`app-of-apps.yaml`, `project.yaml` e `project-infra.yaml`) e as Applications de `dev` e `hml` não entram no conjunto desejado da raiz. Os manifests de instalação Helm do próprio ArgoCD também devem permanecer **fora de qualquer Application** reconciliada pelo ArgoCD.
+O filtro `include: 'apps/*/*.yaml'` permite descobrir as Applications de todos os ambientes sob `argocd/apps/`, incluindo `dev` da #92 e os futuros `hml` e `prod`. Os objetos de bootstrap administrados pelo Ansible (`app-of-apps.yaml`, `project.yaml` e `project-infra.yaml`) ficam na raiz de `argocd/` e não correspondem ao filtro. Os manifests de instalação Helm do próprio ArgoCD também devem permanecer **fora de qualquer Application** reconciliada pelo ArgoCD.
 
-Enquanto não existirem Applications em `argocd/apps/prod/`, a raiz de produção não terá Applications filhas a descobrir. O bootstrap do ambiente de desenvolvimento deverá ser definido separadamente, acompanhando a revisão Git e o diretório adequados. A organização em pastas, sozinha, não produz isolamento: cada raiz precisa de um filtro de descoberta compatível com seu cluster.
+A raiz mantém as Applications filhas registradas, enquanto cada filha define seu namespace, revisão Git, overlay e política de sincronização: automática em `dev` e manual nos demais ambientes. As definições das filhas precisam estar na `main`, acompanhada pela raiz, mesmo quando seus workloads acompanham outra revisão. Enquanto não houver arquivos correspondentes ao filtro nessa revisão, a raiz não terá filhas a descobrir. A separação lógica por namespace não substitui RBAC e políticas de rede.
 
 **Atenção antes de aplicar o filtro em uma raiz já ativa:** com `prune: true`, Applications filhas anteriormente gerenciadas pela raiz e agora excluídas podem ser removidas da reconciliação. É necessário inspecionar os recursos atualmente gerenciados e validar o efeito da mudança antes de sincronizar.
 
@@ -245,7 +245,7 @@ A sequência planejada é:
 2. Instalar/verificar o Helm com versão fixada e verificação de integridade.
 3. Instalar/atualizar o chart oficial do ArgoCD com versões fixadas e recursos adequados à VPS.
 4. Aguardar o estado de saúde dos componentes e o estabelecimento dos CRDs `Application`, `AppProject` e `ApplicationSet`.
-5. Configurar senha administrativa e RBAC com proteção dos valores sensíveis, removendo a senha inicial após a substituição.
+5. Configurar as senhas do administrador e da conta `apae-leitura` via Ansible Vault, associar explicitamente a conta ao papel `apae-readonly` e manter a política padrão vazia. Proteger os valores sensíveis e remover a senha administrativa inicial após a substituição.
 6. Aplicar pelo Ansible os dois AppProjects e a Application raiz.
 7. Validar acesso por port-forward, sincronização de uma Application de teste e idempotência.
 
@@ -257,20 +257,9 @@ Antes de executar um upgrade, confirmar compatibilidade de versões, backup do e
 
 ## Evolução futura: VPS e clusters separados
 
-A arquitetura planejada contempla **uma VPS e um cluster k3s independentes para desenvolvimento e produção**, cada um com sua própria instância do ArgoCD. Essa separação **não será implementada na #91**.
+O escopo atual da #90 e da #91 utiliza **uma VPS e um cluster k3s**, com ambientes separados por namespace e uma raiz que descobre todas as Applications em `apps/`. Clusters separados são uma possibilidade futura, dependente de decisão arquitetural específica.
 
-Ao planejar a issue futura, deverão ser definidos:
-
-- Inventários, variáveis e bootstrap Ansible específicos por ambiente.
-- Application raiz de Dev acompanhando `dev` e raiz de Prod acompanhando `main`.
-- Descoberta restrita às Applications filhas correspondentes ao respectivo cluster.
-- Overlays Kustomize `dev`, `hml` e `prod` e suas políticas de promoção.
-- AppProjects, namespaces e permissões adaptados a cada cluster.
-- Credenciais e Secrets isolados por ambiente.
-- Conectividade administrativa segura, sem depender de exposição pública da API Kubernetes.
-- Estratégia explícita para homologação (cluster próprio ou destino isolado), a ser decidida na issue correspondente.
-
-**Não adotar** indiscriminadamente `path: argocd` com busca recursiva em ambos os clusters sem filtros de ambiente. A raiz de produção utiliza inclusão explícita de `apps/prod/*.yaml`. A mesma branch pode conter definições de múltiplos ambientes, e cada raiz deve gerenciar apenas suas próprias Applications.
+Se essa separação for aprovada, será necessário definir inventários e bootstrap por cluster, distribuição das Applications entre as raízes, filtros de descoberta próprios, AppProjects, credenciais e conectividade administrativa. O filtro atual `apps/*/*.yaml` atende ao cluster compartilhado; não deve ser replicado em clusters separados sem revisar os destinos e o conjunto de Applications gerenciadas por cada raiz.
 
 ## Observabilidade
 

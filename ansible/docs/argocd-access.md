@@ -35,6 +35,29 @@ Na máquina local, abrir:
 O certificado TLS poderá apresentar um aviso
 por não corresponder ao endereço localhost.
 
+## Conta de leitura e RBAC
+
+A conta local `apae-leitura` permite login e está associada ao papel
+`role:apae-readonly`, com leitura de Applications, projetos, repositórios e logs.
+Ela não recebe permissões de sincronização, criação, alteração ou exclusão.
+A política padrão é vazia; o acesso depende da associação explícita ao papel.
+
+Antes de executar o bootstrap, editar o Vault com:
+
+```bash
+ansible-vault edit ansible/vars/argocd-vault.yml
+```
+
+Além de `argocd_admin_password_hash`, definir `argocd_readonly_password_hash`
+com um hash bcrypt próprio, gerado a partir de uma senha distinta. Não adicionar
+senhas ou hashes em texto claro ao repositório. O Ansible valida os hashes antes
+da instalação e atualiza o Secret via stdin, com `no_log: true`, somente quando
+o hash muda. A data de alteração da senha também é atualizada nesse caso.
+
+Após aplicar, entrar como `apae-leitura`, conferir a visualização das Applications
+e confirmar que operações de sincronização e alteração são negadas. Reexecutar
+o playbook para verificar que as senhas não são atualizadas sem necessidade.
+
 ## Segurança
 
 - Não abrir portas públicas para o ArgoCD.

@@ -8,6 +8,16 @@
     fail_msg: "Configure um hash bcrypt válido para o administrador."
   no_log: true
 
+- name: Validar configuração da senha da conta de leitura
+  ansible.builtin.assert:
+    that:
+      - argocd_readonly_password_hash is defined
+      - argocd_readonly_password_hash is string
+      - argocd_readonly_password_hash is match('^\$2[aby]\$\d{2}\$.{53}$')
+      - argocd_readonly_password_hash != argocd_admin_password_hash
+    fail_msg: "Configure um hash bcrypt próprio para a conta de leitura."
+  no_log: true
+
 - name: Validar pré-requisitos do ArgoCD
   ansible.builtin.import_tasks: prerequisites.yml
 

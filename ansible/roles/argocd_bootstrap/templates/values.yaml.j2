@@ -71,15 +71,17 @@ configs:
 
   cm:
     admin.enabled: true
+    accounts.apae-leitura: login
     timeout.reconciliation: 180s
 
   rbac:
-    policy.default: role:authenticated
+    policy.default: ""
     policy.csv: |
       p, role:apae-readonly, applications, get, */*, allow
       p, role:apae-readonly, projects, get, *, allow
       p, role:apae-readonly, repositories, get, *, allow
       p, role:apae-readonly, logs, get, */*, allow
+      g, apae-leitura, role:apae-readonly
 
   repositories:
     apae-infra:

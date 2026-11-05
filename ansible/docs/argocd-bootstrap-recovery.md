@@ -30,7 +30,9 @@ Os manifestos da instalação do ArgoCD não devem ser incluídos em nenhuma App
 - Kubeconfig local disponível em `/etc/rancher/k3s/k3s.yaml`.
 - API Kubernetes acessível localmente pela VPS.
 - Ansible e coleção `kubernetes.core` disponíveis no controlador.
-- Arquivo Ansible Vault disponível e descriptografável.
+- Arquivo Ansible Vault disponível e descriptografável, contendo
+  `argocd_admin_password_hash` e `argocd_readonly_password_hash` como hashes
+  bcrypt próprios para as duas contas.
 - Versões do Helm, helm-diff, chart e ArgoCD fixadas.
 
 O kubeconfig administrativo não deve ser transferido para o GitHub Actions.
@@ -57,8 +59,8 @@ O fluxo esperado é:
 3. Instalar o helm-diff.
 4. Instalar o ArgoCD pelo chart oficial.
 5. Aguardar os componentes e CRDs.
-6. Configurar a senha administrativa.
-7. Validar o Secret administrativo.
+6. Configurar as senhas do administrador e da conta `apae-leitura`.
+7. Validar os hashes das duas contas no Secret, sem expor seu conteúdo.
 8. Remover o Secret da senha inicial.
 9. Aplicar os AppProjects e a Application raiz.
 10. Validar a saúde e a sincronização do ArgoCD.
@@ -110,7 +112,8 @@ Procedimento:
 6. Confirmar backup anterior à atualização.
 7. Executar o playbook Ansible.
 8. Validar a saúde dos componentes.
-9. Confirmar a persistência da senha administrativa.
+9. Confirmar a persistência das senhas e testar o acesso de leitura e a
+   negação de operações de sincronização e escrita para `apae-leitura`.
 10. Verificar o estado das Applications existentes.
 11. Reexecutar o playbook para avaliar a idempotência.
 
@@ -163,7 +166,7 @@ A segunda execução não deverá:
 
 - Reinstalar o Helm sem necessidade.
 - Atualizar o chart sem alteração de versão ou valores.
-- Redefinir a senha administrativa com o mesmo hash.
+- Manter as senhas das duas contas sem alteração quando os hashes forem os mesmos.
 - Recriar AppProjects sem necessidade.
 - Modificar a Application raiz sem alteração de configuração.
 - Reiniciar componentes desnecessariamente.

@@ -14,7 +14,7 @@ spec:
 
     directory:
       recurse: true
-      include: 'apps/prod/*.yaml'
+      include: 'apps/*/*.yaml'
 
   destination:
     server: https://kubernetes.default.svc
