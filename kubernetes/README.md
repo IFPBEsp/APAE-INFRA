@@ -75,8 +75,8 @@ Os serviços possuem a seguinte configuração:
 
 | Produto | Serviço | Réplicas | Situação |
 | --- | --- | ---: | --- |
-| APAE Geral | `apae` | 1 | Imagem prevista como disponível |
-| APAE Geral | `api` | 1 | Imagem prevista como disponível |
+| APAE Geral | `apae` | 0 | Publicação e acesso à imagem pendentes de confirmação |
+| APAE Geral | `api` | 0 | Publicação e acesso à imagem pendentes de confirmação |
 | APAE Geral | `management-app` | 0 | Sem imagem publicada |
 | APAE Atendimento | `atendimento` | 0 | Sem imagem publicada |
 | APAE Atendimento | `atendimento-app` | 0 | Sem imagem publicada |
@@ -86,7 +86,12 @@ Os serviços sem imagem publicada permanecem com `replicas: 0`, evitando tentati
 
 A existência de uma referência de imagem no manifesto não comprova sua disponibilidade no registro.
 
-Antes de aumentar a quantidade de réplicas, devem ser verificadas a publicação da imagem, a tag utilizada, as configurações necessárias e a disponibilidade de recursos no cluster.
+Antes de aumentar a quantidade de réplicas, confirmar que a tag exata referenciada
+no overlay existe e pode ser baixada pelo cluster: pacote público ou acesso via
+`imagePullSecret`, conforme a estratégia da #93. A referência `:dev` não garante
+que a imagem tenha sido publicada. Verificar também as configurações necessárias
+e a disponibilidade de recursos no cluster. Habilitar as réplicas em uma alteração
+revisada somente após essas verificações.
 
 ### Namespace
 
@@ -105,7 +110,12 @@ syncOptions:
   - CreateNamespace=false
 ```
 
-O namespace deve existir antes da primeira sincronização, sendo provisionado de maneira controlada pela infraestrutura.
+O namespace é declarado em `argocd/namespaces.yaml` e aplicado pelo Ansible
+em `ansible/roles/argocd_bootstrap/tasks/bootstrap.yml`, antes dos AppProjects
+e da Application raiz. Executar esse bootstrap antes da primeira sincronização
+das Applications dos produtos. O manifesto permanece fora da descoberta da
+raiz (`apps/*/*.yaml`), e o AppProject dos produtos continua sem permissão para
+criar recursos de cluster.
 
 O namespace compartilhado exige que cada recurso tenha uma identificação única para evitar conflitos entre Applications.
 
@@ -152,6 +162,7 @@ As definições das Applications ficam no diretório `argocd/`, separadas por am
 
 ```text
 argocd/
+├── namespaces.yaml       # Criado pelo Ansible antes da raiz
 ├── app-of-apps.yaml
 ├── project.yaml
 ├── project-infra.yaml
@@ -163,7 +174,8 @@ argocd/
         └── site-comemorativo-dev.yaml
 ```
 
-Os arquivos `app-of-apps.yaml`, `project.yaml` e `project-infra.yaml` pertencem ao bootstrap da issue #91 e são administrados pelo Ansible.
+Os arquivos `namespaces.yaml`, `app-of-apps.yaml`, `project.yaml` e
+`project-infra.yaml` pertencem ao bootstrap administrado pelo Ansible.
 
 As Applications filhas são declaradas na issue #92.
 
@@ -179,25 +191,29 @@ As Applications utilizam o AppProject `apae` e direcionam os recursos ao namespa
 
 ### Separação entre ambientes
 
-A Application raiz `apae-root`, definida na issue #91, utiliza a branch `main` e foi preparada para o cluster k3s da VPS de produção.
+A Application raiz `apae-root`, definida na issue #91, acompanha a branch `main`
+e registra as Applications dos ambientes no mesmo cluster k3s. Os workloads
+são separados logicamente por namespace, conforme a #90.
 
-Por esse motivo, ela não deve descobrir automaticamente as Applications do ambiente `dev`.
-
-As Applications de desenvolvimento ficam isoladas no diretório:
+As Applications de desenvolvimento ficam organizadas no diretório:
 
 ```text
 argocd/apps/dev/
 ```
 
-**O isolamento por diretório não impede, por si só, a descoberta dessas Applications.**
+A raiz utiliza busca recursiva em `argocd/` com o filtro
+`include: 'apps/*/*.yaml'`, incluindo `dev` e os futuros `hml` e `prod`.
+Os objetos de bootstrap na raiz de `argocd/`, incluindo `namespaces.yaml`,
+não correspondem ao filtro e continuam administrados pelo Ansible.
 
-Como a configuração inicial da raiz utiliza busca recursiva em `argocd/`, seu filtro de descoberta deve excluir explicitamente os manifests de desenvolvimento antes de disponibilizá-los na branch acompanhada pela raiz.
+O bootstrap cria `apae-dev` antes dos AppProjects e da Application raiz.
+Cada filha define sua política de sincronização: automática em `dev` e manual
+nos demais ambientes quando implementados. A organização por diretório e
+namespace não substitui os controles de RBAC e de rede.
 
-Essa configuração pertence à issue #91 e deve ser aplicada por meio do bootstrap administrado pelo Ansible.
-
-A ativação das Applications de desenvolvimento depende de uma raiz ou mecanismo de descoberta compatível com o ambiente `dev`.
-
-Até que essa integração esteja disponível, os manifests permanecem preparados e versionados, mas não devem ser considerados sincronizados.
+As definições precisam estar disponíveis na revisão acompanhada pela raiz para
+serem descobertas. A existência dos manifests no repositório não comprova sua
+sincronização no cluster.
 
 ### Revisões Git
 
@@ -384,6 +400,13 @@ A issue #92 contempla a criação dos overlays `dev`, das Applications filhas e 
 
 As validações locais já confirmaram a renderização dos overlays, a sintaxe YAML das Applications e a ausência de conflitos de identificação entre os 16 recursos renderizados.
 
-A sincronização real das Applications permanece condicionada à integração do bootstrap da issue #91, ao provisionamento do namespace e à definição do mecanismo de descoberta apropriado para desenvolvimento.
+A integração com o bootstrap da #91 está presente nesta branch: o Ansible cria
+`apae-dev` e aplica a raiz com descoberta de `apps/*/*.yaml`. A CI renderiza os
+três overlays `dev`, além das bases, para validar os manifests resultantes.
+
+A sincronização real das três Applications ainda precisa ser validada no cluster,
+após aplicar o bootstrap atualizado e disponibilizar os manifests na revisão Git
+acompanhada. Os serviços permanecem com zero réplicas até confirmar a publicação
+e o acesso às imagens; sincronização não significa disponibilidade dos produtos.
 
 Essas verificações precisam ser concluídas no cluster antes de considerar atendido o critério de aceite referente às Applications registradas e sincronizando no ArgoCD.

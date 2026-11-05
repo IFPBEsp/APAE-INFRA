@@ -8,9 +8,9 @@ resources:
 
 replicas:
   - name: apae
-    count: 1
+    count: 0
   - name: api
-    count: 1
+    count: 0
   - name: management-app
     count: 0
 
