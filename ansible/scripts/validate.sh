@@ -24,6 +24,20 @@ has_playbooks() {
   compgen -G "playbooks/*.yml" >/dev/null || compgen -G "playbooks/*.yaml" >/dev/null
 }
 
+ansible_content_paths() {
+  local path
+  for path in playbooks roles inventories collections; do
+    [ -d "$path" ] || continue
+    if find "$path" -type f \( -name '*.yml' -o -name '*.yaml' \) -print -quit | grep -q .; then
+      printf '%s\n' "$path"
+    fi
+  done
+}
+
+has_ansible_content() {
+  [ -n "$(ansible_content_paths)" ]
+}
+
 check_secrets() {
   log "Verificando ausencia de chaves privadas versionadas"
   if grep -R -I -n -E -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
@@ -77,21 +91,20 @@ check_yaml() {
 }
 
 check_lint() {
-  if ! has_playbooks; then
-    echo "Nenhum playbook em ansible/playbooks/; ansible-lint ignorado."
+  local -a content_paths=()
+  mapfile -t content_paths < <(ansible_content_paths)
+  if ! has_ansible_content; then
+    echo "Nenhum conteudo Ansible aplicavel; ansible-lint ignorado."
     return 0
   fi
   log "ansible-lint"
-  ansible-lint --config-file .ansible-lint
+  ansible-lint --config-file .ansible-lint "${content_paths[@]}"
 }
 
 check_syntax() {
-  if ! has_playbooks; then
-    echo "Nenhum playbook em ansible/playbooks/; syntax-check ignorado."
-    return 0
-  fi
-
-  inventories=()
+  local playbooks_present=true
+  local -a inventories=()
+  has_playbooks || playbooks_present=false
   for inv in inventories/*/; do
     [ -d "$inv" ] || continue
     for f in "$inv"hosts.yml "$inv"hosts.yaml; do
@@ -99,7 +112,7 @@ check_syntax() {
     done
   done
 
-  if [ "${#inventories[@]}" -eq 0 ]; then
+  if [ "$playbooks_present" = true ] && [ "${#inventories[@]}" -eq 0 ]; then
     echo "ERRO: playbooks existem, mas nenhum inventories/<ambiente>/hosts.yml foi encontrado." >&2
     return 1
   fi
@@ -108,12 +121,17 @@ check_syntax() {
     log "ansible-inventory --list: $inv"
     ansible-inventory -i "$inv" --list >/dev/null
 
+    [ "$playbooks_present" = true ] || continue
     for pb in playbooks/*.yml playbooks/*.yaml; do
       [ -f "$pb" ] || continue
       log "ansible-playbook --syntax-check: $pb ($inv)"
       ansible-playbook -i "$inv" --syntax-check "$pb"
     done
   done
+
+  if [ "$playbooks_present" = false ]; then
+    echo "Nenhum playbook em ansible/playbooks/; syntax-check ignorado."
+  fi
 }
 
 case "${1:-all}" in

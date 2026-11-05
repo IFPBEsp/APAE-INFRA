@@ -1,6 +1,10 @@
 ---
 extends: default
 
+ignore: |
+  .collections/
+  .cache/
+
 rules:
   line-length:
     max: 160
