@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gestao-escolar-backend
+  labels:
+    app: gestao-escolar-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: gestao-escolar-backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

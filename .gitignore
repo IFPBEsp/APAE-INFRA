@@ -5,3 +5,14 @@
 
 # Ansible - inventario local de producao
 /ansible/inventories/production/host_vars/apae-prod.yml
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+*.tfbackend
+crash.log
+crash.*.log
+.idea/
