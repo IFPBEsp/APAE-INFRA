@@ -1,0 +1,8 @@
+---
+- name: Provisionar k3s na VPS de produção
+  hosts: production
+  become: true
+  gather_facts: true
+
+  roles:
+    - k3s

@@ -1,0 +1,51 @@
+---
+# Namespace e release
+argocd_namespace: argocd
+argocd_release_name: argocd
+
+# Kubernetes
+argocd_kubeconfig: /etc/rancher/k3s/k3s.yaml
+argocd_kube_api_server: https://127.0.0.1:6443
+
+# Helm chart oficial
+argocd_chart_name: argo-cd
+argocd_chart_repository: https://argoproj.github.io/argo-helm
+argocd_chart_version: "10.10.3"
+argocd_app_version: "v3.5.5"
+
+# Helm CLI - Linux amd64
+argocd_helm_version: "v3.21.3"
+argocd_helm_arch: amd64
+argocd_helm_binary: /usr/local/bin/helm
+
+argocd_helm_archive_sha256: "15e041a93a590dce8100f39385cd98c84a765c9e36aeeb9e2dc6ff9e4769e2e0"
+
+argocd_helm_install_dir: "/opt/apae/helm/{{ argocd_helm_version }}"
+
+# Instalação
+argocd_helm_timeout: 600s
+argocd_helm_wait: true
+argocd_helm_atomic: true
+
+# Segurança e disponibilidade
+argocd_server_service_type: ClusterIP
+argocd_redis_ha_enabled: false
+argocd_dex_enabled: false
+argocd_notifications_enabled: false
+
+# Repositório GitOps
+argocd_git_repository: "https://github.com/IFPBEsp/APAE-INFRA.git"
+
+# Branch acompanhada pelo ArgoCD
+argocd_git_target_revision: main
+
+# Helm Diff Plugin
+argocd_helm_diff_version: "3.15.15"
+argocd_helm_diff_arch: amd64
+
+argocd_helm_plugins_dir: "/opt/apae/helm-plugins/{{ argocd_helm_diff_version }}"
+
+argocd_helm_diff_archive_sha256: "504e99410611daa70702362e1b10dc74929df8a912cb3f6b5d21d1ee9d0cb7d9"
+
+argocd_helm_diff_install_dir: >-
+  /opt/apae/helm-diff/{{ argocd_helm_diff_version }}
