@@ -1,0 +1,5 @@
+---
+# Copiar para apae-prod.yml e preencher localmente.
+# Este arquivo nao deve conter enderecos ou credenciais reais.
+
+ansible_host: "IP_DA_VPS"
