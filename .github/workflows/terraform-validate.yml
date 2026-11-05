@@ -7,6 +7,9 @@ on:
       - main
     paths:
       - "terraform/**"
+      - ".tflint.hcl"
+      - ".trivyignore"
+      - ".github/workflows/terraform-validate.yml"
 
 permissions:
   contents: read
@@ -19,6 +22,7 @@ env:
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
   TF_VERSION: "1.13.5"
+  TFLINT_VERSION: "v0.64.0"
 
 jobs:
   fmt:
@@ -39,6 +43,116 @@ jobs:
 
       - name: Check formatting
         run: terraform fmt -check -recursive -diff terraform
+
+
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+
+      - name: Init TFLint plugins
+        env:
+          # Evita o limite de requisições da API do GitHub ao baixar os plugins.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+
+      - name: Run TFLint
+        id: tflint
+        working-directory: terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Com --recursive o caminho do arquivo de config precisa ser absoluto.
+          tflint \
+            --recursive \
+            --config "$GITHUB_WORKSPACE/.tflint.hcl" \
+            --format compact \
+            --no-color \
+            2>&1 | tee "$RUNNER_TEMP/tflint.txt"
+
+      - name: Publish TFLint summary
+        if: always()
+        shell: bash
+        env:
+          TFLINT_OUTCOME: ${{ steps.tflint.outcome }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## TFLint"
+            echo
+
+            if [ "$TFLINT_OUTCOME" = "success" ]; then
+              echo "Nenhum problema encontrado."
+            elif [ -s "$RUNNER_TEMP/tflint.txt" ]; then
+              echo '```text'
+              cat "$RUNNER_TEMP/tflint.txt"
+              echo '```'
+            else
+              echo "O TFLint não gerou saída. Consulte os logs do job."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
+  trivy:
+    name: Trivy config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run Trivy config scan
+        id: trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          # Só HIGH e CRITICAL bloqueiam o PR.
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          trivyignores: .trivyignore
+          format: table
+          output: trivy-report.txt
+          hide-progress: true
+
+      - name: Publish Trivy summary
+        if: always()
+        shell: bash
+        env:
+          TRIVY_OUTCOME: ${{ steps.trivy.outcome }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## Trivy config"
+            echo
+
+            if [ "$TRIVY_OUTCOME" = "success" ]; then
+              echo "Nenhum finding HIGH ou CRITICAL."
+            elif [ -s trivy-report.txt ]; then
+              echo '```text'
+              cat trivy-report.txt
+              echo '```'
+            else
+              echo "O Trivy não gerou relatório. Consulte os logs do job."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
 
   discover:
