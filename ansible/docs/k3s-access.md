@@ -1,11 +1,12 @@
-
 # Acesso administrativo ao cluster k3s — APAE Produção
 
 ## 1. Visão geral
 
-Este documento descreve os procedimentos de acesso administrativo ao cluster Kubernetes do APAE-INFRA, provisionado com k3s na VPS HostGator.
+Este documento descreve os procedimentos de acesso administrativo ao cluster
+Kubernetes do APAE-INFRA, provisionado com k3s na VPS HostGator.
 
-O objetivo é garantir que o acesso ao cluster seja seguro, restrito, auditável e reproduzível por meio das configurações mantidas no repositório.
+O objetivo é garantir que o acesso ao cluster seja seguro, restrito, auditável e
+reproduzível por meio das configurações mantidas no repositório.
 
 ### Ambiente
 
@@ -25,9 +26,56 @@ O objetivo é garantir que o acesso ao cluster seja seguro, restrito, auditável
 | Kubeconfig administrativo | `/etc/rancher/k3s/k3s.yaml` |
 | Issue relacionada | #90 |
 
-O cluster possui um único nó que executa o control plane e os workloads Kubernetes.
+O cluster possui um único nó que executa o control plane e os workloads
+Kubernetes.
 
-Não há endpoint público administrativo intencionalmente disponibilizado para acesso remoto direto à API Kubernetes.
+Não há endpoint público administrativo intencionalmente disponibilizado para
+acesso remoto direto à API Kubernetes.
+
+### Reservas de recursos do nó
+
+O template `roles/k3s/templates/config.yaml.j2` configura as seguintes reservas
+do kubelet para a VPS com 2 vCPU e 4 GB de memória:
+
+| Parâmetro | CPU | Memória | Finalidade |
+| --- | --- | --- | --- |
+| `system-reserved` | `250m` | `512Mi` | Sistema operacional e serviços como SSH |
+| `kube-reserved` | `250m` | `512Mi` | Componentes Kubernetes e runtime de containers |
+
+As reservas somam `500m` de CPU e `1Gi` de memória e reduzem os recursos
+alocáveis aos pods. A memória alocável também considera o limiar de eviction do
+kubelet. Esses valores são iniciais e devem ser revisados conforme o consumo
+observado do nó.
+
+O ArgoCD executa como workload e precisa de `requests` e `limits` próprios,
+a serem definidos no bootstrap da
+[issue #91](https://github.com/IFPBEsp/APAE-INFRA/issues/91).
+As reservas do kubelet não reservam recursos para os pods do ArgoCD.
+
+Após aplicar o playbook `playbooks/k3s.yml`, conferir na VPS:
+
+```bash
+sudo cat /etc/rancher/k3s/config.yaml
+sudo k3s kubectl describe node
+```
+
+Verificar as reservas no arquivo gerado e comparar `Capacity` e `Allocatable`
+do nó. A role reinicia o k3s quando a configuração é alterada.
+
+### Separação dos ambientes por namespace
+
+A decisão da [issue #90](https://github.com/IFPBEsp/APAE-INFRA/issues/90)
+é separar logicamente os ambientes por namespaces no mesmo cluster single-node.
+Os workloads de ambientes distintos devem usar namespaces distintos; todos
+continuam compartilhando os recursos físicos do nó.
+
+A criação dos namespaces, os nomes concretos por produto e ambiente e os
+destinos das Applications do ArgoCD ficam na
+[issue #92](https://github.com/IFPBEsp/APAE-INFRA/issues/92), junto aos overlays.
+Essa issue contempla inicialmente `dev`; os overlays de `hml` e `prod` ficam
+para etapas posteriores. Este provisionamento não cria esses namespaces.
+Namespaces fornecem organização lógica; controles de acesso e de tráfego
+dependem de RBAC e políticas de rede específicas.
 
 ---
 
@@ -46,15 +94,195 @@ O acesso administrativo segue os seguintes princípios:
 
 O acesso SSH é o caminho administrativo previsto para operações no cluster.
 
-O usuário `ansible` possui permissões de elevação de privilégios necessárias à automação da infraestrutura.
+O usuário `ansible` possui permissões de elevação de privilégios necessárias à
+automação da infraestrutura.
 
-Acesso ao usuário `ansible` e permissões de `sudo` devem ser restritos às pessoas autorizadas a administrar a infraestrutura.
+Acesso ao usuário `ansible` e permissões de `sudo` devem ser restritos às
+pessoas autorizadas a administrar a infraestrutura.
 
 ---
 
-## 3. Acesso à VPS via SSH
+## 3. Bootstrap inicial de uma VPS nova
 
-### 3.1. Pré-requisitos
+Esta etapa prepara uma VPS Ubuntu 22.04 LTS recém-criada para que o Ansible
+possa provisionar o k3s. Na instalação inicial, o usuário `ansible` e a porta
+SSH `22022` podem não existir. A preparação abaixo é **manual e controlada**;
+não constitui, por si só, um playbook automatizado de criação da conta.
+
+### 3.1. Acesso inicial e pré-requisitos
+
+Entrar pelo console de recuperação/administração do provedor ou com o usuário
+administrativo inicial fornecido pela VPS. A conexão SSH inicial pode usar a
+porta `22`, mas deve-se verificar a configuração efetiva do provedor. Manter uma
+sessão administrativa e acesso ao console abertos até o teste final na porta
+definitiva.
+
+Na estação de administração, preparar um par de chaves Ed25519, se ainda não
+existir:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub
+```
+
+Compartilhar com a VPS **somente a chave pública**, nunca a privada. Confirmar
+também que o endereço da VPS está configurado localmente em
+`inventories/production/host_vars/apae-prod.yml` (arquivo ignorado pelo Git).
+
+### 3.2. Criar a conta de automação e cadastrar a chave
+
+Na VPS, a partir da sessão administrativa inicial:
+
+```bash
+sudo adduser ansible
+sudo install -d -m 700 -o ansible -g ansible /home/ansible/.ssh
+sudo nano /home/ansible/.ssh/authorized_keys
+```
+
+Inserir no arquivo uma linha contendo a chave pública autorizada da estação de
+administração. Em seguida:
+
+```bash
+sudo chown ansible:ansible /home/ansible/.ssh/authorized_keys
+sudo chmod 600 /home/ansible/.ssh/authorized_keys
+```
+
+Não substituir chaves já existentes sem verificar se continuam necessárias. Se
+`nano` não abrir por incompatibilidade de terminal, usar
+`TERM=xterm-256color nano ...` apenas na sessão atual.
+
+### 3.3. Configurar elevação de privilégios
+
+A automação requer `sudo` não interativo. Criar a regra com validação de
+sintaxe:
+
+```bash
+sudo visudo -f /etc/sudoers.d/90-apae-ansible
+```
+
+Adicionar ao arquivo:
+
+```sudoers
+ansible ALL=(ALL) NOPASSWD: ALL
+```
+
+Validar permissões e sintaxe:
+
+```bash
+sudo chmod 440 /etc/sudoers.d/90-apae-ansible
+sudo visudo -cf /etc/sudoers.d/90-apae-ansible
+```
+
+Essa regra concede acesso administrativo amplo. Restringir a conta e suas chaves
+às pessoas e automações autorizadas e planejar credenciais individuais para os
+integrantes da equipe.
+
+### 3.4. Verificar o acesso antes do hardening
+
+Em uma **nova sessão** da estação administrativa (sem fechar a sessão inicial),
+testar a porta inicial, aqui exemplificada como `22`:
+
+```bash
+ssh -i ~/.ssh/id_ed25519 -p 22 ansible@"IP_DA_VPS"
+```
+
+Na VPS, confirmar `whoami` (`ansible`) e `sudo -n id -u` (`0`). Se a porta ou o
+usuário de bootstrap forem diferentes, adaptar os comandos ao ambiente do
+provedor. Confirmar a identidade da chave de host SSH antes de aceitá-la.
+
+### 3.5. Executar o hardening do SSH
+
+A partir do diretório `ansible/` na estação administrativa, executar o playbook
+usando temporariamente a porta inicial:
+
+```bash
+ansible-playbook -i inventories/production/hosts.yml \
+  playbooks/hardening.yml -e ansible_port=22
+```
+
+Esse `-e` só é necessário durante o bootstrap, antes de a VPS aceitar conexões
+na porta final definida pela variável `ssh_port`. A role configura autenticação
+por chave pública, bloqueio de login direto como root e o parâmetro de porta
+SSH.
+
+**Antes de prosseguir:** confirmar que a porta final está liberada no firewall
+do sistema e nas regras do provedor, quando existentes. Na VPS, verificar
+`sudo sshd -t`, `sudo sshd -T | grep '^port '` e `sudo ss -ltnp | grep sshd`. Em
+distribuições com socket activation do SSH, verificar também `ssh.socket` e seus
+listeners. Não presumir que o arquivo de configuração isolado determine sozinho
+a porta efetiva.
+
+### 3.6. Confirmar a conexão definitiva
+
+Abrir outra conexão, agora pela porta final (`22022` na configuração atual):
+
+```bash
+ssh -i ~/.ssh/id_ed25519 -p 22022 ansible@"IP_DA_VPS"
+```
+
+A partir de `ansible/`:
+
+```bash
+ansible-inventory -i inventories/production/hosts.yml --host apae-prod
+ansible production -i inventories/production/hosts.yml -m ansible.builtin.ping
+ansible production -i inventories/production/hosts.yml -b \
+  -m ansible.builtin.command -a "id -u"
+```
+
+O inventário deve resolver `ansible_port` como `22022`, o `ping` deve retornar
+`pong`, e o comando com `become` deve retornar `0`. **Não encerrar o acesso
+inicial até esses testes passarem.**
+
+### 3.7. Ordem do provisionamento
+
+Com o acesso definitivo validado, a ordem operacional é:
+
+1. Preparação da conta `ansible`, chave pública e `sudo` (bootstrap manual
+   descrito acima).
+2. Aplicação de `playbooks/hardening.yml` pela porta inicial, seguida da
+   validação na porta definitiva.
+3. Execução de `playbooks/prepare.yml` para validar o sistema operacional e a
+   arquitetura, preparar o host e instalar os pacotes essenciais.
+4. Execução de `playbooks/k3s-preflight.yml` para validar os recursos mínimos,
+   cgroups e, na instalação inicial, a disponibilidade da porta da API.
+5. Execução de `playbooks/k3s.yml`, cuja role `k3s` instala e inicia o
+   `k3s-api-firewall.service` antes de iniciar o cluster.
+6. Execução de `playbooks/k3s-verify.yml` e `playbooks/k3s-smoke-test.yml` para
+   verificar o cluster.
+
+A partir de `ansible/`, após validar o acesso SSH definitivo:
+
+```bash
+ansible-playbook playbooks/prepare.yml
+ansible-playbook playbooks/k3s-preflight.yml
+ansible-playbook playbooks/k3s.yml
+ansible-playbook playbooks/k3s-verify.yml
+ansible-playbook playbooks/k3s-smoke-test.yml
+```
+
+A role `k3s` instala explicitamente o pacote `iptables` antes de aplicar o
+firewall, inclusive quando executada separadamente. Em `--check`, a ativação
+do serviço de firewall e a verificação das regras são ignoradas, pois dependem
+de alterações efetivamente aplicadas. A simulação não comprova a proteção do
+host; essa validação ocorre na execução real e nos testes externos.
+
+A documentação deste bootstrap resolve a lacuna de **ordem operacional**, mas um
+provisionamento inteiramente automatizado a partir de uma VPS sem usuário
+administrativo de automação exigirá um playbook específico de bootstrap ou
+mecanismo equivalente. Não armazenar credenciais iniciais no repositório.
+
+### 3.8. Recuperação e segurança
+
+Preservar o console de recuperação do provedor como alternativa caso uma
+alteração de SSH interrompa a conectividade. Não executar alterações de
+autenticação, porta e firewall às cegas nem compartilhar chaves privadas ou
+kubeconfigs administrativos.
+
+---
+
+## 4. Acesso à VPS via SSH
+
+### 4.1. Pré-requisitos
 
 A estação administrativa precisa possuir:
 
@@ -64,18 +292,19 @@ A estação administrativa precisa possuir:
 - Entrada correspondente à VPS no arquivo `known_hosts`.
 - Permissão administrativa concedida pela equipe responsável.
 
-O inventário Ansible utiliza:
+O inventário Ansible utiliza a variável `ssh_port`, definida em
+`inventories/production/group_vars/all.yml` (valor atual: `22022`):
 
 ```yaml
 ansible_user: ansible
-ansible_port: 22022
+ansible_port: "{{ ssh_port }}"
 ansible_ssh_private_key_file: ~/.ssh/id_ed25519
 ansible_ssh_common_args: "-o IdentitiesOnly=yes"
 ```
 
 A chave privada não deve ser compartilhada ou adicionada ao repositório.
 
-### 3.2. Conexão direta
+### 4.2. Conexão direta
 
 A partir de uma estação autorizada:
 
@@ -83,11 +312,14 @@ A partir de uma estação autorizada:
 ssh -i ~/.ssh/id_ed25519 -p 22022 ansible@"IP_DA_VPS"
 ```
 
-O endereço da VPS de produção deve ser configurado localmente em inventories/production/host_vars/apae-prod.yml, arquivo ignorado pelo Git. O placeholder IP_DA_VPS representa esse endereço.
+O endereço da VPS de produção deve ser configurado localmente em
+inventories/production/host_vars/apae-prod.yml, arquivo ignorado pelo Git. O
+placeholder IP_DA_VPS representa esse endereço.
 
-Confirmar a identidade do servidor por meio da chave de host SSH antes de aceitar uma nova chave ou uma alteração inesperada.
+Confirmar a identidade do servidor por meio da chave de host SSH antes de
+aceitar uma nova chave ou uma alteração inesperada.
 
-### 3.3. Conexão pelo Ansible
+### 4.3. Conexão pelo Ansible
 
 A partir do diretório `ansible/`:
 
@@ -116,11 +348,12 @@ Resultado esperado:
 0
 ```
 
-Essas verificações confirmam a conectividade e a capacidade de executar tarefas administrativas.
+Essas verificações confirmam a conectividade e a capacidade de executar tarefas
+administrativas.
 
 ---
 
-## 4. Configuração de segurança SSH
+## 5. Configuração de segurança SSH
 
 O hardening SSH é gerenciado pelo role Ansible:
 
@@ -145,12 +378,14 @@ KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 ```
 
-### 4.1. Verificar configuração efetiva
+### 5.1. Verificar configuração efetiva
 
 Na VPS:
 
 ```bash
-sudo sshd -T | grep -E '^(port|permitrootlogin|passwordauthentication|pubkeyauthentication|kbdinteractiveauthentication) '
+sudo sshd -T | grep -E \
+  -e '^(port|permitrootlogin|passwordauthentication) ' \
+  -e '^(pubkeyauthentication|kbdinteractiveauthentication) '
 ```
 
 Os valores esperados são:
@@ -163,9 +398,11 @@ passwordauthentication no
 kbdinteractiveauthentication no
 ```
 
-A porta pode aparecer mais de uma vez caso existam declarações duplicadas na configuração carregada.
+Se aparecerem várias diretivas `port` ou a porta efetiva não for `22022`,
+revisar a configuração do OpenSSH (incluindo arquivos em `sshd_config.d/`) antes
+de encerrar a sessão administrativa inicial.
 
-### 4.2. Validar sintaxe SSH
+### 5.2. Validar sintaxe SSH
 
 ```bash
 sudo sshd -t
@@ -173,17 +410,21 @@ sudo sshd -t
 
 Uma execução bem-sucedida não apresenta mensagens de erro.
 
-Alterações de SSH devem preservar uma sessão administrativa funcional e ser realizadas com um procedimento de recuperação disponível pelo console do provedor.
+Alterações de SSH devem preservar uma sessão administrativa funcional e ser
+realizadas com um procedimento de recuperação disponível pelo console do
+provedor.
 
-Não aplicar alterações simultâneas em autenticação SSH e regras de firewall sem validar a conectividade.
+Não aplicar alterações simultâneas em autenticação SSH e regras de firewall sem
+validar a conectividade.
 
 ---
 
-## 5. Acesso administrativo ao Kubernetes
+## 6. Acesso administrativo ao Kubernetes
 
-O k3s instala uma versão integrada do `kubectl`, disponível por meio do próprio binário.
+O k3s instala uma versão integrada do `kubectl`, disponível por meio do próprio
+binário.
 
-### 5.1. Acesso local
+### 6.1. Acesso local
 
 Após conectar à VPS:
 
@@ -209,9 +450,10 @@ Verificar informações do cluster:
 sudo k3s kubectl cluster-info
 ```
 
-O uso de `sudo` permite utilizar o kubeconfig administrativo mantido pelo k3s com permissões restritas.
+O uso de `sudo` permite utilizar o kubeconfig administrativo mantido pelo k3s
+com permissões restritas.
 
-### 5.2. Kubeconfig administrativo
+### 6.2. Kubeconfig administrativo
 
 O arquivo de configuração administrativo está localizado em:
 
@@ -227,7 +469,8 @@ write-kubeconfig-mode: "0600"
 
 Isso restringe o acesso ao arquivo ao proprietário, normalmente `root`.
 
-O kubeconfig contém credenciais administrativas sensíveis e concede privilégios elevados ao cluster.
+O kubeconfig contém credenciais administrativas sensíveis e concede privilégios
+elevados ao cluster.
 
 Não é permitido:
 
@@ -241,13 +484,14 @@ O uso local de `sudo k3s kubectl` é o método administrativo padrão.
 
 ---
 
-## 6. Acesso remoto ao cluster
+## 7. Acesso remoto ao cluster
 
-### 6.1. Estratégia adotada
+### 7.1. Estratégia adotada
 
 O acesso remoto administrativo ao Kubernetes ocorre indiretamente por SSH.
 
-A API Kubernetes não precisa ser exposta publicamente para que a equipe realize operações administrativas.
+A API Kubernetes não precisa ser exposta publicamente para que a equipe realize
+operações administrativas.
 
 A abordagem padrão consiste em:
 
@@ -255,7 +499,7 @@ A abordagem padrão consiste em:
 2. Executar `sudo k3s kubectl`.
 3. Encerrar a sessão após finalizar a operação.
 
-### 6.2. Execução remota de comandos
+### 7.2. Execução remota de comandos
 
 Também é possível executar comandos administrativos diretamente via SSH:
 
@@ -267,9 +511,10 @@ ssh -i ~/.ssh/id_ed25519 -p 22022 \
 
 Esse procedimento evita a transferência do kubeconfig para a estação local.
 
-### 6.3. Acesso remoto por túnel SSH
+### 7.3. Acesso remoto por túnel SSH
 
-Quando uma ferramenta local precisar acessar a API Kubernetes, poderá ser utilizado um túnel SSH temporário.
+Quando uma ferramenta local precisar acessar a API Kubernetes, poderá ser
+utilizado um túnel SSH temporário.
 
 Na estação administrativa:
 
@@ -281,25 +526,31 @@ ssh -N \
   ansible@"IP_DA_VPS"
 ```
 
-O túnel encaminha a porta local `16443` para a API Kubernetes no loopback da VPS.
+O túnel encaminha a porta local `16443` para a API Kubernetes no loopback da
+VPS.
 
-Por padrão, o túnel deve permanecer acessível somente pela própria estação administrativa.
+Por padrão, o túnel deve permanecer acessível somente pela própria estação
+administrativa.
 
-O acesso por `kubectl` local exige um kubeconfig autorizado, com credenciais válidas e um endereço de servidor compatível com o túnel.
+O acesso por `kubectl` local exige um kubeconfig autorizado, com credenciais
+válidas e um endereço de servidor compatível com o túnel.
 
-Também é necessário validar corretamente o certificado TLS do servidor, incluindo o nome ou endereço utilizado.
+Também é necessário validar corretamente o certificado TLS do servidor,
+incluindo o nome ou endereço utilizado.
 
-Não utilizar `insecure-skip-tls-verify` como solução para problemas de certificados.
+Não utilizar `insecure-skip-tls-verify` como solução para problemas de
+certificados.
 
 O túnel não substitui autenticação, autorização ou validação TLS do Kubernetes.
 
-A distribuição de kubeconfigs administrativos não faz parte do procedimento padrão.
+A distribuição de kubeconfigs administrativos não faz parte do procedimento
+padrão.
 
 ---
 
-## 7. Proteção da API Kubernetes
+## 8. Proteção da API Kubernetes
 
-### 7.1. Portas protegidas
+### 8.1. Portas protegidas
 
 O cluster utiliza as seguintes portas administrativas ou internas:
 
@@ -315,17 +566,16 @@ As regras são aplicadas na interface pública:
 ens3
 ```
 
-O acesso administrativo à API deve ocorrer localmente ou por um canal seguro previamente autorizado.
+O acesso administrativo à API deve ocorrer localmente ou por um canal seguro
+previamente autorizado.
 
-### 7.2. Gerenciamento do firewall
+### 8.2. Gerenciamento do firewall
 
-A proteção é implementada pelo playbook:
+A proteção é instalada, habilitada e verificada pela role `k3s`, executada pelo
+playbook `playbooks/k3s.yml`. A role aplica o serviço de firewall antes de
+iniciar o k3s, sem exigir a execução prévia de um playbook separado.
 
-```text
-playbooks/k3s-firewall.yml
-```
-
-E pelo template:
+O template utilizado é:
 
 ```text
 roles/k3s/templates/k3s-api-firewall.service.j2
@@ -337,9 +587,11 @@ O serviço systemd é:
 k3s-api-firewall.service
 ```
 
-O serviço `k3s` possui uma dependência systemd declarada para exigir a inicialização do serviço de firewall.
+O serviço `k3s` possui uma dependência systemd declarada para exigir a
+inicialização do serviço de firewall. A role também verifica as regras IPv4 e
+IPv6 aplicadas.
 
-### 7.3. Verificar o serviço
+### 8.3. Verificar o serviço
 
 ```bash
 sudo systemctl is-active k3s-api-firewall.service
@@ -351,7 +603,7 @@ Resultado esperado:
 active
 ```
 
-### 7.4. Verificar as regras IPv4
+### 8.4. Verificar as regras IPv4
 
 ```bash
 sudo iptables -S INPUT
@@ -371,7 +623,7 @@ Consultar também:
 sudo iptables -nvL INPUT --line-numbers
 ```
 
-### 7.5. Verificar as regras IPv6
+### 8.5. Verificar as regras IPv6
 
 ```bash
 sudo ip6tables -S INPUT
@@ -379,15 +631,53 @@ sudo ip6tables -S INPUT
 
 A verificação deve confirmar as regras equivalentes para as portas protegidas.
 
-A existência das regras não comprova, isoladamente, que nenhum caminho anterior do firewall permita o tráfego.
+A existência das regras não comprova, isoladamente, que nenhum caminho anterior
+do firewall permita o tráfego.
 
-A validação completa exige conferir a ordem das regras, as chains relevantes e a conectividade a partir de uma origem externa autorizada.
+A validação completa exige conferir a ordem das regras, as chains relevantes e a
+conectividade a partir de uma origem externa autorizada.
 
-Não remover nem reorganizar manualmente as regras Kubernetes sem avaliar o impacto na rede do cluster.
+Não remover nem reorganizar manualmente as regras Kubernetes sem avaliar o
+impacto na rede do cluster.
 
 ---
 
-## 8. Verificação do cluster via Ansible
+### 8.6. Restrição de NodePorts e validação externa
+
+O template `roles/k3s/templates/config.yaml.j2` restringe os endereços de
+NodePort ao loopback IPv4:
+
+```yaml
+kube-proxy-arg:
+  - "nodeport-addresses=127.0.0.1/32"
+```
+
+Essa restrição permanece até a implementação da entrada pelo NGINX Gateway
+Fabric. O acesso funcional por loopback depende do modo do kube-proxy e deve
+ser validado antes de usá-lo como caminho de entrada. As regras da chain
+`INPUT` para portas administrativas não comprovam a proteção dos NodePorts.
+
+Após aplicar `playbooks/k3s.yml`, executar de uma estação externa autorizada:
+
+```bash
+nmap -Pn -sT -p 6443,10250,30000-32767 IP_DA_VPS
+sudo nmap -Pn -sU -p 8472,30000-32767 IP_DA_VPS
+```
+
+Se a VPS possuir IPv6 público, repetir os dois comandos com `-6` e o endereço
+IPv6 público como destino. Nenhuma porta NodePort deve aparecer como `open`.
+O resultado UDP `open|filtered` é inconclusivo e exige verificação adicional
+das regras efetivas e do tráfego recebido.
+
+Uma varredura sem Services NodePort ativos não comprova que um Service futuro
+ficará protegido. Validar também com um Service NodePort de teste controlado,
+confirmando que não responde no endereço público, e remover seus recursos ao
+final. Repetir a validação após reinício do k3s ou alteração do modo do
+kube-proxy.
+
+---
+
+## 9. Verificação do cluster via Ansible
 
 O repositório possui um playbook específico para validar a saúde do Kubernetes:
 
@@ -417,7 +707,7 @@ O playbook não precisa alterar o cluster para realizar essas verificações.
 
 ---
 
-## 9. Smoke test de workloads
+## 10. Smoke test de workloads
 
 Para verificar se o Kubernetes consegue executar um workload, utilizar:
 
@@ -438,21 +728,24 @@ O playbook executa um teste temporário utilizando Nginx.
 7. Remove o namespace e os recursos temporários.
 8. Remove o manifesto temporário.
 
-O teste comprova o agendamento e a disponibilidade básica de um workload Kubernetes.
+O teste comprova o agendamento e a disponibilidade básica de um workload
+Kubernetes.
 
 Ele não realiza, na implementação atual, uma requisição HTTP funcional ao Nginx.
 
-A limpeza ocorre por meio de um bloco Ansible `always`, que tenta remover os recursos mesmo quando há falha durante o teste.
+A limpeza ocorre por meio de um bloco Ansible `always`, que tenta remover os
+recursos mesmo quando há falha durante o teste.
 
 Após a execução, não é necessário manter o namespace `smoke-test`.
 
 ---
 
-## 10. Segurança e controle de credenciais
+## 11. Segurança e controle de credenciais
 
-### 10.1. Chaves SSH
+### 11.1. Chaves SSH
 
-Cada administrador autorizado deve utilizar uma chave SSH individual, sempre que possível.
+Cada administrador autorizado deve utilizar uma chave SSH individual, sempre que
+possível.
 
 As chaves privadas devem:
 
@@ -463,17 +756,20 @@ As chaves privadas devem:
 
 Não compartilhar uma única chave privada entre todos os administradores.
 
-### 10.2. Credenciais Kubernetes
+### 11.2. Credenciais Kubernetes
 
 O kubeconfig administrativo deve continuar protegido no servidor.
 
-Para futuras integrações com GitOps ou CI/CD, preferir identidades específicas com RBAC e permissões mínimas, em vez de distribuir o kubeconfig administrativo do cluster.
+Para futuras integrações com GitOps ou CI/CD, preferir identidades específicas
+com RBAC e permissões mínimas, em vez de distribuir o kubeconfig administrativo
+do cluster.
 
 Não armazenar tokens e credenciais Kubernetes em arquivos versionados.
 
-### 10.3. Auditoria
+### 11.3. Auditoria
 
-O acesso SSH e as ações administrativas devem ser monitorados conforme a política operacional da infraestrutura.
+O acesso SSH e as ações administrativas devem ser monitorados conforme a
+política operacional da infraestrutura.
 
 Os logs do SSH podem ser consultados com:
 
@@ -487,13 +783,14 @@ Os logs do k3s podem ser consultados com:
 sudo journalctl -u k3s
 ```
 
-Esses logs auxiliam na investigação de falhas, mas não substituem uma política de auditoria de ações da API Kubernetes.
+Esses logs auxiliam na investigação de falhas, mas não substituem uma política
+de auditoria de ações da API Kubernetes.
 
 ---
 
-## 11. Diagnóstico de problemas
+## 12. Diagnóstico de problemas
 
-### 11.1. Falha de conexão SSH
+### 12.1. Falha de conexão SSH
 
 Verificar:
 
@@ -509,9 +806,10 @@ A partir de uma estação autorizada:
 ssh -v -i ~/.ssh/id_ed25519 -p 22022 ansible@"IP_DA_VPS"
 ```
 
-Se não houver acesso SSH, utilizar o console de recuperação disponibilizado pelo provedor antes de modificar configurações de rede.
+Se não houver acesso SSH, utilizar o console de recuperação disponibilizado pelo
+provedor antes de modificar configurações de rede.
 
-### 11.2. Serviço k3s indisponível
+### 12.2. Serviço k3s indisponível
 
 ```bash
 sudo systemctl status k3s
@@ -525,7 +823,7 @@ sudo journalctl -u k3s -n 100 --no-pager
 
 Não executar uma reinstalação automática sem analisar a causa da falha.
 
-### 11.3. Nó Kubernetes não está Ready
+### 12.3. Nó Kubernetes não está Ready
 
 ```bash
 sudo k3s kubectl get nodes -o wide
@@ -539,7 +837,7 @@ sudo k3s kubectl get events -A --sort-by=.lastTimestamp
 
 Verificar recursos da VPS, rede CNI, armazenamento e logs do serviço.
 
-### 11.4. Problemas de DNS interno
+### 12.4. Problemas de DNS interno
 
 ```bash
 sudo k3s kubectl get pods -n kube-system
@@ -558,7 +856,7 @@ Consultar logs quando necessário:
 sudo k3s kubectl logs -n kube-system deployment/coredns
 ```
 
-### 11.5. Falha de autenticação Kubernetes
+### 12.5. Falha de autenticação Kubernetes
 
 Verificar se os comandos estão sendo executados com as credenciais corretas:
 
@@ -566,13 +864,15 @@ Verificar se os comandos estão sendo executados com as credenciais corretas:
 sudo k3s kubectl get nodes
 ```
 
-Não modificar permissões do kubeconfig para contornar erros de autenticação ou acesso.
+Não modificar permissões do kubeconfig para contornar erros de autenticação ou
+acesso.
 
 ---
 
-## 12. Restrições e próximos passos
+## 13. Restrições e próximos passos
 
-A configuração documentada corresponde ao acesso administrativo inicial do cluster single-node.
+A configuração documentada corresponde ao acesso administrativo inicial do
+cluster single-node.
 
 Melhorias futuras poderão incluir:
 
@@ -584,11 +884,12 @@ Melhorias futuras poderão incluir:
 - Estratégia de acesso remoto baseada em VPN ou rede privada, caso necessária.
 - Validação recorrente das regras de firewall após atualizações do k3s.
 
-Essas melhorias devem ser tratadas separadamente, conforme a necessidade operacional e o escopo das próximas issues.
+Essas melhorias devem ser tratadas separadamente, conforme a necessidade
+operacional e o escopo das próximas issues.
 
 ---
 
-## 13. Referências
+## 14. Referências
 
 - [Issue #90 — Provisionar cluster Kubernetes com k3s na VPS](https://github.com/IFPBEsp/APAE-INFRA/issues/90)
 - [Documentação oficial do k3s](https://docs.k3s.io/)

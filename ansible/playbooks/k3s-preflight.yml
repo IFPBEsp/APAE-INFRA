@@ -41,6 +41,7 @@
         port: 6443
         state: stopped
         timeout: 5
+      when: not k3s_binary.stat.exists
 
     - name: Exibir configuração planejada
       ansible.builtin.debug:

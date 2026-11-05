@@ -10,3 +10,8 @@ write-kubeconfig-mode: "0600"
 cluster-cidr: "{{ k3s_cluster_cidr }}"
 service-cidr: "{{ k3s_service_cidr }}"
 secrets-encryption: true
+kube-proxy-arg:
+  - "nodeport-addresses=127.0.0.1/32"
+kubelet-arg:
+  - "system-reserved=cpu=250m,memory=512Mi"
+  - "kube-reserved=cpu=250m,memory=512Mi"
