@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: apae-atendimento-dev
+  namespace: argocd
+spec:
+  project: apae
+
+  source:
+    repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
+    targetRevision: main
+    path: kubernetes/apae-atendimento/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: apae-dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

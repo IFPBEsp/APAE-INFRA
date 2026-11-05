@@ -2,19 +2,63 @@
 
 ## Visão geral
 
-O **APAE-INFRA** é o repositório GitOps: a única fonte de verdade lida pelo ArgoCD dentro do cluster Kubernetes. Os 4 repositórios de aplicação (`APAE`, `APAE-atendimento`, `APAE-gestao-escolar`, `apae-site-comemorativo`) nunca aplicam manifestos diretamente no cluster — eles apenas publicam imagens de container no **GHCR**. Quem atualiza o estado desejado do cluster é sempre um commit no APAE-INFRA, e quem aplica esse estado é sempre o ArgoCD.
+O **APAE-INFRA** centraliza a configuração declarativa da infraestrutura e dos workloads Kubernetes da APAE. Os repositórios de produto (`APAE`, `APAE-atendimento`, `APAE-gestao-escolar` e `apae-site-comemorativo`) são responsáveis pelo código, testes, construção e publicação de imagens no **GitHub Container Registry (GHCR)**. Eles **não aplicam manifestos diretamente nos clusters**.
 
-Isso garante o princípio central do GitOps: **o Git é a única fonte de verdade** e o histórico de commits do APAE-INFRA é, ao mesmo tempo, o histórico de deploys.
+As alterações persistentes nos workloads são propostas e revisadas no APAE-INFRA. Após o merge na branch acompanhada por cada `Application`, o ArgoCD detecta diferenças e reconcilia somente os recursos sob sua responsabilidade, de acordo com a política de sincronização do ambiente.
+
+**Exceção deliberada:** a instalação e atualização do próprio ArgoCD e os objetos de bootstrap (`AppProject`s e `Application` raiz) são administrados pelo **Ansible**, não pelo ArgoCD. O Git permanece como fonte de configuração versionada desses objetos, mas a aplicação deles é realizada pelo playbook de bootstrap. O Terraform gerencia a infraestrutura fundacional, sem disputar recursos Kubernetes com o ArgoCD.
 
 ![Diagrama do Fluxo do ArgoCD](../diagramas/fluxo-argocd.svg)
 
-## AppProject: governança compartilhada
+> **Estado da implementação:** a issue [#91](https://github.com/IFPBEsp/APAE-INFRA/issues/91) implementa o bootstrap para o cluster k3s de produção. A estrutura de overlays e as Applications dos produtos são responsabilidade da [#92](https://github.com/IFPBEsp/APAE-INFRA/issues/92). O fluxo de homologação e promoção é tratado pela [#106](https://github.com/IFPBEsp/APAE-INFRA/issues/106). Os exemplos de ambientes futuros neste documento não indicam que seus namespaces ou overlays já estejam implantados. O cenário atual é um único cluster k3s, com ambientes separados por namespace, conforme a #90.
 
-Antes de falar de Applications, existe um único **`AppProject`** (`apae`) que todas elas compartilham. O `AppProject` não implanta nada sozinho — ele é a camada de permissão/segurança que orienta e padroniza como as Applications dos repositórios envolvidos podem se comportar:
+## Divisão de responsabilidades
 
-- `sourceRepos`: só o próprio APAE-INFRA pode ser usado como fonte de manifestos (nenhuma Application pode apontar para um repositório fora do GitOps);
-- `destinations`: os namespaces `apae-*` (para os workloads das aplicações) e o namespace `argocd` (necessário para que a Application raiz `apae-root` gerencie os objetos `Application` filhos);
-- `clusterResourceWhitelist`: restringe quais tipos de recurso Kubernetes uma Application pode criar (evita, por exemplo, que uma Application de aplicação crie um `ClusterRole` sem necessidade).
+| Componente | Responsabilidade | Não deve gerenciar |
+| --- | --- | --- |
+| Terraform | Infraestrutura fundacional e recursos de VPS definidos para IaC | Instalação/objetos internos do ArgoCD |
+| Ansible | Instalação do k3s (issue #90); instalação, bootstrap, atualização e recuperação dos objetos de bootstrap do ArgoCD (issue #91) | Deployments, Services e Applications filhas atribuídos ao ArgoCD |
+| ArgoCD | Descoberta e reconciliação das Applications filhas; recursos Kubernetes declarados por elas | Release Helm do próprio ArgoCD, `project.yaml`, `project-infra.yaml` e `app-of-apps.yaml` |
+| GitHub Actions | CI dos produtos, publicação no GHCR e automações de PRs GitOps | Aplicação direta de manifests no cluster |
+
+Nenhum recurso deve ter dois controladores concorrentes. Alterações em componentes administrados pelo Ansible exigem execução controlada do playbook; alterações em workloads administrados pelo ArgoCD devem passar pelo fluxo GitOps.
+
+## Branch de referência e ambientes
+
+### Decisão da issue #91: raiz do cluster único na `main`
+
+O bootstrap inicial do ArgoCD será executado no **cluster k3s único da VPS**, compartilhado pelos ambientes com separação por namespace. A Application raiz `apae-root` acompanhará a branch **`main` do APAE-INFRA**, que é a referência aprovada para as definições GitOps de produção.
+
+É importante distinguir três configurações:
+
+1. **`targetRevision` da raiz:** branch onde ficam as definições das Applications filhas; inicialmente, `main`.
+2. **`targetRevision` da filha:** branch ou revisão que contém os manifests de workload dessa Application.
+3. **`source.path` da filha:** caminho do overlay Kustomize de destino, seguindo a estrutura `kubernetes/{produto}/overlays/{ambiente}` (por exemplo, `kubernetes/apae-geral/overlays/dev`).
+
+A branch da raiz **não seleciona automaticamente** o overlay `prod`. Isso depende de cada Application filha. Da mesma forma, um commit na `main` não significa, por si só, deploy automático em produção: uma filha com sincronização manual pode detectar `OutOfSync` sem aplicar a mudança.
+
+O ArgoCD faz reconciliação periódica e pode ser notificado por webhook, caso configurado. Push no Git não deve ser descrito como implantação imediata nem como autorização para sincronizar workloads de produção.
+
+### Matriz de referência para a evolução dos ambientes
+
+| Ambiente | Branch GitOps de referência | Overlay Kustomize | Política esperada para workloads |
+| --- | --- | --- | --- |
+| Desenvolvimento | `dev` | `dev` | Automática, conforme #92 |
+| Homologação | `main` | `hml` | Manual, conforme #106 |
+| Produção | `main` | `prod` | Manual, conforme #106 |
+
+A #92 contempla inicialmente os overlays `dev`; `hml` e `prod` e seu fluxo de promoção serão implementados nas issues correspondentes. A matriz acima é a **direção arquitetural**, não uma declaração de implantação concluída.
+
+## AppProjects: governança e isolamento
+
+O bootstrap da #91 aplica dois projetos Kubernetes no namespace `argocd`:
+
+- **`apae`** (`argocd/project.yaml`): projeto das Applications dos produtos. Restringe os repositórios à origem APAE-INFRA e os destinos aos namespaces `apae-*`. As permissões definitivas dos produtos serão alinhadas à #92.
+- **`apae-infra`** (`argocd/project-infra.yaml`): projeto de infraestrutura ao qual pertence a Application raiz `apae-root`, inicialmente restrito à origem APAE-INFRA, ao namespace `argocd` e ao recurso `Application`. As respectivas issues devem ampliar suas permissões **explicitamente** para cada novo componente; não se deve conceder acesso global indiscriminado.
+
+Os `AppProject`s limitam o que o ArgoCD pode reconciliar, mas **não substituem** o RBAC nativo do Kubernetes, as permissões de serviço ou os controles de acesso administrativo.
+
+Exemplo de permissões iniciais dos produtos, alinhadas ao manifesto da #91:
 
 ```yaml
 # argocd/project.yaml
@@ -24,243 +68,216 @@ metadata:
   name: apae
   namespace: argocd
 spec:
-  description: Projeto único orientando as Applications da APAE
+  description: Projeto GitOps dos produtos da APAE
   sourceRepos:
     - https://github.com/IFPBEsp/APAE-INFRA.git
   destinations:
-    - namespace: 'apae-*'
-      server: https://kubernetes.default.svc
-    - namespace: 'argocd'
-      server: https://kubernetes.default.svc
-  clusterResourceWhitelist:
-    - group: '*'
-      kind: Namespace
+    - server: https://kubernetes.default.svc
+      namespace: 'apae-*'
+  clusterResourceWhitelist: []
+  orphanedResources:
+    warn: true
 ```
+
+A configuração concreta do projeto de infraestrutura encontra-se em `argocd/project-infra.yaml`. Qualquer ampliação deverá ser revisada e aplicada pelo Ansible.
 
 ## Padrão adotado: App of Apps
 
-O padrão **[App of Apps](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)**
-separa a Application raiz (`apae-root`) das Applications de workloads. O
-bootstrap e os AppProjects são responsabilidade da #91/Ansible. A raiz deve
-descobrir somente as Applications autorizadas para o ambiente de destino.
-O PR #120 define três filhas em `argocd/apps/dev/`: `apae-geral-dev`,
-`apae-atendimento-dev` e `site-comemorativo-dev`. Seu registro efetivo no cluster
-ainda depende da integração do bootstrap; Gestão Escolar depende da #38/#92.
+Adotamos o padrão **[App of Apps](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)**. O Ansible cria `apae-root`, que monitora os manifests das Applications filhas no APAE-INFRA. As filhas, por sua vez, monitoram os overlays Kustomize dos produtos.
 
-No modelo de bootstrap proposto em [gerenciamento da VPS](../ansible/07-arquitetura-proposta-e-proximos-passos.md), um playbook Ansible instala ArgoCD, aplica o `AppProject` e registra a Application raiz. Como a configuração abaixo exclui `project.yaml` e `app-of-apps.yaml` do path reconciliado, esses objetos permanecem sob ownership do bootstrap Ansible; alterações neles exigem apply controlado do playbook. A raiz reconcilia as Applications filhas e, por elas, os recursos atribuídos ao ArgoCD.
+Os **dois ciclos independentes** são:
 
-**Importante — são dois loops de sincronização independentes, rodando em paralelo o tempo todo:**
+1. **Raiz:** observa as definições de Applications filhas de todos os ambientes em `argocd/apps/*/*.yaml` e mantém esses objetos registrados no cluster único. A política de sincronização dos workloads é definida em cada filha.
+2. **Filhas:** observam os overlays apontados em seus respectivos `spec.source.path` e sinalizam ou aplicam diferenças conforme sua política de sincronização.
 
-1. **Loop da raiz**: mantém os objetos `Application` autorizados pelo seu filtro de descoberta. Alterar uma definição de Application afeta esse loop; atualizar apenas a imagem no overlay não o afeta.
-2. **Loop de cada Application filha**: cada uma monitora seu próprio `source.path` (o overlay Kustomize da aplicação dela) e garante que o Deployment/Service/etc. estejam como descrito lá. É esse loop que entra em Out-of-Sync quando a tag da imagem é atualizada.
+Alterar a imagem ou o digest em um overlay, sem mudar as definições das filhas, normalmente afeta apenas a reconciliação da Application filha correspondente; não altera a definição gerenciada pela raiz.
 
-Após a ativação do bootstrap, a raiz mantém as filhas autorizadas registradas continuamente; ela não as descobre por um push de imagem. Quem reage ao push de imagem é diretamente a Application filha correspondente, porque foi o overlay dela que mudou.
-
-Vantagens do App of Apps neste contexto:
-
-- Uma Application autorizada pode ser registrada pela raiz após a integração do bootstrap, sem aplicação manual individual. A descoberta de novos ambientes precisa ser configurada explicitamente; manifests de produção não pertencem a `argocd/apps/dev/`;
-- O próprio conjunto de Applications fica versionado e auditável junto com o resto da infraestrutura;
-- As três filhas iniciais seguem a separação por ambiente definida no PR #120 (`argocd/apps/dev/`).
-
-### Estrutura de diretórios
+### Estrutura inicial e responsabilidades
 
 ```text
 argocd/
-  app-of-apps.yaml               # raiz; bootstrap da #91
-  project.yaml                   # AppProject dos produtos
-  project-infra.yaml             # AppProject da infraestrutura
-  apps/dev/
-    apae-geral-dev.yaml
-    apae-atendimento-dev.yaml
-    site-comemorativo-dev.yaml
+├── app-of-apps.yaml       # Application raiz, gerenciada pelo Ansible
+├── project.yaml           # AppProject dos produtos, gerenciado pelo Ansible
+├── project-infra.yaml     # AppProject de infraestrutura, gerenciado pelo Ansible
+├── README.md
+└── apps/
+    ├── dev/              # Applications de desenvolvimento, escopo da #92
+    │   ├── apae-geral-dev.yaml
+    │   ├── apae-atendimento-dev.yaml
+    │   └── site-comemorativo-dev.yaml
+    ├── hml/              # Futuro
+    └── prod/             # Futuro
 ```
 
-O PR #120 define esses três manifests e seus overlays. Gestão Escolar depende
-primeiro dos manifests base da #38. `dev` representa homologação neste fluxo;
-a promoção para `prod` será implementada na #106, sem introduzir `hml`.
+A issue #92 define as Applications de desenvolvimento em `argocd/apps/dev/`. A #91 **não implanta os produtos nem cria seus overlays**. Os diretórios `apps/hml/` e `apps/prod/` representam a organização prevista para os ambientes futuros.
 
-### Applications estáticas
+### Application raiz do cluster único
 
-Será adotado uma abordagem para escrever manualmente um YAML de `Application` por repositório — abordagem mais simples de entender e depurar enquanto o time ainda está validando o funcionamento do ArgoCD. Ela tem caminho de evolução direto: quando o número de aplicações/ambientes crescer, o mesmo padrão de pastas pode ser consumido por um `ApplicationSet` sem precisar reestruturar nada.
-
-A definição da raiz e seu filtro de descoberta pertencem ao bootstrap da #91;
-não são alterados pelo receptor. O exemplo abaixo ilustra o sync manual
-requerido para homologação; consulte a divergência com o PR #120 adiante.
+O arquivo `argocd/app-of-apps.yaml`, administrado pelo Ansible, contém a seguinte configuração de origem:
 
 ```yaml
-# argocd/apps/dev/apae-geral-dev.yaml — exemplo com sync manual requerido
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: apae-geral-dev
+  name: apae-root
+  namespace: argocd
+spec:
+  project: apae-infra
+  source:
+    repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
+    targetRevision: main
+    path: argocd
+    directory:
+      recurse: true
+      include: 'apps/*/*.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=false
+```
+
+O filtro `include: 'apps/*/*.yaml'` permite descobrir as Applications de todos os ambientes sob `argocd/apps/`, incluindo `dev` da #92 e os futuros `hml` e `prod`. Os objetos de bootstrap administrados pelo Ansible (`app-of-apps.yaml`, `project.yaml` e `project-infra.yaml`) ficam na raiz de `argocd/` e não correspondem ao filtro. Os manifests de instalação Helm do próprio ArgoCD também devem permanecer **fora de qualquer Application** reconciliada pelo ArgoCD.
+
+A raiz mantém as Applications filhas registradas, enquanto cada filha define seu namespace, revisão Git, overlay e política de sincronização: automática em `dev` e manual nos demais ambientes. As definições das filhas precisam estar na `main`, acompanhada pela raiz, mesmo quando seus workloads acompanham outra revisão. Enquanto não houver arquivos correspondentes ao filtro nessa revisão, a raiz não terá filhas a descobrir. A separação lógica por namespace não substitui RBAC e políticas de rede.
+
+**Atenção antes de aplicar o filtro em uma raiz já ativa:** com `prune: true`, Applications filhas anteriormente gerenciadas pela raiz e agora excluídas podem ser removidas da reconciliação. É necessário inspecionar os recursos atualmente gerenciados e validar o efeito da mudança antes de sincronizar.
+
+### Exemplo de Application filha de produção (futuro)
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: apae-prod
   namespace: argocd
 spec:
   project: apae
   source:
     repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
     targetRevision: main
-    path: kubernetes/apae-geral/overlays/dev     # Kustomize overlay
+    path: kubernetes/apae-geral/overlays/prod
   destination:
     server: https://kubernetes.default.svc
-    namespace: apae-dev
-  syncPolicy: {}   # sync manual — ver seção de Política de Sincronização
+    namespace: apae-prod
+  syncPolicy: {}  # sincronização manual
 ```
 
-> O sync da raiz e o das filhas são independentes. O requisito deste fluxo é
-> revisão do PR e sync manual das filhas de homologação; os manifests do PR #120
-> ainda precisam ser alinhados a esse requisito.
-
-Os manifests correspondentes aos outros produtos estão em
-`argocd/apps/dev/apae-atendimento-dev.yaml` e
-`argocd/apps/dev/site-comemorativo-dev.yaml`. Não há Application de Gestão
-Escolar definida no PR #120.
+Esse é **um exemplo de projeto**, não um arquivo entregue na #91. O namespace, caminho e nomes efetivos devem ser confirmados na implementação dos overlays e das Applications.
 
 ### Evolução futura: ApplicationSet
 
-Quando o número de aplicações/ambientes crescer o suficiente para tornar repetitivo escrever um YAML por combinação, o mesmo padrão de pastas pode ser consumido por um único `ApplicationSet`, que gera as Applications automaticamente:
+Caso a quantidade de serviços e ambientes torne a manutenção manual repetitiva, poderá ser avaliado o uso de `ApplicationSet`, com geradores Git e templates versionados. A migração exige revisão de ownership, política de exclusão e identificação dos ambientes; não faz parte da #91.
 
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apae-apps
-  namespace: argocd
-spec:
-  generators:
-    - git:
-        repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
-        revision: main
-        directories:
-          - path: kubernetes/*/overlays/dev   # somente homologação; evolução futura
-  template:
-    metadata:
-      name: '{{path[1]}}-{{path.basenameNormalized}}'   # ex: apae-geral-dev
-    spec:
-      project: apae
-      source:
-        repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
-        targetRevision: main
-        path: '{{path}}'
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: apae-dev
-      syncPolicy: {}   # manter manual até a decisão de automatizar prod
+## De onde cada Application lê os manifests
+
+Os manifests comuns residem em diretórios base e as diferenças são definidas por overlays Kustomize:
+
+```text
+kubernetes/
+├── apae-geral/
+│   ├── base/
+│   └── overlays/
+│       └── dev/
+├── apae-atendimento/
+│   ├── base/
+│   └── overlays/
+│       └── dev/
+└── site-comemorativo/
+    ├── base/
+    └── overlays/
+        └── dev/
+
+# Os overlays hml/ e prod/ de cada produto serão adicionados futuramente.
 ```
 
-Essa migração não é destrutiva: pode ser feita substituindo os arquivos estáticos de `argocd/apps/dev/` pelo `ApplicationSet` quando fizer sentido, sem alterar a estrutura de pastas do Kustomize.
+O overlay define características específicas do ambiente, como namespace, réplicas, referências de imagem por digest e configurações não sensíveis. Secrets serão tratados pela estratégia definida na [#93](https://github.com/IFPBEsp/APAE-INFRA/issues/93).
 
-## De onde cada Application lê os manifestos
-
-Cada `Application` lê exclusivamente do próprio **APAE-INFRA**, usando **Kustomize**:
-
-- `kubernetes/{produto}/base/` — manifestos comuns (Deployment, Service, etc.) da aplicação;
-- `kubernetes/{produto}/overlays/{ambiente}/` — patches específicos do ambiente (réplicas, recursos, variáveis, tag de imagem via `kustomization.yaml`).
-
-## Alinhamento pendente com #92/#106
-
-O overlay `dev` é a homologação; a branch dos manifests continua sendo `main`.
-O PR #97 implementa o receptor e rejeita `hml` e `prod`. A #106 implementará a
-integração dos produtos com publicação na `main`, envio do dispatch e promoção
-dos mesmos digests para `prod`. Após conferir a tag e o digest no GHCR, o
-receptor autentica a proveniência com GitHub Attestations antes de gerar o
-token de escrita. Também exige o HEAD atual da `main` do produto na recepção
-e antes da abertura ou atualização do PR.
-A #82 deve permanecer aberta até o aceite operacional com imagens reais.
-
-O PR #120 declara sync **automático** em `dev`, com `prune` e `selfHeal`, ao
-contrário do sync manual requerido abaixo para homologação. Alinhar essa
-política com #92/#106 antes da ativação. Os exemplos manuais deste documento
-expressam o requisito, não uma alteração já aplicada aos manifests do #120.
-Este PR não modifica Applications nem a arquitetura de bootstrap.
-
-O bootstrap da #91 deve impedir que a raiz de produção descubra indevidamente
-as Applications de `argocd/apps/dev/`. A descoberta e o destino apropriados,
-o namespace `apae-dev` e a presença dos overlays em `main` são pré-requisitos
-operacionais; a estrutura de pastas, sozinha, não habilita nem isola o sync.
+Não é necessário duplicar todos os manifests base entre ambientes. Cada Application deve apontar para **um overlay compatível com o cluster onde está instalada**.
 
 ## Política de sincronização
 
-**Decisão para este momento do projeto: sync manual (aprovação humana) em todas as Applications filhas.**
-
-| Configuração | Valor definido | Motivo |
+| Recurso/ambiente | Política | Justificativa |
 | --- | --- | --- |
-| `syncPolicy.automated` (Applications filhas) | **desabilitado** | o ArgoCD sinaliza "Out of Sync", mas só aplica quando alguém aprovar manualmente (UI ou `argocd app sync`) |
-| `syncPolicy.automated` (Application raiz) | habilitado (`selfHeal` + `prune`) | a raiz só gerencia a existência das definições de Application, risco baixo — não afeta workloads diretamente |
-| `selfHeal` (filhas) | desabilitado por enquanto | consequência do sync manual: mudanças manuais no cluster não são revertidas automaticamente até a transição abaixo |
-| `prune` (filhas) | avaliar caso a caso durante o sync manual | evita remoção automática de recursos sem revisão humana |
+| Application raiz (`apae-root`) | Automática, com `selfHeal` e `prune` | Mantém as **definições** das Applications filhas; exige revisão do conjunto descoberto antes de habilitar o fluxo |
+| Applications filhas de desenvolvimento | Automática, conforme #92 | Agilidade no ambiente de desenvolvimento |
+| Applications filhas de homologação | Manual, conforme #106 | Aprovação e validação antes da promoção |
+| Applications filhas de produção | Manual, conforme #106 | Revisão humana obrigatória antes do deploy |
 
-### Por quê começar manual
+`prune` automático na raiz pode **remover uma Application filha** quando seu manifesto sair do Git ou deixar de corresponder ao filtro de descoberta. Isso pode ter efeitos nos workloads dependendo das finalizers e configurações de deleção. Exclusões de filhas devem ser revisadas como mudanças potencialmente destrutivas.
 
-O pipeline de CI/CD dos 4 repositórios de aplicação ainda está em maturação (sem gate de testes obrigatório, sem processo de release consolidado). Sync manual garante um checkpoint humano antes de qualquer mudança chegar ao cluster, reduzindo o risco de um bump de imagem ruim ou um manifesto com erro já impactar o ambiente sem ninguém perceber.
+Para produção, um novo commit poderá deixar a Application em `OutOfSync`, mas a reconciliação dos workloads deve depender de sincronização manual autorizada. Não habilitar `syncPolicy.automated` nas filhas de produção como consequência implícita da política da raiz.
 
-### Critério de transição para automático
+## Publicação de imagens, homologação e promoção — issue #106
 
-A migração de manual para `automated` (com `selfHeal`/`prune`) deve ocorrer quando:
+A automação de imagens usa **GitHub Actions e PRs no APAE-INFRA**, e não o ArgoCD Image Updater dentro do cluster. O fluxo planejado na #106 é:
 
-- o pipeline de CI/CD dos repositórios de aplicação tiver testes automatizados obrigatórios antes do merge; e
-- houver um histórico de releases consecutivas sem necessidade de rollback manual.
+1. Um merge na `main` do **repositório do produto** aciona testes, build e scan.
+2. As imagens aprovadas são publicadas no GHCR com tag `sha-<commit>` e digest.
+3. O processo registra produto, commit, workflow e digests da combinação publicada, inclusive frontend/backend quando aplicável.
+4. Uma automação verifica a proveniência da imagem e abre um **PR** atualizando o overlay de homologação no APAE-INFRA; não altera diretamente produção.
+5. Após revisão e merge, a Application de homologação identifica a nova revisão; a sincronização é autorizada manualmente e a versão é validada.
+6. Uma promoção explícita gera outro PR com **os mesmos digests validados**, sem novo build.
+7. Após aprovação e merge do PR de promoção, o ArgoCD de produção identifica a alteração no overlay `prod`. O deploy ocorre apenas após **sync manual**.
+8. O registro versionado da combinação aprovada permite auditoria e rollback para uma versão previamente validada.
 
-Até lá, cada Application filha permanece com `syncPolicy: {}` (sem `automated`), exigindo que alguém revise o "Out of Sync" no ArgoCD e aprove o sync manualmente.
+Publicações de outras branches podem continuar existindo para desenvolvimento, mas **não participam automaticamente do fluxo de promoção para produção**. É essencial distinguir a `main` dos repositórios dos produtos (origem dos builds) da `main` do APAE-INFRA (origem dos manifests aprovados).
 
-## Image Updater: GitHub Actions (não o ArgoCD Image Updater)
+### Mudanças em configurações e manifests
 
-O receptor GitOps do PR #97, relacionado à issue #82, está documentado em [Atualização de imagens nos overlays GitOps](../workflows/update-image-overlay.md). O workflow propõe PRs para `main`, fixa a imagem por digest e preserva tag e commit de origem no PR. Os overlays e as Applications são pré-requisitos da #92; a aprovação do PR é seguida pelo sync manual previsto abaixo.
+Mudanças diretas no APAE-INFRA seguem o mesmo princípio: PR, revisão, merge e detecção de `OutOfSync` nas Applications afetadas. Em homologação e produção, o merge **não substitui a aprovação do sync manual**.
 
-A notificação de uma nova publicação ficará em um **job do pipeline de GitHub Actions** dos produtos (#106); a validação do evento e a atualização do digest serão executadas no APAE-INFRA pelo receptor do PR #97 — não no componente separado "ArgoCD Image Updater". Motivo: evita rodar mais um controller com credenciais de escrita dentro do cluster, mantém rastreabilidade direta entre o commit de infra e o run de CI que o gerou, e reage imediatamente ao push (sem espera de polling).
+### Como o ArgoCD atualiza workloads
 
-## Como uma mudança se propaga até o cluster
+Quando uma Application filha é sincronizada, o ArgoCD aplica os manifests renderizados do overlay. Uma atualização de imagem em um Deployment normalmente produz um rolling update, respeitando a estratégia de rollout configurada. No primeiro deploy, os recursos são criados; nos seguintes, podem ser atualizados, mantidos ou removidos conforme as diferenças aprovadas.
 
-Duas origens de mudança, dois fluxos — mas **ambos terminam exigindo aprovação manual no ArgoCD**, já que o sync das Applications filhas não é automático.
+## Bootstrap, operação e recuperação do ArgoCD — issue #91
 
-### 1. Novo manifesto / config (mudança direta no APAE-INFRA)
+O playbook `ansible/playbooks/argocd.yml` utiliza a role `ansible/roles/argocd_bootstrap/`, executada por SSH na VPS. As operações Kubernetes usam o **kubeconfig local do k3s** (`/etc/rancher/k3s/k3s.yaml`) e a API local (`https://127.0.0.1:6443`), sem copiar o kubeconfig para runners nem exigir exposição pública da API Kubernetes.
 
-1. Alguém abre um PR no APAE-INFRA alterando `kubernetes/{produto}/base/` ou `kubernetes/{produto}/overlays/dev/`;
-2. PR é revisado e mergeado em `main`;
-3. O **ArgoCD Controller** (que já monitora continuamente todas as Applications, raiz e filhas, em paralelo) detecta que a Application filha correspondente está **Out-of-Sync** em relação ao Git;
-4. Como o `syncPolicy` dessa Application filha é manual, o ArgoCD **não aplica sozinho** — apenas sinaliza o estado Out-of-Sync;
-5. Alguém do time revisa a diferença no ArgoCD (UI ou CLI) e aprova o sync manualmente;
-6. O ArgoCD aplica (`kubectl apply`/`prune`) os recursos correspondentes, atualizando os Pods/Deployments do namespace afetado.
+A sequência planejada é:
 
-### 2. Nova imagem de aplicação (deploy de código)
+1. Verificar a disponibilidade do cluster e do kubeconfig.
+2. Instalar/verificar o Helm com versão fixada e verificação de integridade.
+3. Instalar/atualizar o chart oficial do ArgoCD com versões fixadas e recursos adequados à VPS.
+4. Aguardar o estado de saúde dos componentes e o estabelecimento dos CRDs `Application`, `AppProject` e `ApplicationSet`.
+5. Configurar as senhas do administrador e da conta `apae-leitura` via Ansible Vault, associar explicitamente a conta ao papel `apae-readonly` e manter a política padrão vazia. Proteger os valores sensíveis e remover a senha administrativa inicial após a substituição.
+6. Aplicar pelo Ansible os dois AppProjects e a Application raiz.
+7. Validar acesso por port-forward, sincronização de uma Application de teste e idempotência.
 
-O envio pelos produtos ainda será integrado na #106. Fluxo previsto:
+O acesso inicial ao ArgoCD será interno ao cluster (`ClusterIP`), disponibilizado por port-forward para administradores autorizados. Credenciais nunca devem ser versionadas, expostas em logs ou artefatos. Como o repositório APAE-INFRA é público, o ArgoCD poderá consumi-lo via HTTPS anônimo de **somente leitura**, sem token Git desnecessário. A política de Secrets dos workloads permanece na #93.
 
-1. Um push/merge na `main` de um dos repositórios de aplicação (APAE, APAE-gestão escolar, APAE-atendimento ou APAE-site-comemorativo) dispara o pipeline de **CI** (GitHub Actions);
-2. O CI builda a imagem e faz o **push da imagem** para o **GHCR** (Container Registry);
-3. O produto notificará o receptor por `repository_dispatch` do tipo `gitops-image-published`; o receptor confere a tag e o digest no GHCR e propõe a atualização do digest no `kustomization.yaml` do overlay correspondente do APAE-INFRA (ex.: `kubernetes/apae-geral/overlays/dev`), via PR para `main`, com revisão humana antes do merge;
-4. A partir daqui o fluxo é o mesmo do caso 1: o ArgoCD Controller detecta que **a Application filha daquele repositório** está Out-of-Sync (a raiz não é afetada, pois a definição das Applications em `argocd/` não mudou — apenas o conteúdo do overlay que a Application filha já apontava);
-5. Alguém aprova o sync manualmente no ArgoCD;
-6. O ArgoCD sincroniza a Application filha: normalmente isso é um **rolling update** do Deployment já existente (novos Pods sobem com a imagem nova do GHCR e os antigos são removidos gradualmente) — só no primeiro deploy daquela aplicação/ambiente é que os Pods são criados do zero.
+Antes de executar um upgrade, confirmar compatibilidade de versões, backup do estado do cluster e dos objetos de bootstrap, configuração de rollback e saúde do cluster. Em caso de recuperação, o Ansible reaplica os componentes sob sua responsabilidade; o ArgoCD retoma a reconciliação dos workloads atribuídos a ele. Os procedimentos operacionais detalhados e as evidências serão mantidos na documentação Ansible da #91, em articulação com os backups do k3s e a manutenção controlada da #117.
 
-Em ambos os casos, **a única forma de o cluster mudar é através de um commit no APAE-INFRA seguido de aprovação manual no ArgoCD** — nunca há `kubectl apply` manual nem alteração direta do GHCR/CI no cluster.
+> **Validação pendente:** checks de sintaxe e YAML não comprovam instalação real, compatibilidade efetiva, convergência, segurança dos Secrets nem idempotência no cluster. Esses critérios precisam ser demonstrados antes de encerrar a #91.
 
-### Comportamento da Application raiz dentro do ArgoCD
+## Evolução futura: VPS e clusters separados
 
-Após a integração e validação do bootstrap, a Application raiz (`apae-root`) mantém as filhas autorizadas registradas no cluster, independentemente de qualquer push de imagem. O que acontece a cada deploy é a Application filha *já existente* entrando em Out-of-Sync porque o conteúdo do overlay que ela aponta mudou — não a criação de uma Application nova.
+O escopo atual da #90 e da #91 utiliza **uma VPS e um cluster k3s**, com ambientes separados por namespace e uma raiz que descobre todas as Applications em `apps/`. Clusters separados são uma possibilidade futura, dependente de decisão arquitetural específica.
 
-## Relação entre as Applications e os repositórios de aplicação
-
-Mapeamento definido no PR #120 e dependências pendentes:
-
-| Repositório de aplicação | Application filha no ArgoCD | Overlay consumido |
-| --- | --- | --- |
-| `APAE` | `apae-geral-dev` | `kubernetes/apae-geral/overlays/dev` |
-| `APAE-gestao-escolar` | Pendente de #38/#92 | Pendente de #38/#92; caminho não definido |
-| `APAE-atendimento` | `apae-atendimento-dev` | `kubernetes/apae-atendimento/overlays/dev` |
-| `APAE-site-comemorativo` | `site-comemorativo-dev` | `kubernetes/site-comemorativo/overlays/dev` |
-
-Cada repositório de aplicação é responsável apenas pelo seu código, pelo build/push da imagem e pelo job de Image Updater no CI; o *deploy* em si (quais recursos existem, quantas réplicas, em qual namespace) é responsabilidade exclusiva do APAE-INFRA e das Applications do ArgoCD.
+Se essa separação for aprovada, será necessário definir inventários e bootstrap por cluster, distribuição das Applications entre as raízes, filtros de descoberta próprios, AppProjects, credenciais e conectividade administrativa. O filtro atual `apps/*/*.yaml` atende ao cluster compartilhado; não deve ser replicado em clusters separados sem revisar os destinos e o conjunto de Applications gerenciadas por cada raiz.
 
 ## Observabilidade
 
-As Applications de workload rodam no mesmo cluster monitorado pela stack de observabilidade (também gerenciada via GitOps, no mesmo padrão App of Apps):
+A arquitetura prevê monitoramento dos workloads e do cluster pela stack de observabilidade:
 
-- **Prometheus** coleta métricas dos Pods/Deployments de todas as aplicações;
-- **Grafana** visualiza as métricas do Prometheus em dashboards;
-- **Loki** centraliza os logs dos Pods, também visualizados no Grafana.
+- **Prometheus:** métricas de Pods, Deployments e componentes Kubernetes.
+- **Grafana:** visualização de métricas em dashboards.
+- **Loki:** centralização e consulta de logs.
+
+A instalação desses componentes depende das respectivas issues e de permissões específicas no `AppProject` de infraestrutura. A #91 não os instala.
 
 ## Referências
 
+- [Issue #91 — Instalar e configurar o ArgoCD com Ansible](https://github.com/IFPBEsp/APAE-INFRA/issues/91)
+- [Issue #92 — Applications e overlays por ambiente](https://github.com/IFPBEsp/APAE-INFRA/issues/92)
+- [Issue #93 — Gestão de Secrets](https://github.com/IFPBEsp/APAE-INFRA/issues/93)
+- [Issue #106 — Homologação e promoção de imagens](https://github.com/IFPBEsp/APAE-INFRA/issues/106)
+- [Issue #117 — Manutenção controlada e contingência](https://github.com/IFPBEsp/APAE-INFRA/issues/117)
+- [Documentação oficial — App of Apps](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)
 - [Diagrama do Fluxo do ArgoCD (SVG)](../diagramas/fluxo-argocd.svg)
 - [Diagrama editável no Excalidraw](../diagramas/fluxo-argocd.excalidraw)
-- [Documentação Oficial do ArgoCD - App of Apps](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)

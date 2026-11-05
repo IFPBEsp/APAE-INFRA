@@ -1,0 +1,75 @@
+---
+- name: Executar smoke test temporario do k3s
+  hosts: production
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Executar teste e garantir limpeza
+      block:
+        - name: Copiar manifesto de teste
+          ansible.builtin.copy:
+            src: ../files/k3s-smoke-test.yml
+            dest: /tmp/apae-k3s-smoke-test.yml
+            owner: root
+            group: root
+            mode: "0600"
+
+        - name: Criar recursos de teste
+          ansible.builtin.command:
+            cmd: /usr/local/bin/k3s kubectl apply -f /tmp/apae-k3s-smoke-test.yml
+          register: smoke_apply
+          changed_when: >
+            'created' in smoke_apply.stdout or
+            'configured' in smoke_apply.stdout
+
+        - name: Aguardar Deployment ficar disponivel
+          ansible.builtin.command:
+            cmd: >-
+              /usr/local/bin/k3s kubectl
+              rollout status deployment/nginx-test
+              -n smoke-test --timeout=180s
+          changed_when: false
+
+        - name: Validar pod pronto
+          ansible.builtin.command:
+            cmd: >-
+              /usr/local/bin/k3s kubectl
+              wait --for=condition=Ready pod
+              -l app=nginx-test
+              -n smoke-test --timeout=120s
+          changed_when: false
+
+        - name: Confirmar quantidade de replicas disponiveis
+          ansible.builtin.command:
+            cmd: >-
+              /usr/local/bin/k3s kubectl
+              get deployment nginx-test
+              -n smoke-test
+              -o jsonpath={.status.availableReplicas}
+          register: smoke_replicas
+          changed_when: false
+
+        - name: Validar replica disponivel
+          ansible.builtin.assert:
+            that:
+              - smoke_replicas.stdout | int == 1
+            fail_msg: "Smoke test falhou: replica indisponivel."
+            success_msg: "Smoke test passou: replica disponivel."
+
+      always:
+        - name: Remover namespace e recursos de teste
+          ansible.builtin.command:
+            cmd: >-
+              /usr/local/bin/k3s kubectl
+              delete namespace smoke-test
+              --ignore-not-found=true
+              --wait=true
+              --timeout=120s
+          register: smoke_cleanup
+          changed_when: "'deleted' in smoke_cleanup.stdout"
+
+        - name: Remover manifesto temporario
+          ansible.builtin.file:
+            path: /tmp/apae-k3s-smoke-test.yml
+            state: absent
