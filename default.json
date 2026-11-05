@@ -1,0 +1,57 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Preset compartilhado de atualizacao de dependencias dos repositorios da APAE."
+  ],
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "America/Fortaleza",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "dependencyDashboard": true,
+  "automerge": false,
+  "packageRules": [
+    {
+      "description": "Agrupar atualizacoes nao major do Maven",
+      "matchManagers": ["maven"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Maven dependencies"
+    },
+    {
+      "description": "Agrupar atualizacoes nao major do pnpm",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "pnpm dependencies"
+    },
+    {
+      "description": "Agrupar atualizacoes nao major de imagens Docker",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "Docker images"
+    },
+    {
+      "description": "Agrupar atualizacoes nao major de GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Agrupar atualizacoes nao major do Terraform",
+      "matchManagers": ["terraform"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Terraform dependencies"
+    },
+    {
+      "description": "Imagens das aplicacoes da APAE sao atualizadas pelo GitOps (#82)",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/ifpbesp/**"],
+      "enabled": false
+    }
+  ]
+}
