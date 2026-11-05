@@ -179,7 +179,7 @@ jobs:
 
           {
             echo "found=true"
-            echo "report-path=$GITHUB_WORKSPACE/$COVERAGE_REPORT_PATH"
+            echo "report-path=$GITHUB_WORKSPACE/$WORKING_DIRECTORY/$COVERAGE_REPORT_PATH"
             echo "artifact-path=$artifact_path"
             echo "artifact-name=jacoco-coverage-${safe_dir}-jdk${JAVA_VERSION}"
           } >> "$GITHUB_OUTPUT"
