@@ -25,10 +25,10 @@ Permissões declaradas: somente `contents: read`. Actions externas são referenc
 | Chaves privadas | `validate.sh secrets` | Nenhuma chave privada versionada em `ansible/` |
 | Collections | `validate.sh collections` | Todas as collections de `requirements.yml` com versão exata `X.Y.Z`; instalação das versões fixadas |
 | YAML | `validate.sh yaml` | `yamllint --strict` com [`ansible/.yamllint`](../../ansible/.yamllint) |
-| Lint | `validate.sh lint` | `ansible-lint` perfil `production` com [`ansible/.ansible-lint`](../../ansible/.ansible-lint) |
-| Sintaxe | `validate.sh syntax` | `ansible-inventory --list` e `ansible-playbook --syntax-check` para cada playbook em `ansible/playbooks/` contra cada `ansible/inventories/<ambiente>/hosts.yml`; inventário ilegível faz a etapa falhar |
+| Lint | `validate.sh lint` | `ansible-lint` perfil `production` com [`ansible/.ansible-lint`](../../ansible/.ansible-lint), quando houver conteúdo Ansible em `playbooks/`, `roles/`, `inventories/` ou `collections/` |
+| Sintaxe | `validate.sh syntax` | `ansible-inventory --list` para cada `ansible/inventories/<ambiente>/hosts.yml`, independentemente de playbooks; com playbooks, também executa `ansible-playbook --syntax-check` contra cada inventário; inventário ilegível faz a etapa falhar |
 
-Enquanto não houver playbooks em `ansible/playbooks/` (estrutura da #90), as etapas de lint e sintaxe informam a ausência e passam. Havendo playbooks sem inventário, a etapa de sintaxe falha.
+Sem playbooks em `ansible/playbooks/` (estrutura da #90), o lint ainda valida roles, inventários e collections próprios existentes, e a etapa de sintaxe valida os inventários encontrados; apenas o `ansible-playbook --syntax-check` é ignorado. O lint só é ignorado quando não há conteúdo Ansible aplicável. Havendo playbooks sem inventário, a etapa de sintaxe falha.
 
 ## 4. Versões fixadas
 
@@ -58,9 +58,15 @@ ansible/scripts/validate.sh lint
 ansible/scripts/validate.sh syntax
 ```
 
-Comandos equivalentes, executados dentro de `ansible/`:
+Comandos equivalentes, executados dentro de `ansible/` (o `validate.sh` continua sendo a fonte de verdade e aplica essas variáveis automaticamente):
 
 ```bash
+export ANSIBLE_COLLECTIONS_PATH="$PWD/.collections"
+export ANSIBLE_HOST_KEY_CHECKING="False"
+export ANSIBLE_RETRY_FILES_ENABLED="False"
+export ANSIBLE_INVENTORY_ANY_UNPARSED_IS_FAILED="True"
+export ANSIBLE_NOCOLOR="1"
+
 yamllint --strict -c .yamllint .
 ansible-lint --config-file .ansible-lint
 ansible-inventory -i inventories/<ambiente>/hosts.yml --list > /dev/null
@@ -80,6 +86,6 @@ Para comprovar os checks, abra um PR de teste (não mesclar) com uma das altera�
 | Espaços no fim de linha ou YAML inválido em um playbook | YAML lint |
 | Task sem `name` ou módulo sem FQCN (`apt:` em vez de `ansible.builtin.apt:`) | Ansible lint |
 | Palavra-chave inexistente em um play (`bogus_keyword: 1`) | Ansible lint (o `ansible-lint` já executa o syntax-check e falha antes da etapa de sintaxe) |
-| Inventário com estrutura inválida (`hosts:` como lista em vez de mapa) | Inventory and playbook syntax check |
+| Inventário com estrutura inválida (`hosts:` como lista em vez de mapa), mesmo sem playbooks | Inventory and playbook syntax check |
 | Collection com `version: ">=1.0.0"` em `requirements.yml` | Validate and install pinned collections |
 | Cabeçalho `-----BEGIN OPENSSH PRIVATE KEY-----` em qualquer arquivo de `ansible/` | Check for committed private keys |
