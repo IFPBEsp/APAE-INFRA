@@ -16,6 +16,7 @@ Manter em um único lugar tudo que é infraestrutura como código, pipelines de 
 - [Grafana](https://grafana.com/)
 - [Prometheus](https://prometheus.io/)
 - [Loki](https://grafana.com/oss/loki/)
+- [Gitleaks](https://github.com/gitleaks/gitleaks)
 
 ## Repositórios orquestrados
 
@@ -41,6 +42,7 @@ docs/             # documentação de padrões e boas práticas do repositório
   diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
   docker/         # documentação de Docker, pipelines e assinatura de imagens
   nginx/          # estudo de NGINX Gateway Fabric e Gateway API
+  seguranca/      # guia do Gitleaks e resposta a vazamento de segredos
   terraform/      # estudo de Terraform e arquitetura GitOps
   workflows/      # guias dos workflows reutilizáveis
 kubernetes/       # manifests e configurações do cluster
@@ -57,6 +59,10 @@ terraform/
 > Estrutura sujeita a evolução conforme surgirem novas necessidades de infraestrutura e de cada aplicação.
 
 Índices: [documentação](docs/README.md) · [estudo de Ansible para VPS](docs/ansible/README.md).
+
+## Segurança
+
+A detecção de segredos nos repositórios da APAE é feita com o [Gitleaks](https://github.com/gitleaks/gitleaks). Consulte o [guia de instalação e resposta a vazamento de segredos](docs/seguranca/gitleaks.md) para instalar a ferramenta, tratar falsos positivos e agir em caso de credencial commitada por engano.
 
 ## Organização por ambiente
 
