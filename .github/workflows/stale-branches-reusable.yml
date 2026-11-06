@@ -1,0 +1,115 @@
+name: Reusable - Remove Stale Branches
+
+on:
+  workflow_call:
+    inputs:
+      days-before-delete:
+        description: "Dias sem commits para considerar a branch abandonada"
+        type: number
+        default: 60
+      protected-branches:
+        description: "Branches que nunca são removidas (além da padrão e protegidas no GitHub)"
+        type: string
+        default: "main,dev"
+      dry-run:
+        description: "Apenas lista o que seria removido, sem remover"
+        type: boolean
+        default: true
+
+jobs:
+  remove-stale-branches:
+    name: Remove Stale Branches
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - name: Remove stale branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DAYS_BEFORE_DELETE: ${{ inputs.days-before-delete }}
+          PROTECTED: ${{ inputs.protected-branches }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          REPO="${{ github.repository }}"
+          DEFAULT_BRANCH=$(gh repo view "$REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')
+          CUTOFF_DATE=$(date -d "-${DAYS_BEFORE_DELETE} days" +%s)
+
+          echo "## Relatório de branches obsoletas" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | Motivo | PR | SHA |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|---|" >> $GITHUB_STEP_SUMMARY
+
+          FAILED_BRANCHES=""
+
+          for BRANCH in $(gh api "repos/$REPO/branches" --paginate --jq '.[].name'); do
+            # nunca remove a branch padrão
+            if [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
+              continue
+            fi
+
+            # nunca remove branches protegidas no GitHub
+            PROTECTED_ON_GH=$(gh api "repos/$REPO/branches/$BRANCH" --jq '.protected' 2>/dev/null)
+            if [ "$PROTECTED_ON_GH" = "true" ]; then
+              continue
+            fi
+
+            # nunca remove branches listadas em protected-branches
+            SKIP=false
+            IFS=',' read -ra PROTECTED_LIST <<< "$PROTECTED"
+            for P in "${PROTECTED_LIST[@]}"; do
+              P=$(echo "$P" | xargs)
+              if [[ "$BRANCH" == $P ]]; then
+                SKIP=true
+                break
+              fi
+            done
+            if [ "$SKIP" = "true" ]; then
+              continue
+            fi
+
+            SHA=$(gh api "repos/$REPO/branches/$BRANCH" --jq '.commit.sha')
+            LAST_COMMIT_DATE=$(gh api "repos/$REPO/commits/$SHA" --jq '.commit.committer.date')
+            LAST_COMMIT_TS=$(date -d "$LAST_COMMIT_DATE" +%s)
+
+            # verifica PR associado
+            PR_STATE=$(gh pr list --repo "$REPO" --head "$BRANCH" --state all --json state,number,url \
+              --jq 'if length > 0 then .[0] else null end')
+
+            PR_NUMBER=$(echo "$PR_STATE" | jq -r '.number // empty')
+            PR_URL=$(echo "$PR_STATE" | jq -r '.url // empty')
+            STATE=$(echo "$PR_STATE" | jq -r '.state // "NO_PR"')
+
+            REASON=""
+
+            if [ "$STATE" = "MERGED" ]; then
+              REASON="PR mergeado"
+            elif [ "$STATE" = "CLOSED" ] && [ "$LAST_COMMIT_TS" -lt "$CUTOFF_DATE" ]; then
+              REASON="PR fechado sem merge e sem commits há mais de ${DAYS_BEFORE_DELETE} dias"
+            elif [ "$STATE" = "NO_PR" ] && [ "$LAST_COMMIT_TS" -lt "$CUTOFF_DATE" ]; then
+              REASON="Sem PR e sem commits há mais de ${DAYS_BEFORE_DELETE} dias"
+            elif [ "$STATE" = "OPEN" ]; then
+              continue
+            else
+              continue
+            fi
+
+            PR_REF="${PR_URL:-N/A}"
+
+            echo "| \`$BRANCH\` | $REASON | $PR_REF | \`$SHA\` |" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$DRY_RUN" = "false" ]; then
+              if ! gh api --method DELETE "repos/$REPO/git/refs/heads/$BRANCH"; then
+                echo "::warning::Falha ao remover $BRANCH"
+                FAILED_BRANCHES="$FAILED_BRANCHES $BRANCH"
+              fi
+            fi
+          done
+
+          if [ -n "$FAILED_BRANCHES" ]; then
+            echo "## Branches que falharam na remoção" >> $GITHUB_STEP_SUMMARY
+            for B in $FAILED_BRANCHES; do
+              echo "- \`$B\`" >> $GITHUB_STEP_SUMMARY
+            done
+            exit 1
+          fi
