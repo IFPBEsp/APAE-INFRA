@@ -1,0 +1,270 @@
+name: Reusable Node.js Frontend CI
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Diretório da aplicação frontend, relativo à raiz do repositório"
+        required: true
+        type: string
+
+      package-manager:
+        description: "Gerenciador de pacotes: detect, pnpm ou npm"
+        required: false
+        type: string
+        default: "detect"
+
+      node-version:
+        description: "Versão do Node.js"
+        required: false
+        type: string
+        default: "22"
+
+      run-lint:
+        description: "Executa a etapa de lint"
+        required: false
+        type: boolean
+        default: true
+
+      typecheck-command:
+        description: "Comando de typecheck; vazio desabilita a etapa"
+        required: false
+        type: string
+        default: "tsc --noEmit"
+
+      run-tests:
+        description: "Executa a etapa de testes"
+        required: false
+        type: boolean
+        default: false
+
+      build-env:
+        description: "Variáveis NEXT_PUBLIC_* no formato CHAVE=VALOR, uma por linha"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Detect package manager and validate directory
+        id: prepare
+        shell: bash
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          PACKAGE_MANAGER: ${{ inputs.package-manager }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          raw_directory = os.environ["WORKING_DIRECTORY"].strip()
+
+          if not raw_directory:
+              raise SystemExit("::error::working-directory é obrigatório.")
+
+          if any(char in raw_directory for char in "\r\n\0"):
+              raise SystemExit(
+                  "::error::working-directory contém caracteres inválidos."
+              )
+
+          relative = Path(raw_directory)
+
+          if relative.is_absolute() or ".." in relative.parts:
+              raise SystemExit(f"::error::Caminho inválido: {raw_directory}")
+
+          target = (workspace / relative).resolve()
+
+          if target != workspace and workspace not in target.parents:
+              raise SystemExit(
+                  f"::error::Diretório fora do workspace: {raw_directory}"
+              )
+
+          if not target.is_dir():
+              raise SystemExit(
+                  f"::error::Diretório não encontrado: {raw_directory}"
+              )
+
+          if not (target / "package.json").is_file():
+              raise SystemExit(
+                  f"::error::package.json não encontrado em: {raw_directory}"
+              )
+
+          requested = os.environ["PACKAGE_MANAGER"].strip().lower()
+
+          if requested not in {"detect", "pnpm", "npm"}:
+              raise SystemExit(
+                  f"::error::package-manager inválido: {requested}"
+              )
+
+          if requested == "detect":
+              if (target / "pnpm-lock.yaml").is_file():
+                  manager = "pnpm"
+              elif (target / "package-lock.json").is_file():
+                  manager = "npm"
+              else:
+                  raise SystemExit(
+                      "::error::Nenhum lockfile encontrado "
+                      "(pnpm-lock.yaml ou package-lock.json)."
+                  )
+          else:
+              manager = requested
+
+          lockfile = (
+              "pnpm-lock.yaml"
+              if manager == "pnpm"
+              else "package-lock.json"
+          )
+
+          if not (target / lockfile).is_file():
+              raise SystemExit(
+                  "::error::Lockfile obrigatório não encontrado: "
+                  f"{lockfile}"
+              )
+
+          package_json = json.loads(
+              (target / "package.json").read_text(encoding="utf-8")
+          )
+
+          package_manager = package_json.get("packageManager", "")
+          match = (
+              re.match(r"^pnpm@([0-9][0-9A-Za-z._-]*)", package_manager)
+              if isinstance(package_manager, str)
+              else None
+          )
+          pnpm_version = match.group(1) if match else "10"
+
+          directory = target.relative_to(workspace).as_posix()
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"package-manager={manager}\n")
+              output.write(f"working-directory={directory}\n")
+              output.write(f"pnpm-version={pnpm_version}\n")
+              output.write(f"lockfile={lockfile}\n")
+
+          print(f"Diretório: {directory}")
+          print(f"Gerenciador de pacotes: {manager}")
+          print(f"Lockfile: {lockfile}")
+          PY
+
+      - name: Setup pnpm
+        if: steps.prepare.outputs.package-manager == 'pnpm'
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: ${{ steps.prepare.outputs.pnpm-version }}
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ steps.prepare.outputs.package-manager }}
+          cache-dependency-path: ${{ steps.prepare.outputs.working-directory }}/${{ steps.prepare.outputs.lockfile }}
+
+      - name: Install dependencies
+        shell: bash
+        working-directory: ${{ steps.prepare.outputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ steps.prepare.outputs.package-manager }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: Lint
+        if: inputs.run-lint
+        shell: bash
+        working-directory: ${{ steps.prepare.outputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ steps.prepare.outputs.package-manager }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            pnpm run lint
+          else
+            npm run lint
+          fi
+
+      - name: Typecheck
+        if: inputs.typecheck-command != ''
+        shell: bash
+        working-directory: ${{ steps.prepare.outputs.working-directory }}
+        env:
+          TYPECHECK_COMMAND: ${{ inputs.typecheck-command }}
+        run: |
+          set -euo pipefail
+
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          bash -c "$TYPECHECK_COMMAND"
+
+      - name: Tests
+        if: inputs.run-tests
+        shell: bash
+        working-directory: ${{ steps.prepare.outputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ steps.prepare.outputs.package-manager }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            pnpm run test
+          else
+            npm run test
+          fi
+
+      - name: Build
+        shell: bash
+        working-directory: ${{ steps.prepare.outputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ steps.prepare.outputs.package-manager }}
+          BUILD_ENV: ${{ inputs.build-env }}
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            line="${line%$'\r'}"
+
+            [[ -z "${line//[[:space:]]/}" ]] && continue
+
+            if [[ ! "$line" =~ ^(NEXT_PUBLIC_[A-Za-z0-9_]+)=(.*)$ ]]; then
+              echo "::error::build-env inválido: use NEXT_PUBLIC_CHAVE=valor, uma por linha."
+              exit 1
+            fi
+
+            key="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+
+            export "$key=$value"
+            echo "::notice::Variável de build definida: $key"
+          done <<< "$BUILD_ENV"
+
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            pnpm run build
+          else
+            npm run build
+          fi
