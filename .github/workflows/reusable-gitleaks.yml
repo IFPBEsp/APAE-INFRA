@@ -1,20 +1,23 @@
-name: Reusable - Gitleaks Secret Scanning
+name: Reusable Gitleaks Scan
 
 on:
   workflow_call:
+    secrets:
+      GITLEAKS_LICENSE:
+        required: false
+        description: 'Licenca do Gitleaks para execucao em organizacoes'
 
 jobs:
   gitleaks:
-    name: Scan secrets with Gitleaks
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@V3
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
