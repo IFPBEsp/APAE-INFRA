@@ -1,0 +1,230 @@
+name: Reusable Prisma Migration Check
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Diretório onde se encontra o package.json da aplicação"
+        required: false
+        type: string
+        default: "."
+
+      schema-path:
+        description: "Caminho do schema.prisma, relativo ao working-directory"
+        required: false
+        type: string
+        default: "prisma/schema.prisma"
+
+      postgres-version:
+        description: "Versão do PostgreSQL usada no teste"
+        required: false
+        type: string
+        default: "16"
+
+      package-manager:
+        description: "Gerenciador de pacotes usado no projeto (pnpm ou npm)"
+        required: false
+        type: string
+        default: "pnpm"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check Prisma migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:${{ inputs.postgres-version }}
+        env:
+          POSTGRES_DB: app
+          POSTGRES_USER: prisma
+          POSTGRES_PASSWORD: prisma
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U prisma -d app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/app?schema=public
+      SHADOW_DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/app_shadow?schema=public
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate inputs
+        shell: bash
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package-manager }}
+        run: |
+          set -euo pipefail
+
+          case "$PACKAGE_MANAGER" in
+            pnpm|npm) ;;
+            *)
+              echo "::error::package-manager deve ser pnpm ou npm."
+              exit 1
+              ;;
+          esac
+
+      - name: Setup pnpm
+        if: inputs.package-manager == 'pnpm'
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: ${{ inputs.package-manager }}
+          cache-dependency-path: ${{ inputs.package-manager == 'pnpm' && format('{0}/pnpm-lock.yaml', inputs.working-directory) || format('{0}/package-lock.json', inputs.working-directory) }}
+
+      - name: Install dependencies
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package-manager }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: Resolve Prisma paths
+        id: paths
+        shell: bash
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          SCHEMA_PATH: ${{ inputs.schema-path }}
+        run: |
+          set -euo pipefail
+
+          migrations_directory="$(dirname "$SCHEMA_PATH")/migrations"
+
+          echo "migrations-directory=$migrations_directory" >> "$GITHUB_OUTPUT"
+          echo "migrations-path=$WORKING_DIRECTORY/$migrations_directory" >> "$GITHUB_OUTPUT"
+
+      - name: Prevent changes to existing migrations
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MIGRATIONS_PATH: ${{ steps.paths.outputs.migrations-path }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$BASE_REF" ]]; then
+            echo "::error::Este workflow deve ser executado em eventos de pull_request."
+            exit 1
+          fi
+
+          if ! git rev-parse --verify "origin/${BASE_REF}" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          fi
+
+          diff_file="$RUNNER_TEMP/prisma-migrations-diff.tsv"
+
+          git diff \
+            --name-status \
+            --no-renames \
+            "origin/${BASE_REF}...HEAD" \
+            -- "$MIGRATIONS_PATH" \
+            > "$diff_file"
+
+          echo "Alterações detectadas em ${MIGRATIONS_PATH}:"
+          cat "$diff_file" || true
+
+          if awk -F '\t' '
+            $1 == "M" || $1 == "D" {print; found=1}
+            END {exit !found}
+          ' "$diff_file"; then
+            echo "::error::Migrations existentes não podem ser modificadas ou removidas."
+            exit 1
+          fi
+
+      - name: Create shadow database
+        shell: bash
+        env:
+          POSTGRES_VERSION: ${{ inputs.postgres-version }}
+        run: |
+          set -euo pipefail
+
+          docker run \
+            --rm \
+            --network host \
+            -e PGPASSWORD=prisma \
+            "postgres:${POSTGRES_VERSION}" \
+            psql \
+              -h 127.0.0.1 \
+              -p 5432 \
+              -U prisma \
+              -d app \
+              -v ON_ERROR_STOP=1 \
+              -c 'CREATE DATABASE app_shadow;'
+
+      - name: Validate Prisma schema
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package-manager }}
+          SCHEMA_PATH: ${{ inputs.schema-path }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            pnpm exec prisma validate --schema="$SCHEMA_PATH"
+          else
+            npx --no-install prisma validate --schema="$SCHEMA_PATH"
+          fi
+
+      - name: Apply migrations to clean database
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package-manager }}
+          SCHEMA_PATH: ${{ inputs.schema-path }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            pnpm exec prisma migrate deploy --schema="$SCHEMA_PATH"
+          else
+            npx --no-install prisma migrate deploy --schema="$SCHEMA_PATH"
+          fi
+
+      - name: Detect schema drift
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ inputs.package-manager }}
+          SCHEMA_PATH: ${{ inputs.schema-path }}
+          MIGRATIONS_DIRECTORY: ${{ steps.paths.outputs.migrations-directory }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            pnpm exec prisma migrate diff \
+              --from-migrations "$MIGRATIONS_DIRECTORY" \
+              --to-schema-datamodel "$SCHEMA_PATH" \
+              --shadow-database-url "$SHADOW_DATABASE_URL" \
+              --exit-code
+          else
+            npx --no-install prisma migrate diff \
+              --from-migrations "$MIGRATIONS_DIRECTORY" \
+              --to-schema-datamodel "$SCHEMA_PATH" \
+              --shadow-database-url "$SHADOW_DATABASE_URL" \
+              --exit-code
+          fi
