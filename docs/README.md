@@ -2,6 +2,7 @@
 
 ## Guias e estudos
 
+- [Estratégia de backup e recuperação da VPS e aplicações](backup/README.md)
 - [Estudo de Ansible para gerenciamento da VPS](ansible/README.md)
 - [Estudo de NGINX e Gateway API](nginx/README.md)
 - [Estudo de Terraform e GitOps](terraform/README.md)
