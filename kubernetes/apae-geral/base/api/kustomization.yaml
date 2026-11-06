@@ -5,6 +5,7 @@ resources:
   - configmap.yaml
   - deployment.yaml
   - service.yaml
+  - sealedsecret.yaml
 
 components:
   - ../components/security
