@@ -22,7 +22,13 @@ on:
 jobs:
   call-gitleaks:
     uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-gitleaks.yml@dev
+    secrets: inherit
 ```
+
+A diretiva `secrets: inherit` repassa as secrets do repositório chamador
+para o workflow reutilizável. Configure a secret `GITLEAKS_LICENSE` em
+**Settings > Secrets and variables > Actions** da organização ou do
+repositório (a licença é necessária apenas para uso em organizações).
 
 ## Exceções (allowlist)
 
@@ -30,11 +36,17 @@ Para ignorar paths ou padrões específicos, crie um arquivo `gitleaks.toml`
 na raiz do repositório com uma allowlist:
 
 ```toml
+[extend]
+  useDefault = true
+
 [allowlist]
   paths = [
-    '''.env.example''',
+    '''^\.env\.example$''',
   ]
 ```
+
+O bloco `[extend]` com `useDefault = true` preserva as regras padrão do
+Gitleaks, garantindo que a allowlist apenas complemente a detecção.
 
 > Atenção: o `.gitleaksignore` ignora findings por fingerprint, não por path.
 > Para excluir arquivos ou padrões, use sempre o `gitleaks.toml`.
