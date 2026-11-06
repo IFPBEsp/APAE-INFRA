@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: site-comemorativo
+  labels:
+    app: site-comemorativo
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: site-comemorativo
+  template:
+    metadata:
+      labels:
+        app: site-comemorativo
+    spec:
+      containers:
+        - name: site-comemorativo
+          image: ghcr.io/ifpbesp/apae-site-comemorativo:dev
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: site-comemorativo-config
+
+          startupProbe:
+            httpGet:
+              path: /site-comemorativo
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12
+
+          readinessProbe:
+            httpGet:
+              path: /site-comemorativo
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /site-comemorativo
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          volumeMounts:
+            - name: next-cache
+              mountPath: /app/.next/cache
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+
+      volumes:
+        - name: next-cache
+          emptyDir: {}
