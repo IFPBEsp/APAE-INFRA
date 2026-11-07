@@ -68,7 +68,7 @@ with:
   maven-args: "clean verify"
 ```
 
-Os argumentos são separados por espaços. Evite argumentos que dependam de espaços dentro do mesmo valor.
+Os argumentos são separados por espaços. O input aceita múltiplas linhas, e todas as linhas informadas são consideradas. Evite argumentos que dependam de espaços dentro do mesmo valor.
 
 ### `coverage-report-path`
 
@@ -135,7 +135,7 @@ jobs:
 
 Substitua `<commit-sha>` pelo SHA completo de um commit do APAE-INFRA. Evite referências mutáveis como `@main`, `@dev` ou `@v1`.
 
-A permissão `pull-requests: write` é necessária para publicar ou atualizar o comentário com o relatório Surefire no Pull Request. Se o repositório não precisar desse comentário, a permissão pode ser reduzida, mas o workflow emitirá um aviso ao tentar publicar o relatório.
+Como o workflow reutilizável publica comentários automáticos no Pull Request, o token precisa das permissões `contents: read` e `pull-requests: write`. A permissão `pull-requests: write` é necessária para criar ou atualizar o comentário com o relatório Surefire. Sem ela, o workflow emite um aviso e não falha, mas o comentário não é publicado.
 
 ### Restringindo a execução por caminhos
 
@@ -191,7 +191,7 @@ O workflow adota as seguintes medidas:
 
 - todas as GitHub Actions são fixadas por SHA completo, não por tag ou versão mutável;
 - o checkout usa `persist-credentials: false`;
-- as permissões declaradas são apenas `contents: read` e `pull-requests: write`;
+- as permissões declaradas são `contents: read` e `pull-requests: write`, necessárias para o checkout e para a publicação do comentário Surefire no Pull Request;
 - os inputs de caminho são validados para rejeitar caminhos absolutos e referências com `..`;
 - o workflow não recebe nem utiliza secrets adicionais.
 
