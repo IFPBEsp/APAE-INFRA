@@ -1,0 +1,16 @@
+---
+- name: Garantir diretório do registro operacional
+  ansible.builtin.file:
+    path: "{{ runtime_mode_state_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Registrar último modo ativado com sucesso
+  ansible.builtin.copy:
+    dest: "{{ runtime_mode_state_file }}"
+    content: "{{ runtime_mode }}\n"
+    owner: root
+    group: root
+    mode: "0600"

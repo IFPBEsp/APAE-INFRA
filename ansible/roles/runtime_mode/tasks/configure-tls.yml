@@ -1,0 +1,141 @@
+---
+- name: Validar parâmetros da instalação TLS
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - runtime_mode_lock_directory is match('^/run/lock/apae-[a-zA-Z0-9_-]+$')
+      - runtime_mode_tls_renew_before_seconds | int >= runtime_mode_compose_tls_minimum_validity_seconds | int
+      - runtime_mode_compose_tls_minimum_validity_seconds | int > 0
+      - runtime_mode_tls_renew_timeout_seconds | int > 0
+      - runtime_mode_tls_renew_timeout_seconds | int <= 420
+      - runtime_mode_tls_timer_randomized_delay_seconds | int >= 0
+      - runtime_mode_compose_http_checks | length > 0
+      - runtime_mode_certbot_certificate_name is match('^[a-zA-Z0-9._-]+$')
+      - runtime_mode_compose_proxy_container not in (runtime_mode_data_services | map(attribute='container') | list)
+    fail_msg: "Parâmetros TLS inválidos. A instalação não suporta --check."
+
+- name: Conferir imagem local do Certbot antes de instalar o timer
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - --format
+      - "{{ '{{.Id}}' }}"
+      - "{{ runtime_mode_certbot_image }}"
+  changed_when: false
+
+- name: Adquirir trava para instalar automação TLS
+  ansible.builtin.command:
+    argv:
+      - mkdir
+      - --mode=0700
+      - --
+      - "{{ runtime_mode_lock_directory }}"
+  register: runtime_mode_tls_install_lock
+  changed_when: runtime_mode_tls_install_lock.rc == 0
+  failed_when: false
+
+- name: Confirmar trava da instalação TLS
+  ansible.builtin.assert:
+    that:
+      - runtime_mode_tls_install_lock.rc == 0
+    fail_msg: "Trava indisponível; confira se há alternância ou renovação em execução."
+
+- name: Instalar renovação TLS sob trava
+  block:
+    - name: Validar calendário do timer
+      ansible.builtin.command:
+        argv:
+          - systemd-analyze
+          - calendar
+          - "{{ runtime_mode_tls_timer_calendar }}"
+      changed_when: false
+
+    - name: Conferir lineage e certificado existentes
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: true
+        get_checksum: false
+        get_mime: false
+      loop:
+        - "{{ runtime_mode_compose_tls_certificate }}"
+        - "{{ runtime_mode_certbot_config_directory }}/renewal/{{ runtime_mode_certbot_certificate_name }}.conf"
+      register: runtime_mode_tls_existing_files
+
+    - name: Exigir configuração existente do Certbot
+      ansible.builtin.assert:
+        that:
+          - item.stat.isreg | default(false)
+        fail_msg: "Arquivo obrigatório ausente: {{ item.item }}. A emissão inicial é uma operação separada."
+      loop: "{{ runtime_mode_tls_existing_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Preparar diretórios protegidos da automação TLS
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - "{{ runtime_mode_tls_core_script | dirname }}"
+        - "{{ runtime_mode_certbot_work_directory }}"
+        - "{{ runtime_mode_certbot_log_directory }}"
+
+    - name: Instalar núcleo e wrapper da renovação
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0700"
+        validate: /bin/bash -n %s
+      loop:
+        - src: renew-compose-tls.sh.j2
+          dest: "{{ runtime_mode_tls_core_script }}"
+        - src: renew-compose-tls-wrapper.sh.j2
+          dest: "{{ runtime_mode_tls_wrapper_script }}"
+
+    - name: Instalar serviço systemd da renovação
+      ansible.builtin.template:
+        src: compose-tls-renew.service.j2
+        dest: /etc/systemd/system/apae-compose-tls-renew.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Instalar timer systemd da renovação
+      ansible.builtin.template:
+        src: compose-tls-renew.timer.j2
+        dest: /etc/systemd/system/apae-compose-tls-renew.timer
+        owner: root
+        group: root
+        mode: "0644"
+      register: runtime_mode_tls_timer_unit
+
+    - name: Validar unidades systemd instaladas
+      ansible.builtin.command:
+        argv:
+          - systemd-analyze
+          - verify
+          - /etc/systemd/system/apae-compose-tls-renew.service
+          - /etc/systemd/system/apae-compose-tls-renew.timer
+      changed_when: false
+
+    - name: Habilitar verificação periódica do certificado
+      ansible.builtin.systemd_service:
+        name: apae-compose-tls-renew.timer
+        enabled: true
+        state: "{{ 'restarted' if runtime_mode_tls_timer_unit.changed else 'started' }}"
+        daemon_reload: true
+
+  always:
+    - name: Liberar trava da instalação TLS
+      ansible.builtin.command:
+        argv:
+          - rmdir
+          - --
+          - "{{ runtime_mode_lock_directory }}"
+      changed_when: true

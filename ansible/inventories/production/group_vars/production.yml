@@ -1,0 +1,192 @@
+---
+
+# Alternância e registro operacional
+# ------------------------------------------------------------------------
+# Valores aceitos: compose ou cluster. Vazio exige escolha explícita.
+runtime_mode: ""
+
+# Trava compartilhada entre a alternância e a renovação TLS.
+runtime_mode_lock_directory: /run/lock/apae-runtime-mode
+
+# Último modo ativado com sucesso; não substitui a consulta ao estado real.
+runtime_mode_state_file: /var/lib/apae/runtime-mode
+
+
+# Limites operacionais
+# ------------------------------------------------------------------------
+runtime_mode_minimum_total_memory_mb: 3500
+
+runtime_mode_minimum_free_disk_mb: 1024
+
+
+# Serviços de dados permanentes
+# ------------------------------------------------------------------------
+# Permanecem ativos nos dois modos, utilizando os mesmos volumes.
+runtime_mode_data_services:
+  - container: apae-postgres
+    volume: apae_postgres_data
+    destination: /var/lib/postgresql/data
+
+  - container: apae-minio-shared
+    volume: apae-minio-shared_minio-shared-data
+    destination: /data
+
+# Containers antigos que devem permanecer parados.
+runtime_mode_legacy_minio_containers:
+  - apae-geral-minio
+  - apae-gestao-minio
+  - apae-atendimento-minio
+
+
+# Modo Compose
+# ------------------------------------------------------------------------
+runtime_mode_compose_start_timeout_seconds: 180
+
+runtime_mode_compose_proxy_container: proxy-proxy-1
+
+runtime_mode_compose_public_ports:
+  - 80
+  - 443
+  - 9003
+
+# Ordem de inicialização; a parada utiliza a ordem inversa.
+runtime_mode_compose_projects:
+  - name: geral
+    directory: /opt/apae/geral
+    files:
+      - compose.yml
+      - compose.shared.yaml
+    services:
+      - api
+
+  - name: gestao
+    directory: /opt/apae/gestao
+    files:
+      - compose.yml
+      - compose.shared.yaml
+    services:
+      - api
+
+  - name: atendimento
+    directory: /opt/apae/atendimento
+    files:
+      - compose.yml
+      - compose.shared.yaml
+    services:
+      - api
+      - frontend
+
+  - name: frontends
+    directory: /opt/apae/frontends
+    files:
+      - compose.yml
+    services:
+      - geral
+      - gestao
+
+  - name: site-comemorativo
+    directory: /opt/apae/site-comemorativo
+    files:
+      - compose.yaml
+    services:
+      - site
+
+  - name: proxy
+    directory: /opt/apae/proxy
+    files:
+      - compose.yml
+    services:
+      - proxy
+
+# Verificações HTTPS executadas após iniciar as aplicações e o proxy.
+runtime_mode_compose_http_checks:
+  - name: Login do APAE Geral
+    url: https://143.95.170.25/apae-geral/auth/login
+    expected_status: 200
+
+  - name: Gestão Escolar
+    url: https://143.95.170.25/gestao-escolar
+    expected_status: 200
+
+  - name: Login do Atendimento
+    url: https://143.95.170.25/atendimento/login
+    expected_status: 200
+
+  - name: Site Comemorativo
+    url: https://143.95.170.25/site-comemorativo
+    expected_status: 200
+
+  - name: API pública do MinIO compartilhado
+    url: https://143.95.170.25:9003/minio/health/live
+    expected_status: 200
+
+
+# Modo cluster
+# ------------------------------------------------------------------------
+runtime_mode_k3s_service: k3s
+
+runtime_mode_k3s_firewall_service: k3s-api-firewall
+
+runtime_mode_k3s_binary: /usr/local/bin/k3s
+
+runtime_mode_k3s_stop_script: /usr/local/bin/k3s-killall.sh
+
+runtime_mode_cluster_start_timeout_seconds: 180
+
+runtime_mode_cluster_public_ports:
+  - 80
+  - 443
+
+# Atualizar quando novas dependências obrigatórias forem implantadas.
+runtime_mode_cluster_workloads:
+  - namespace: kube-system
+    resource: deployment/coredns
+
+  - namespace: kube-system
+    resource: deployment/local-path-provisioner
+
+  - namespace: kube-system
+    resource: deployment/metrics-server
+
+  - namespace: argocd
+    resource: deployment/argocd-redis
+
+  - namespace: argocd
+    resource: deployment/argocd-repo-server
+
+  - namespace: argocd
+    resource: deployment/argocd-server
+
+  - namespace: argocd
+    resource: statefulset/argocd-application-controller
+
+
+# TLS do Compose e renovação com Certbot
+# ------------------------------------------------------------------------
+runtime_mode_compose_tls_certificate: /opt/apae/letsencrypt/live/143.95.170.25/fullchain.pem
+
+# Validade mínima exigida para disponibilizar o modo Compose: uma hora.
+runtime_mode_compose_tls_minimum_validity_seconds: 3600
+
+runtime_mode_certbot_image: certbot/certbot:v5.8.0
+
+runtime_mode_certbot_certificate_name: "143.95.170.25"
+
+runtime_mode_certbot_config_directory: /opt/apae/letsencrypt
+
+runtime_mode_certbot_work_directory: /var/lib/apae/certbot
+
+runtime_mode_certbot_log_directory: /var/log/apae-certbot
+
+# O núcleo é chamado sob trava; o wrapper adquire a trava para execuções externas.
+runtime_mode_tls_core_script: /usr/local/libexec/apae/renew-compose-tls
+runtime_mode_tls_wrapper_script: /usr/local/sbin/apae-renew-compose-tls
+
+# Consultar renovação quando restarem até dois dias de validade.
+runtime_mode_tls_renew_before_seconds: 172800
+runtime_mode_tls_renew_timeout_seconds: 420
+
+# Verificação periódica do certificado; não agenda a troca de ambientes.
+runtime_mode_tls_timer_calendar: hourly
+
+runtime_mode_tls_timer_randomized_delay_seconds: 600

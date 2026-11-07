@@ -1,0 +1,26 @@
+---
+- name: Iniciar serviços selecionados
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['docker', 'compose', '--ansi', 'never']
+        + (['-f'] | product(runtime_mode_project.files) | list | flatten)
+        + [
+          'up',
+          '--no-deps',
+          '--no-build',
+          '--pull', 'never',
+          '--wait',
+          '--wait-timeout',
+          runtime_mode_compose_start_timeout_seconds | string
+        ]
+        + runtime_mode_project.services
+      }}
+    chdir: "{{ runtime_mode_project.directory }}"
+  register: runtime_mode_project_start
+  changed_when: >-
+    (
+      runtime_mode_project_start.stdout
+      ~ ' '
+      ~ runtime_mode_project_start.stderr
+    ) is search('(^|[^A-Za-z])(Created|Started|Recreated)([^A-Za-z]|$)')
