@@ -24,6 +24,7 @@ O workflow analisa os seguintes ecossistemas:
 | `trivyignores` | `string` | Não | `.trivyignore` | Caminho do arquivo de exceções versionado no repositório. |
 | `upload-sarif` | `boolean` | Não | `true` | Se `true`, tenta publicar o relatório SARIF na área de Code scanning do GitHub quando o arquivo for gerado. |
 | `fail-on-vulnerabilities` | `boolean` | Não | `true` | Se `true`, falha o job do PR caso vulnerabilidades não suprimidas sejam encontradas. |
+| `skip-dirs` | `string` | Não | `""` | Diretórios que devem ser ignorados na verificação (separados por vírgula). |
 
 ---
 
