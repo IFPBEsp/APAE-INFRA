@@ -109,7 +109,7 @@ Alternativamente, a chave pública pode ser compartilhada no repositório de doc
 
 ### Criação e Cifragem de um Secret
 
-1. Crie o manifesto `Secret` tradicionalmente (apenas na sua estação local, **nunca faça commit deste arquivo**):
+* Crie o manifesto `Secret` tradicionalmente (apenas na sua estação local, **nunca faça commit deste arquivo**):
 
 ```bash
 kubectl create secret generic api-secrets \
@@ -119,7 +119,7 @@ kubectl create secret generic api-secrets \
   --dry-run=client -o yaml > /tmp/temp-secret.yaml
 ```
 
-2. Criptografe o manifesto gerando o `SealedSecret`:
+* Criptografe o manifesto gerando o `SealedSecret`:
 
 ```bash
 kubeseal --format=yaml \
@@ -131,7 +131,7 @@ kubeseal --format=yaml \
 rm -f /tmp/temp-secret.yaml
 ```
 
-3. Inclua o `sealedsecret.yaml` no `kustomization.yaml` do componente e realize o commit no Git.
+* Inclua o `sealedsecret.yaml` no `kustomization.yaml` do componente e realize o commit no Git.
 
 ---
 
@@ -159,7 +159,7 @@ kubectl get secret -n kube-system -l sealedsecrets.bitnami.com/sealed-secret-key
 > [!CAUTION]
 > O arquivo `master-sealed-secrets-backup.yaml` contém a **chave privada**. Ele nunca deve ser comitado no Git. Deve ser armazenado em cofre seguro offline pelos administradores de infraestrutura da VPS.
 
-### Procedimento de Restauração em caso de reconstrução do cluster:
+### Procedimento de Restauração em caso de reconstrução do cluster
 
 ```bash
 kubectl apply -f master-sealed-secrets-backup.yaml
@@ -169,6 +169,7 @@ kubectl rollout restart deployment sealed-secrets-controller -n kube-system
 ### Rotação de Chaves
 
 O controller rotaciona sua chave de cifragem periodicamente (por padrão a cada 30 dias).
+
 * Quando uma chave é rotacionada, a chave privada anterior **não é excluída**: ela permanece armazenada no cluster para que `SealedSecrets` antigos continuem funcionando perfeitamente sem interrupção de serviço.
 * Novos segredos criados após a rotação passam a ser cifrados com a nova chave pública.
 * Para re-cifrar segredos legados com a nova chave ativa, utilize a funcionalidade de re-encryption do `kubeseal` (`kubeseal --re-encrypt`).

@@ -28,7 +28,7 @@ Foram avaliadas três abordagens consolidadas no ecossistema cloud-native:
 
 Adotar o **Sealed Secrets (Bitnami)** como ferramenta padrão de gestão e entrega de segredos para os clusters da APAE gerenciados pelo APAE-INFRA.
 
-### Justificativas:
+### Justificativas
 
 1. **Eficiência para o Hardware (VPS 4 GB RAM)**: O controller consome recursos mínimos em repouso e não exige a execução de instâncias dedicadas de servidores de cofre (ex: HashiCorp Vault).
 2. **Integração GitOps "Zero-Touch" no ArgoCD**: O ArgoCD não precisa de plugins customizados, sidecars de descriptografia ou chaves privadas montadas no `argocd-repo-server`. O manifesto `SealedSecret` é comitado no Git como qualquer outro manifesto Kubernetes e aplicado diretamente pelo ArgoCD.
@@ -72,4 +72,3 @@ Adotar o **Sealed Secrets (Bitnami)** como ferramenta padrão de gestão e entre
    - Chaves privadas antigas são mantidas no cluster para leitura e descriptografia contínua de segredos antigos, enquanto a nova chave passa a ser a ativa para novas cifragens.
 3. **Escopo Obrigatório**:
    - Todos os manifestos devem utilizar o escopo `strict` (padrão) para evitar que segredos sejam reaproveitados indevidamente entre serviços ou namespaces.
-
