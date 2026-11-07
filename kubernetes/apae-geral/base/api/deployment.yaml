@@ -27,6 +27,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: api-config
+            - secretRef:
+                name: api-secrets
 
           startupProbe:
             httpGet:
