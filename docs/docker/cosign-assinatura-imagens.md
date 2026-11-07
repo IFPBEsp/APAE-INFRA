@@ -109,12 +109,16 @@ Create candidate manifest
   ↓
 Verify candidate image
   ↓
+Attest and verify build provenance and SBOM
+  ↓
 Sign candidate image with Cosign
   ↓
 Verify Cosign signature
   ↓
 Promote verified image to final tags
 ```
+
+A proveniência e o SBOM do mesmo digest estão documentados em [SBOM e atestação de proveniência das imagens Docker](./sbom-proveniencia-imagens.md).
 
 ## Permissões necessárias
 

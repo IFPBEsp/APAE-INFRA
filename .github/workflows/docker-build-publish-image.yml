@@ -386,7 +386,7 @@ jobs:
 
       - name: Attest image build provenance
         id: provenance
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.image.outputs.name }}
           subject-digest: ${{ steps.candidate.outputs.digest }}
@@ -409,7 +409,83 @@ jobs:
             --repo "$SOURCE_REPOSITORY" \
             --signer-workflow "IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml" \
             --source-ref "$SOURCE_REF" \
-            --source-digest "$SOURCE_COMMIT"
+            --source-digest "$SOURCE_COMMIT" \
+            --predicate-type "https://slsa.dev/provenance/v1"
+
+      - name: Generate image SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ steps.image.outputs.name }}@${{ steps.candidate.outputs.digest }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ github.token }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/sbom.spdx.json
+          syft-version: v1.54.1
+          artifact-name: sbom-${{ inputs.image-name }}.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Validate image SBOM
+        id: sbom
+        shell: bash
+        env:
+          SBOM_PATH: ${{ runner.temp }}/sbom.spdx.json
+        run: |
+          set -euo pipefail
+
+          if [[ ! -s "$SBOM_PATH" ]]; then
+            echo "::error::O SBOM não foi gerado."
+            exit 1
+          fi
+
+          spdx_version="$(jq -er '.spdxVersion' "$SBOM_PATH")"
+          if [[ ! "$spdx_version" =~ ^SPDX-[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Versão SPDX inválida no SBOM: $spdx_version"
+            exit 1
+          fi
+
+          package_count="$(jq -er '.packages | length' "$SBOM_PATH")"
+          if (( package_count == 0 )); then
+            echo "::error::O SBOM não contém pacotes."
+            exit 1
+          fi
+
+          {
+            echo "path=$SBOM_PATH"
+            echo "predicate-type=https://spdx.dev/Document/v${spdx_version#SPDX-}"
+            echo "package-count=$package_count"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attest image SBOM
+        id: sbom-attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.candidate.outputs.digest }}
+          sbom-path: ${{ steps.sbom.outputs.path }}
+          push-to-registry: true
+
+      - name: Verify image SBOM attestation
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.candidate.outputs.digest }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref }}
+          PREDICATE_TYPE: ${{ steps.sbom.outputs.predicate-type }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" \
+            --bundle-from-oci \
+            --repo "$SOURCE_REPOSITORY" \
+            --signer-workflow "IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml" \
+            --source-ref "$SOURCE_REF" \
+            --source-digest "$SOURCE_COMMIT" \
+            --predicate-type "$PREDICATE_TYPE"
 
       - name: Sign candidate image with Cosign
         shell: bash
@@ -542,6 +618,10 @@ jobs:
           SOURCE_REF: ${{ steps.result.outputs.source-ref }}
           WORKFLOW_RUN_ID: ${{ steps.result.outputs.workflow-run-id }}
           WORKFLOW_RUN_URL: ${{ steps.result.outputs.workflow-run-url }}
+          PROVENANCE_URL: ${{ steps.provenance.outputs.attestation-url }}
+          SBOM_ATTESTATION_URL: ${{ steps.sbom-attestation.outputs.attestation-url }}
+          SBOM_PREDICATE_TYPE: ${{ steps.sbom.outputs.predicate-type }}
+          SBOM_PACKAGE_COUNT: ${{ steps.sbom.outputs.package-count }}
         run: |
           set -euo pipefail
 
@@ -572,6 +652,12 @@ jobs:
             echo "- Commit tag: \`${SHA_TAG}\`"
             echo "- Digest: \`${DIGEST}\`"
             echo "- Immutable reference: \`${IMMUTABLE_REFERENCE}\`"
+            echo
+
+            echo "### Attestations"
+            echo
+            echo "- Build provenance (\`https://slsa.dev/provenance/v1\`): ${PROVENANCE_URL}"
+            echo "- SBOM (\`${SBOM_PREDICATE_TYPE}\`, ${SBOM_PACKAGE_COUNT} packages): ${SBOM_ATTESTATION_URL}"
             echo
 
             echo "### Published tags"

@@ -25,6 +25,8 @@ O workflow centraliza as seguintes responsabilidades:
 - publicação da referência imutável da imagem;
 - assinatura keyless do manifest candidato com Cosign e Sigstore;
 - verificação da assinatura utilizando identidade OIDC e issuer esperados;
+- atestação de proveniência SLSA vinculada ao digest final;
+- geração de SBOM SPDX e atestação do SBOM vinculada ao digest final;
 - cache de build com GitHub Actions Cache;
 - geração de tags finais conforme a política de versionamento;
 - exposição de outputs para workflows consumidores.
@@ -60,6 +62,10 @@ criação do manifest candidato
    ↓
 digest OCI final
    ↓
+atestação e verificação da proveniência SLSA
+   ↓
+geração do SBOM, atestação e verificação
+   ↓
 assinatura keyless com Cosign
    ↓
 verificação da assinatura
@@ -82,6 +88,10 @@ ghcr.io/<owner>/<image>@sha256:<digest>
 Os detalhes de identidade, issuer, assinatura keyless e verificação estão documentados em:
 
 [Assinatura e verificação de imagens Docker com Cosign](./cosign-assinatura-imagens.md)
+
+Antes da assinatura, o mesmo digest recebe uma atestação de proveniência SLSA e uma atestação de SBOM no formato SPDX, ambas enviadas ao GHCR e verificadas com `gh attestation verify`. A geração, a consulta e a verificação estão documentadas em:
+
+[SBOM e atestação de proveniência das imagens Docker](./sbom-proveniencia-imagens.md)
 
 ## Identidade da imagem
 
@@ -263,13 +273,17 @@ O job `publish` utiliza:
 
 ```yaml
 permissions:
+  contents: read
   packages: write
   id-token: write
+  attestations: write
 ```
 
-`packages: write` permite promover e publicar a imagem no GHCR.
+`packages: write` permite promover e publicar a imagem e as atestações no GHCR.
 
-`id-token: write` permite solicitar a identidade OIDC utilizada pela assinatura keyless com Cosign e Sigstore.
+`id-token: write` permite solicitar a identidade OIDC utilizada pela assinatura keyless com Cosign e Sigstore e pela assinatura das atestações.
+
+`attestations: write` permite registrar as atestações de proveniência e SBOM na API de attestations do GitHub.
 
 A autenticação no GHCR é realizada com o `GITHUB_TOKEN`.
 
@@ -368,6 +382,7 @@ permissions:
   contents: read
   packages: write
   id-token: write
+  attestations: write
 
 jobs:
   publish-backend:
@@ -380,9 +395,9 @@ jobs:
       scan-severity: HIGH,CRITICAL
 ```
 
-A permissão `id-token: write` deve ser concedida pelo caller para permitir a assinatura keyless com Cosign.
+As permissões `id-token: write` e `attestations: write` devem ser concedidas pelo caller para permitir a assinatura keyless com Cosign e a geração das atestações de proveniência e SBOM.
 
-Embora o reusable workflow restrinja essa permissão ao job `publish`, o caller precisa disponibilizá-la como limite superior da execução.
+Embora o reusable workflow restrinja essas permissões ao job `publish`, o caller precisa disponibilizá-la como limite superior da execução.
 
 O gatilho `push` em `dev` refere-se à branch do repositório consumidor. A chamada com `@main` seleciona a referência do workflow reutilizável no `APAE-INFRA`, correspondente à identidade exigida pela verificação Cosign.
 
@@ -530,6 +545,7 @@ Responsável por:
 - integração com GHCR;
 - security gate;
 - integração com Cosign e Sigstore;
+- geração e atestação do SBOM e da proveniência das imagens;
 - política de identidade utilizada na verificação das assinaturas;
 - atualização das actions utilizadas pelo pipeline;
 - documentação do comportamento do pipeline.
@@ -567,6 +583,8 @@ manifest candidato criado
   ↓
 digest OCI final
   ↓
+proveniência e SBOM atestados e verificados
+  ↓
 imagem assinada com Cosign
   ↓
 assinatura verificada
@@ -583,3 +601,7 @@ A assinatura Cosign adiciona uma camada de verificação da origem do artefato, 
 Os detalhes da política de assinatura estão disponíveis em:
 
 [Assinatura e verificação de imagens Docker com Cosign](./cosign-assinatura-imagens.md)
+
+O SBOM e a proveniência estão documentados em:
+
+[SBOM e atestação de proveniência das imagens Docker](./sbom-proveniencia-imagens.md)
