@@ -131,7 +131,17 @@ jobs:
           MAVEN_ARGS_INPUT: ${{ inputs.maven-args }}
         run: |
           set -euo pipefail
-          read -r -a maven_args <<< "$MAVEN_ARGS_INPUT"
+          maven_args=()
+
+          while IFS= read -r line; do
+            if [[ -z "${line//[[:space:]]/}" ]]; then
+              continue
+            fi
+
+            read -r -a line_args <<< "$line"
+            maven_args+=("${line_args[@]}")
+          done <<< "$MAVEN_ARGS_INPUT"
+
           ./mvnw -B "${maven_args[@]}"
 
       - name: Prepare JaCoCo coverage report
@@ -232,11 +242,14 @@ jobs:
               ("CLASS", "Classes"),
           ]
 
-          def percentage(covered, missed):
+          def coverage_percentage(covered, missed):
               total = covered + missed
               if total == 0:
-                  return Decimal("100.00")
-              return (Decimal(covered) * Decimal("100") / Decimal(total)).quantize(Decimal("0.01"))
+                  return Decimal("100")
+              return Decimal(covered) * Decimal("100") / Decimal(total)
+
+          def format_percentage(covered, missed):
+              return coverage_percentage(covered, missed).quantize(Decimal("0.01"))
 
           summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
           if summary_path:
@@ -249,7 +262,7 @@ jobs:
                       if counter_type in counters:
                           covered, missed = counters[counter_type]
                           summary.write(
-                              f"| {label} | {percentage(covered, missed)}% | {covered} | {missed} |\n"
+                              f"| {label} | {format_percentage(covered, missed)}% | {covered} | {missed} |\n"
                           )
                   summary.write("\n")
 
@@ -275,15 +288,16 @@ jobs:
               raise SystemExit(1)
 
           covered, missed = counters["LINE"]
-          line_coverage = percentage(covered, missed)
+          line_coverage = coverage_percentage(covered, missed)
+          display_coverage = format_percentage(covered, missed)
 
           if line_coverage < minimum:
               print(
-                  f"::error::Cobertura de linhas {line_coverage}% abaixo do mínimo de {minimum}%."
+                  f"::error::Cobertura de linhas {display_coverage}% abaixo do mínimo de {minimum}%."
               )
               raise SystemExit(1)
 
-          print(f"Cobertura de linhas {line_coverage}% atende ao mínimo de {minimum}%.")
+          print(f"Cobertura de linhas {display_coverage}% atende ao mínimo de {minimum}%.")
           PY
 
       - name: Upload JaCoCo coverage report
@@ -291,7 +305,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.coverage.outputs.artifact-name }}
-          path: ${{ inputs.working-directory }}/${{ inputs.coverage-report-path }}
+          path: ${{ steps.coverage.outputs.artifact-path }}
           if-no-files-found: warn
           retention-days: 14
 
@@ -448,11 +462,15 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           REPORT_PATH: ${{ steps.surefire.outputs.path }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          JAVA_VERSION: ${{ inputs.java-version }}
         with:
           script: |
             const fs = require("fs");
 
-            const marker = "<!-- apae-java-backend-ci:surefire -->";
+            const workingDirectory = (process.env.WORKING_DIRECTORY || ".").trim();
+            const javaVersion = (process.env.JAVA_VERSION || "unknown").trim();
+            const marker = `<!-- apae-java-backend-ci:surefire:${workingDirectory}:jdk${javaVersion} -->`;
             const report = fs.readFileSync(process.env.REPORT_PATH, "utf8");
             const body = `${marker}\n${report}`;
             const issueNumber = context.issue.number;
