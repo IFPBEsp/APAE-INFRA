@@ -1,0 +1,33 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-gateway-fabric
+  namespace: argocd
+spec:
+  project: apae-infra
+
+  source:
+    repoURL: https://github.com/nginx/nginx-gateway-fabric.git
+    targetRevision: ed383f6aaa256a3e0b75c89f6d6e9f75fbe5faa3
+    path: charts/nginx-gateway-fabric
+    helm:
+      releaseName: ngf
+      valuesObject:
+        nginx:
+          container:
+            hostPorts:
+              - port: 80
+                containerPort: 80
+              - port: 443
+                containerPort: 443
+          service:
+            type: ClusterIP
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nginx-gateway
+
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

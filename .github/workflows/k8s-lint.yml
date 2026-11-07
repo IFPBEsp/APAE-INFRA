@@ -22,6 +22,7 @@ jobs:
         kubernetes/apae-geral/base
         kubernetes/gestao-escolar/base
         kubernetes/site-comemorativo/base
+        kubernetes/infra
 
   argocd:
     name: Lint Argo CD manifests

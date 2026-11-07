@@ -1,0 +1,19 @@
+- op: add
+  path: /spec/listeners/-
+  value:
+    name: https-smoke
+    protocol: HTTPS
+    port: 443
+    hostname: gateway-smoke.test
+    tls:
+      mode: Terminate
+      certificateRefs:
+        - group: ""
+          kind: Secret
+          name: gateway-smoke-tls
+    allowedRoutes:
+      namespaces:
+        from: Same
+      kinds:
+        - group: gateway.networking.k8s.io
+          kind: HTTPRoute
