@@ -190,13 +190,6 @@ jobs:
               sys.exit(1)
           PY
 
-      - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
-        if: always() && steps.run_scan.outcome == 'success'
-        with:
-          sarif_file: semgrep.sarif
-          category: semgrep-sast
-
       - name: Enforce failure threshold
         shell: bash
         env:
@@ -314,3 +307,10 @@ jobs:
 
           print("Nenhum finding bloqueante encontrado. Verificacao de seguranca concluida com sucesso!")
           PY
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+        if: always() && hashFiles('semgrep.sarif') != ''
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep-sast
