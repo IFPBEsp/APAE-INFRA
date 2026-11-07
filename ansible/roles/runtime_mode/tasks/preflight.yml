@@ -1,0 +1,355 @@
+---
+- name: Validar modo solicitado
+  ansible.builtin.assert:
+    that:
+      - runtime_mode | default('') in ['compose', 'cluster']
+    fail_msg: >-
+      Informe runtime_mode como compose ou cluster.
+      Nenhuma troca foi executada.
+
+- name: Validar existência do inventário operacional
+  ansible.builtin.assert:
+    that:
+      - runtime_mode_compose_projects is defined
+      - runtime_mode_data_services is defined
+      - runtime_mode_legacy_minio_containers is defined
+      - runtime_mode_lock_directory is defined
+      - runtime_mode_state_file is defined
+    fail_msg: "O inventário operacional está incompleto."
+
+- name: Validar listas de serviços
+  ansible.builtin.assert:
+    that:
+      - runtime_mode_compose_projects | type_debug == 'list'
+      - runtime_mode_compose_projects | length > 0
+      - runtime_mode_data_services | type_debug == 'list'
+      - runtime_mode_data_services | length > 0
+      - runtime_mode_legacy_minio_containers | type_debug == 'list'
+    fail_msg: "As listas do inventário operacional são inválidas."
+
+- name: Validar estrutura de cada projeto Compose
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.directory is defined
+      - item.files is defined
+      - item.services is defined
+    fail_msg: "Um projeto Compose possui campos obrigatórios ausentes."
+  loop: "{{ runtime_mode_compose_projects }}"
+  loop_control:
+    label: "{{ item.name | default('projeto sem nome') }}"
+
+- name: Validar arquivos e seleção de serviços
+  ansible.builtin.assert:
+    that:
+      - item.files | type_debug == 'list'
+      - item.files | length > 0
+      - item.services | type_debug == 'list'
+      - item.services | length > 0
+      - >-
+        item.services
+        | intersect(['minio', 'minio-shared', 'postgres', 'migrate'])
+        | length == 0
+    fail_msg: >-
+      O projeto {{ item.name }} possui configuração inválida
+      ou seleciona serviços de dados ou migrations para alternância.
+  loop: "{{ runtime_mode_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Verificar acesso ao Docker Engine
+  ansible.builtin.command:
+    argv:
+      - docker
+      - version
+      - --format
+      - "{{ '{{.Server.Version}}' }}"
+  changed_when: false
+
+- name: Verificar disponibilidade do Docker Compose
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - version
+  changed_when: false
+
+- name: Consultar arquivos Compose na VPS
+  ansible.builtin.stat:
+    path: "{{ item.0.directory }}/{{ item.1 }}"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop: "{{ runtime_mode_compose_projects | subelements('files') }}"
+  loop_control:
+    label: "{{ item.0.name }}/{{ item.1 }}"
+  register: runtime_mode_compose_files
+
+- name: Confirmar existência dos arquivos Compose
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+    fail_msg: >-
+      Arquivo obrigatório ausente ou inválido:
+      {{ item.item.0.directory }}/{{ item.item.1 }}
+  loop: "{{ runtime_mode_compose_files.results }}"
+  loop_control:
+    label: "{{ item.item.0.name }}/{{ item.item.1 }}"
+
+- name: Verificar serviços de dados antes da alternância
+  ansible.builtin.import_tasks: verify-data-services.yml
+
+- name: Validar Compose e consultar serviços disponíveis
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['docker', 'compose']
+        + (['-f'] | product(item.files) | list | flatten)
+        + ['config', '--services']
+      }}
+    chdir: "{{ item.directory }}"
+  changed_when: false
+  loop: "{{ runtime_mode_compose_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: runtime_mode_compose_inspection
+
+- name: Confirmar existência dos serviços selecionados
+  ansible.builtin.assert:
+    that:
+      - item.item.services | difference(item.stdout_lines) | length == 0
+    fail_msg: >-
+      O projeto {{ item.item.name }} não contém todos os serviços
+      selecionados: {{ item.item.services | difference(item.stdout_lines) }}.
+  loop: "{{ runtime_mode_compose_inspection.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Consultar executáveis necessários do K3s
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  loop:
+    - "{{ runtime_mode_k3s_binary }}"
+    - "{{ runtime_mode_k3s_stop_script }}"
+  register: runtime_mode_k3s_files
+
+- name: Confirmar executáveis necessários do K3s
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+      - item.stat.executable | default(false)
+    fail_msg: "Executável necessário ausente ou inválido: {{ item.item }}"
+  loop: "{{ runtime_mode_k3s_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Consultar unidades systemd do cluster
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - --property=LoadState
+      - --value
+      - "{{ item }}.service"
+  changed_when: false
+  loop:
+    - "{{ runtime_mode_k3s_service }}"
+    - "{{ runtime_mode_k3s_firewall_service }}"
+  register: runtime_mode_cluster_units
+
+- name: Confirmar unidades systemd disponíveis
+  ansible.builtin.assert:
+    that:
+      - item.stdout | trim == 'loaded'
+    fail_msg: >-
+      A unidade {{ item.item }}.service não está disponível para operação.
+      Estado encontrado: {{ item.stdout | trim }}.
+  loop: "{{ runtime_mode_cluster_units.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Consultar containers em execução
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - --format
+      - "{{ '{{.Names}}' }}"
+  changed_when: false
+  register: runtime_mode_running_containers
+
+- name: Confirmar que os MinIO antigos estão parados
+  ansible.builtin.assert:
+    that:
+      - >-
+        runtime_mode_legacy_minio_containers
+        | intersect(runtime_mode_running_containers.stdout_lines)
+        | length == 0
+    fail_msg: >-
+      Existem MinIO antigos em execução:
+      {{
+        runtime_mode_legacy_minio_containers
+        | intersect(runtime_mode_running_containers.stdout_lines)
+      }}.
+      Confira o armazenamento antes de continuar.
+
+- name: Coletar informações de memória e disco
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - "!min"
+      - hardware
+    filter:
+      - ansible_memtotal_mb
+      - ansible_mounts
+
+- name: Confirmar identificação do filesystem raiz
+  ansible.builtin.assert:
+    that:
+      - >-
+        ansible_facts['mounts']
+        | selectattr('mount', 'equalto', '/')
+        | list
+        | length == 1
+    fail_msg: "Não foi possível identificar o filesystem raiz da VPS."
+
+- name: Validar memória total e espaço livre
+  ansible.builtin.assert:
+    that:
+      - >-
+        ansible_facts['memtotal_mb'] | int
+        >= runtime_mode_minimum_total_memory_mb | int
+      - >-
+        (
+          ansible_facts['mounts']
+          | selectattr('mount', 'equalto', '/')
+          | first
+        )['size_available'] | int
+        >= (runtime_mode_minimum_free_disk_mb | int * 1024 * 1024)
+    fail_msg: >-
+      A VPS não atende aos limites mínimos de memória total
+      ou espaço livre definidos no inventário.
+
+- name: Consultar certificado HTTPS do Compose
+  ansible.builtin.stat:
+    path: "{{ runtime_mode_compose_tls_certificate }}"
+    follow: true
+    get_checksum: false
+    get_mime: false
+    get_attributes: false
+  register: runtime_mode_compose_certificate
+  when: runtime_mode == 'compose'
+
+- name: Confirmar existência do certificado
+  ansible.builtin.assert:
+    that:
+      - runtime_mode_compose_certificate.stat.exists
+      - runtime_mode_compose_certificate.stat.isreg | default(false)
+    fail_msg: >-
+      Certificado do Compose ausente ou inválido:
+      {{ runtime_mode_compose_tls_certificate }}.
+  when: runtime_mode == 'compose'
+
+- name: Validar formato do certificado mesmo se estiver vencido
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - "{{ runtime_mode_compose_tls_certificate }}"
+      - -noout
+  changed_when: false
+  when: runtime_mode == 'compose'
+
+- name: Validar janela de renovação
+  ansible.builtin.assert:
+    that:
+      - runtime_mode_compose_tls_minimum_validity_seconds | int > 0
+      - runtime_mode_tls_renew_before_seconds | int >= runtime_mode_compose_tls_minimum_validity_seconds | int
+    fail_msg: >-
+      A janela de renovação deve cobrir a validade mínima exigida.
+  when: runtime_mode == 'compose'
+
+- name: Consultar núcleo de renovação instalado
+  ansible.builtin.stat:
+    path: "{{ runtime_mode_tls_core_script }}"
+    get_checksum: false
+    get_mime: false
+  register: runtime_mode_tls_installed_core
+  when: runtime_mode == 'compose'
+
+- name: Exigir automação TLS instalada antes da troca
+  ansible.builtin.assert:
+    that:
+      - runtime_mode_tls_installed_core.stat.isreg | default(false)
+      - runtime_mode_tls_installed_core.stat.executable | default(false)
+    fail_msg: "Execute primeiro playbooks/configure-runtime-tls.yml."
+  when: runtime_mode == 'compose'
+
+- name: Conferir imagem local para renovação do certificado
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - --format
+      - "{{ '{{.Id}}' }}"
+      - "{{ runtime_mode_certbot_image }}"
+  changed_when: false
+  when: runtime_mode == 'compose'
+
+- name: Verificar imagens necessárias ao modo Compose
+  when: runtime_mode == 'compose'
+  block:
+    - name: Consultar imagens dos serviços selecionados
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['docker', 'compose']
+            + (['-f'] | product(item.files) | list | flatten)
+            + ['config', '--images']
+            + item.services
+          }}
+        chdir: "{{ item.directory }}"
+      changed_when: false
+      loop: "{{ runtime_mode_compose_projects }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: runtime_mode_compose_images
+
+    - name: Confirmar referências de imagens disponíveis na configuração
+      ansible.builtin.assert:
+        that:
+          - item.stdout_lines | length > 0
+        fail_msg: >-
+          Nenhuma imagem foi identificada para os serviços
+          selecionados do projeto {{ item.item.name }}.
+      loop: "{{ runtime_mode_compose_images.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Confirmar presença das imagens no Docker local
+      ansible.builtin.command:
+        argv:
+          - docker
+          - image
+          - inspect
+          - --format
+          - "{{ '{{.Id}}' }}"
+          - "{{ item }}"
+      changed_when: false
+      loop: >-
+        {{
+          runtime_mode_compose_images.results
+          | map(attribute='stdout_lines')
+          | flatten
+          | unique
+          | list
+        }}
+      loop_control:
+        label: "{{ item }}"

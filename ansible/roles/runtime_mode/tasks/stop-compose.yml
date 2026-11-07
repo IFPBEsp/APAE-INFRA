@@ -1,0 +1,7 @@
+---
+- name: Parar projetos Compose na ordem inversa
+  ansible.builtin.include_tasks: stop-compose-project.yml
+  loop: "{{ runtime_mode_compose_projects | reverse | list }}"
+  loop_control:
+    loop_var: runtime_mode_project
+    label: "{{ runtime_mode_project.name }}"

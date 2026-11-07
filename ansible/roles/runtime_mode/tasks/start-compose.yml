@@ -1,0 +1,7 @@
+---
+- name: Iniciar projetos Compose na ordem declarada
+  ansible.builtin.include_tasks: start-compose-project.yml
+  loop: "{{ runtime_mode_compose_projects }}"
+  loop_control:
+    loop_var: runtime_mode_project
+    label: "{{ runtime_mode_project.name }}"

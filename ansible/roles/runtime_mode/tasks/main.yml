@@ -1,0 +1,65 @@
+---
+- name: Validar parâmetros necessários ao bloqueio
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - runtime_mode | default('') in ['compose', 'cluster']
+      - >-
+        runtime_mode_lock_directory | default('')
+        is match('^/run/lock/apae-[a-zA-Z0-9_-]+$')
+    fail_msg: >-
+      Informe um modo válido e um diretório de bloqueio em /run/lock/apae-*.
+      A alternância não suporta --check; utilize --syntax-check
+      para validar a sintaxe.
+
+- name: Adquirir bloqueio exclusivo da alternância
+  ansible.builtin.command:
+    argv:
+      - mkdir
+      - --mode=0700
+      - --
+      - "{{ runtime_mode_lock_directory }}"
+  register: runtime_mode_lock_attempt
+  changed_when: runtime_mode_lock_attempt.rc == 0
+  failed_when: false
+
+- name: Confirmar aquisição do bloqueio
+  ansible.builtin.assert:
+    that:
+      - runtime_mode_lock_attempt.rc == 0
+    fail_msg: >-
+      Não foi possível adquirir o bloqueio em
+      {{ runtime_mode_lock_directory }}.
+      Verifique se outra alternância está em execução,
+      se existe uma trava de execução interrompida
+      ou se há um problema de permissão.
+
+- name: Executar operação com bloqueio exclusivo
+  block:
+    - name: Validar configuração e ambiente
+      ansible.builtin.import_tasks: preflight.yml
+
+    - name: Alternar ambiente e verificar resultado
+      ansible.builtin.import_tasks: switch.yml
+
+    - name: Registrar conclusão da alternância
+      ansible.builtin.import_tasks: record-mode.yml
+
+  rescue:
+    - name: Informar falha da alternância
+      ansible.builtin.fail:
+        msg: >-
+          A ativação do modo {{ runtime_mode }} não foi concluída.
+          Etapa com falha: {{ ansible_failed_task.name | default('não identificada') }}.
+          Confira o estado real dos serviços antes de tentar novamente.
+          Pode haver alterações parciais; não foi executada reversão automática.
+          Consulte também a saída da tarefa original que falhou.
+
+  always:
+    - name: Liberar bloqueio da alternância
+      ansible.builtin.command:
+        argv:
+          - rmdir
+          - --
+          - "{{ runtime_mode_lock_directory }}"
+      changed_when: true

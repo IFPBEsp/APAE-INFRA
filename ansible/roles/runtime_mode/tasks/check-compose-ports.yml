@@ -1,0 +1,43 @@
+---
+- name: Consultar containers que publicam as portas do Compose
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - --filter
+      - "publish={{ item }}/tcp"
+      - --format
+      - "{{ '{{.Names}}' }}"
+  changed_when: false
+  loop: "{{ runtime_mode_compose_public_ports }}"
+  loop_control:
+    label: "{{ item }}/tcp"
+  register: runtime_mode_compose_port_owners
+
+- name: Rejeitar portas publicadas por outros containers
+  ansible.builtin.assert:
+    that:
+      - >-
+        item.stdout_lines
+        | difference([runtime_mode_compose_proxy_container])
+        | length == 0
+    fail_msg: >-
+      A porta {{ item.item }}/tcp está publicada por outro container:
+      {{
+        item.stdout_lines
+        | difference([runtime_mode_compose_proxy_container])
+      }}.
+  loop: "{{ runtime_mode_compose_port_owners.results }}"
+  loop_control:
+    label: "{{ item.item }}/tcp"
+
+- name: Confirmar portas livres quando não pertencem ao proxy Compose
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ item.item }}"
+    state: stopped
+    timeout: 10
+  when: item.stdout_lines | length == 0
+  loop: "{{ runtime_mode_compose_port_owners.results }}"
+  loop_control:
+    label: "{{ item.item }}/tcp"

@@ -1,0 +1,12 @@
+---
+# A role já adquiriu a trava; não chamar o wrapper, que tentaria adquiri-la novamente.
+- name: Renovar certificado do Compose quando necessário
+  ansible.builtin.command:
+    argv:
+      - "{{ runtime_mode_tls_core_script }}"
+      - --renew
+  register: runtime_mode_tls_renewal
+  changed_when: "'TLS_RENEWED:' in runtime_mode_tls_renewal.stdout"
+
+- name: Validar certificado após tentativa de renovação
+  ansible.builtin.import_tasks: verify-compose-certificate.yml

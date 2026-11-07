@@ -1,0 +1,44 @@
+---
+- name: Validar configuração dos serviços permanentes
+  ansible.builtin.assert:
+    that:
+      - item.container is defined
+      - item.volume is defined
+      - item.destination is defined
+    fail_msg: "Um serviço permanente possui configuração incompleta."
+  loop: "{{ runtime_mode_data_services }}"
+  loop_control:
+    label: "{{ item.container | default('container sem nome') }}"
+
+- name: Consultar estado e volumes dos serviços permanentes
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{\"running\": {{json .State.Running}}, \"mounts\": {{json .Mounts}}}' }}"
+      - "{{ item.container }}"
+  changed_when: false
+  loop: "{{ runtime_mode_data_services }}"
+  loop_control:
+    label: "{{ item.container }}"
+  register: runtime_mode_data_inspection
+
+- name: Confirmar serviços permanentes ativos e volumes corretos
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | from_json).running | bool
+      - >-
+        (item.stdout | from_json).mounts
+        | selectattr('Type', 'equalto', 'volume')
+        | selectattr('Name', 'equalto', item.item.volume)
+        | selectattr('Destination', 'equalto', item.item.destination)
+        | list
+        | length == 1
+    fail_msg: >-
+      O serviço {{ item.item.container }} está parado ou não utiliza
+      o volume {{ item.item.volume }} em {{ item.item.destination }}.
+      Nenhuma troca deve prosseguir antes da correção.
+  loop: "{{ runtime_mode_data_inspection.results }}"
+  loop_control:
+    label: "{{ item.item.container }}"
