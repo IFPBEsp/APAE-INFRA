@@ -50,15 +50,15 @@ O **APAE-INFRA** é o repositório GitOps: a única fonte de verdade lida pelo A
 - **`apae-root`** (Application raiz) — monitora `argocd/` com busca recursiva e garante que as 4 Applications filhas existam no cluster.
 - **4 Applications filhas** — cada uma aponta para o overlay Kustomize correspondente em `kubernetes/overlays/dev/{aplicacao}/` e sincroniza de forma independente.
 
-**Política atual:** sync **manual** em todas as Applications filhas. O ArgoCD sinaliza "Out of Sync", mas só aplica quando alguém aprovar manualmente (UI ou CLI). Essa política será reavaliada quando o pipeline de CI/CD tiver testes obrigatórios e histórico estável de releases.
+**Política de sincronização definida para a implementação:** sync **manual** em todas as Applications filhas. O ArgoCD sinaliza "Out of Sync", mas só aplica quando alguém aprovar manualmente (UI ou CLI). Essa política será reavaliada quando o pipeline de CI/CD tiver testes obrigatórios e histórico estável de releases.
 
-Todo estado do cluster é descrito nos manifestos do APAE-INFRA. **Não há `kubectl apply` manual** — qualquer mudança no cluster passa por um commit no APAE-INFRA seguido de aprovação de sync no ArgoCD.
+Todo o estado dos workloads é descrito nos manifestos do APAE-INFRA. **Não há `kubectl apply` manual** nas aplicações — qualquer mudança nos recursos reconciliados pelas Applications filhas passa por um commit no APAE-INFRA seguido de aprovação de sync no ArgoCD. Exceção feita aos componentes de bootstrap (instalação e atualização do próprio ArgoCD, AppProjects e a Application raiz), cujas alterações são aplicadas e gerenciadas exclusivamente pelo fluxo controlado do Ansible.
 
 > Detalhes: [docs/argocd/fluxo-argocd.md](argocd/fluxo-argocd.md)
 
 ### 5. Observabilidade — Prometheus, Loki e Grafana
 
-A stack de observabilidade roda no **namespace `monitoring`** do mesmo cluster, gerenciada pelo mesmo padrão GitOps (Applications filhas do ArgoCD lendo de `monitoring/`):
+A stack de observabilidade está prevista para rodar no **namespace `monitoring`** do mesmo cluster, gerenciada pelo mesmo padrão GitOps (Applications filhas do ArgoCD lendo de `monitoring/`):
 
 | Componente | Função |
 | --- | --- |
