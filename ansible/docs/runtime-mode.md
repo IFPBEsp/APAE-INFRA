@@ -131,6 +131,8 @@ Antes de alterar serviços, a role adquire a trava e confere:
 - Modo solicitado e estrutura do inventário operacional.
 - Acesso ao Docker e disponibilidade do Compose.
 - Arquivos Compose, configuração e serviços selecionados.
+- Ausência de `restart: always` na configuração dos serviços alternados e na
+  política efetiva de seus containers existentes, inclusive parados.
 - Containers e volumes de PostgreSQL e MinIO; ausência dos MinIO legados ativos.
 - Executáveis do K3s e unidades systemd necessárias.
 - Memória total de pelo menos 3500 MiB e espaço livre de pelo menos 1024 MiB
@@ -287,10 +289,18 @@ O comportamento resulta das configurações persistentes dos serviços:
 | Ambos | Timer TLS habilitado; volumes e registro do último modo preservados. |
 
 A retomada dos containers Docker depende do Docker habilitado no boot e da
-política `restart` efetiva de cada container. Os playbooks de alternância não
-reconfiguram essas políticas. `unless-stopped` mantém parados os containers
-que foram parados explicitamente; políticas como `always` podem fazê-los
-retornar após reiniciar o daemon e devem ser avaliadas para evitar concorrência.
+política `restart` efetiva de cada container. `unless-stopped` mantém parados
+os containers que foram parados explicitamente. `always` pode fazê-los retornar
+após reiniciar o daemon e é rejeitado pelo pré-check, antes de qualquer parada.
+Essa verificação cobre somente os serviços alternados, sem modificar as
+políticas dos containers permanentes de PostgreSQL e MinIO.
+
+Os playbooks não reconfiguram políticas de reinício automaticamente. Se houver
+bloqueio, ajuste os serviços afetados para `restart: unless-stopped` no Compose
+e atualize a política dos containers correspondentes em uma operação controlada.
+Editar apenas o YAML não altera um container já criado; por isso a verificação
+também consulta a política efetiva. Não recrie os serviços de dados para resolver
+um bloqueio de política das aplicações.
 
 A trava fica em `/run` e não persiste ao reboot. O timer com `Persistent=true`
 pode disparar uma verificação pendente; ainda exige modo Compose registrado e

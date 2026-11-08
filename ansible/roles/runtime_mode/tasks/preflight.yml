@@ -126,6 +126,13 @@
   loop_control:
     label: "{{ item.item.name }}"
 
+- name: Validar políticas de reinício antes de alterar qualquer projeto
+  ansible.builtin.include_tasks: check-compose-restart.yml
+  loop: "{{ runtime_mode_compose_projects }}"
+  loop_control:
+    loop_var: runtime_mode_project
+    label: "{{ runtime_mode_project.name }}"
+
 - name: Consultar executáveis necessários do K3s
   ansible.builtin.stat:
     path: "{{ item }}"

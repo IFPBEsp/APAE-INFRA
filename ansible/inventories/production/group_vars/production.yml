@@ -101,23 +101,23 @@ runtime_mode_compose_projects:
 # Verificações HTTPS executadas após iniciar as aplicações e o proxy.
 runtime_mode_compose_http_checks:
   - name: Login do APAE Geral
-    url: https://143.95.170.25/apae-geral/auth/login
+    url: "https://{{ ansible_host }}/apae-geral/auth/login"
     expected_status: 200
 
   - name: Gestão Escolar
-    url: https://143.95.170.25/gestao-escolar
+    url: "https://{{ ansible_host }}/gestao-escolar"
     expected_status: 200
 
   - name: Login do Atendimento
-    url: https://143.95.170.25/atendimento/login
+    url: "https://{{ ansible_host }}/atendimento/login"
     expected_status: 200
 
   - name: Site Comemorativo
-    url: https://143.95.170.25/site-comemorativo
+    url: "https://{{ ansible_host }}/site-comemorativo"
     expected_status: 200
 
   - name: API pública do MinIO compartilhado
-    url: https://143.95.170.25:9003/minio/health/live
+    url: "https://{{ ansible_host }}:9003/minio/health/live"
     expected_status: 200
 
 
@@ -163,14 +163,14 @@ runtime_mode_cluster_workloads:
 
 # TLS do Compose e renovação com Certbot
 # ------------------------------------------------------------------------
-runtime_mode_compose_tls_certificate: /opt/apae/letsencrypt/live/143.95.170.25/fullchain.pem
+runtime_mode_compose_tls_certificate: "/opt/apae/letsencrypt/live/{{ ansible_host }}/fullchain.pem"
 
 # Validade mínima exigida para disponibilizar o modo Compose: uma hora.
 runtime_mode_compose_tls_minimum_validity_seconds: 3600
 
 runtime_mode_certbot_image: certbot/certbot:v5.8.0
 
-runtime_mode_certbot_certificate_name: "143.95.170.25"
+runtime_mode_certbot_certificate_name: "{{ ansible_host }}"
 
 runtime_mode_certbot_config_directory: /opt/apae/letsencrypt
 

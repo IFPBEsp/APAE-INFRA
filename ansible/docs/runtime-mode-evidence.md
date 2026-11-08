@@ -146,3 +146,8 @@ A implementação completa da ida e volta foi testada antes da integração TLS.
 O caminho TLS foi testado separadamente na VPS; não foi repetida uma nova troca
 completa de modos após essa integração. Os registros distinguem esses testes
 para não atribuir evidências a uma execução que não ocorreu.
+
+As correções posteriores da revisão do PR #145 parametrizam o endereço por
+`ansible_host`, incluem dependências e gatilhos dos testes no CI e acrescentam
+a rejeição de `restart: always` no pré-check. Os resultados históricos acima
+não são evidência de execução dessas novas verificações na VPS.

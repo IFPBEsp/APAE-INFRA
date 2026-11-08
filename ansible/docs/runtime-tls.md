@@ -58,14 +58,15 @@ Essas operações não suportam `--check`.
 
 ## Consultar e executar
 
-Na VPS:
+Na VPS (substitua `192.0.2.10`, endereço de exemplo, pelo `ansible_host`
+configurado no inventário local):
 
 ```bash
 sudo systemctl list-timers apae-compose-tls-renew.timer --no-pager
 sudo systemctl status apae-compose-tls-renew.service --no-pager
 sudo journalctl -u apae-compose-tls-renew.service -n 100 --no-pager
 sudo openssl x509 \
-  -in /opt/apae/letsencrypt/live/143.95.170.25/fullchain.pem \
+  -in /opt/apae/letsencrypt/live/192.0.2.10/fullchain.pem \
   -noout -dates
 ```
 

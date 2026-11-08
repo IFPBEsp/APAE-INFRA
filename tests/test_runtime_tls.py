@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = ROOT / "ansible/roles/runtime_mode/templates"
 VARIABLES = ROOT / "ansible/inventories/production/group_vars/production.yml"
+TEST_HOST = "192.0.2.10"
 
 DRIVER = r'''#!/usr/bin/python3
 import json, os, shutil, sys, time
@@ -112,7 +113,7 @@ class RuntimeTlsTest(unittest.TestCase):
         shutil.copyfile(self.certificates["soon"], self.cert)
         config = self.path / "config"
         (config / "renewal").mkdir(parents=True)
-        (config / "renewal/143.95.170.25.conf").touch()
+        (config / "renewal" / f"{TEST_HOST}.conf").touch()
         for directory in ("work", "logs", "bin"):
             (self.path / directory).mkdir()
         self.state_file = self.path / "mode"
@@ -128,6 +129,21 @@ class RuntimeTlsTest(unittest.TestCase):
         for tool in ("docker", "systemctl", "pgrep", "ss", "curl"):
             (self.path / "bin" / tool).symlink_to(driver)
         self.values = yaml.safe_load(VARIABLES.read_text())
+        self.values["ansible_host"] = TEST_HOST
+        # Resolve as referências do inventário como o Ansible faz antes de
+        # renderizar os scripts; não deixar Jinja aninhado no shell gerado.
+        inventory_env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+
+        def resolve(value):
+            if isinstance(value, str):
+                return inventory_env.from_string(value).render(self.values)
+            if isinstance(value, list):
+                return [resolve(item) for item in value]
+            if isinstance(value, dict):
+                return {key: resolve(item) for key, item in value.items()}
+            return value
+
+        self.values = resolve(self.values)
         self.values.update({
             "runtime_mode_lock_directory": str(self.lock),
             "runtime_mode_state_file": str(self.state_file),
