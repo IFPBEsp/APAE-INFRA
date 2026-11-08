@@ -165,15 +165,17 @@ jobs:
       - name: Build PR comment
         if: always()
         shell: bash
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
         run: |
           set -euo pipefail
 
-          COMMENT="$RUNNER_TEMP/terraform-comment-${{ matrix.environment }}.md"
+          COMMENT="$RUNNER_TEMP/terraform-comment-${ENVIRONMENT}.md"
           PLAN="$RUNNER_TEMP/plan.txt"
           MAX_PLAN_SIZE=18000
 
           {
-            echo "## Terraform Plan — \`${{ matrix.environment }}\`"
+            echo "## Terraform Plan — \`${ENVIRONMENT}\`"
             echo
             echo "| Etapa | Resultado |"
             echo "|---|---|"
