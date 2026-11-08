@@ -2,9 +2,6 @@
 # Collections Ansible utilizadas pelos playbooks e roles.
 # Cada collection DEVE ter versao exata fixada (ex.: "1.2.3"); o CI rejeita
 # entradas sem versao ou com intervalos (>=, ~, *).
-#
-# Exemplo:
-#   collections:
-#     - name: ansible.posix
-#       version: "x.y.z"
-collections: []
+collections:
+  - name: kubernetes.core
+    version: "6.6.0"
