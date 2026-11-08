@@ -38,6 +38,30 @@ has_ansible_content() {
   [ -n "$(ansible_content_paths)" ]
 }
 
+# Arquivos cifrados com ansible-vault (primeira linha "$ANSIBLE_VAULT;...").
+list_vault_files() {
+  grep -rIl --include='*.yml' --include='*.yaml' \
+    --exclude-dir=.collections --exclude-dir=.cache \
+    -e '^\$ANSIBLE_VAULT;' . || true
+}
+
+# O CI nao recebe senha de vault. Para lint e syntax-check, passa a trabalhar numa
+# copia temporaria em que cada arquivo cifrado vira um stub vazio ("{}"); nada e
+# decifrado. Deve ser chamada dentro de um subshell (as funcoes check_lint e
+# check_syntax usam corpo em "( ... )"), que apaga a copia ao terminar.
+enter_vault_stub_tree() {
+  local vault_files f
+  vault_files="$(list_vault_files)"
+  [ -n "$vault_files" ] || return 0
+  VAULT_STUB_DIR="$(mktemp -d)"
+  trap 'rm -rf "$VAULT_STUB_DIR"' EXIT
+  tar --exclude=./.collections --exclude=./.cache -cf - . | tar -xf - -C "$VAULT_STUB_DIR"
+  while IFS= read -r f; do
+    printf -- '---\n{}\n' >"$VAULT_STUB_DIR/$f"
+  done <<<"$vault_files"
+  cd "$VAULT_STUB_DIR"
+}
+
 check_secrets() {
   log "Verificando ausencia de chaves privadas versionadas"
   if grep -R -I -n -E -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
@@ -45,6 +69,17 @@ check_secrets() {
     echo "ERRO: chave privada encontrada em ansible/. Remova e rotacione a credencial." >&2
     return 1
   fi
+
+  # O yamllint ignora arquivos *vault*.yml; aqui garante-se que nao ha segredo em texto puro.
+  local f status=0
+  while IFS= read -r f; do
+    if ! head -n 1 "$f" | grep -q '^\$ANSIBLE_VAULT;'; then
+      echo "ERRO: $f tem nome de vault, mas nao esta cifrado com ansible-vault." >&2
+      status=1
+    fi
+  done < <(find . \( -path ./.collections -o -path ./.cache \) -prune -o \
+             -type f \( -name '*vault*.yml' -o -name '*vault*.yaml' \) -print)
+  return "$status"
 }
 
 check_collections() {
@@ -90,7 +125,8 @@ check_yaml() {
   yamllint --strict -c .yamllint .
 }
 
-check_lint() {
+check_lint() (
+  enter_vault_stub_tree
   local -a content_paths=()
   mapfile -t content_paths < <(ansible_content_paths)
   if ! has_ansible_content; then
@@ -99,9 +135,10 @@ check_lint() {
   fi
   log "ansible-lint"
   ansible-lint --config-file .ansible-lint "${content_paths[@]}"
-}
+)
 
-check_syntax() {
+check_syntax() (
+  enter_vault_stub_tree
   local playbooks_present=true
   local -a inventories=()
   has_playbooks || playbooks_present=false
@@ -132,7 +169,7 @@ check_syntax() {
   if [ "$playbooks_present" = false ]; then
     echo "Nenhum playbook em ansible/playbooks/; syntax-check ignorado."
   fi
-}
+)
 
 case "${1:-all}" in
   secrets) check_secrets ;;

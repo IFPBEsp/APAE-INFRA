@@ -4,6 +4,10 @@ extends: default
 ignore: |
   .collections/
   .cache/
+  # Arquivos cifrados com ansible-vault nao sao YAML legivel. O validate.sh
+  # garante que todo arquivo *vault*.yml esteja de fato cifrado.
+  *vault*.yml
+  *vault*.yaml
 
 rules:
   line-length:
