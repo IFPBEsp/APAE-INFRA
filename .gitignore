@@ -3,6 +3,8 @@
 *.pem
 *.key
 
+# Ansible - inventario local de producao
+/ansible/inventories/production/host_vars/apae-prod.yml
 # Terraform
 **/.terraform/
 *.tfstate
