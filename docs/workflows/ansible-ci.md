@@ -22,13 +22,17 @@ Permissões declaradas: somente `contents: read`. Actions externas são referenc
 
 | Etapa | Comando (via `validate.sh`) | O que garante |
 | --- | --- | --- |
-| Chaves privadas | `validate.sh secrets` | Nenhuma chave privada versionada em `ansible/` |
+| Chaves privadas | `validate.sh secrets` | Nenhuma chave privada versionada em `ansible/`; todo arquivo `*vault*.yml` está cifrado com `ansible-vault` |
 | Collections | `validate.sh collections` | Todas as collections de `requirements.yml` com versão exata `X.Y.Z`; instalação das versões fixadas |
-| YAML | `validate.sh yaml` | `yamllint --strict` com [`ansible/.yamllint`](../../ansible/.yamllint) |
+| YAML | `validate.sh yaml` | `yamllint --strict` com [`ansible/.yamllint`](../../ansible/.yamllint) (ignora `.collections/`, `.cache/` e arquivos `*vault*.yml`) |
 | Lint | `validate.sh lint` | `ansible-lint` perfil `production` com [`ansible/.ansible-lint`](../../ansible/.ansible-lint), quando houver conteúdo Ansible em `playbooks/`, `roles/`, `inventories/` ou `collections/` |
 | Sintaxe | `validate.sh syntax` | `ansible-inventory --list` para cada `ansible/inventories/<ambiente>/hosts.yml`, independentemente de playbooks; com playbooks, também executa `ansible-playbook --syntax-check` contra cada inventário; inventário ilegível faz a etapa falhar |
 
 Sem playbooks em `ansible/playbooks/` (estrutura da #90), o lint ainda valida roles, inventários e collections próprios existentes, e a etapa de sintaxe valida os inventários encontrados; apenas o `ansible-playbook --syntax-check` é ignorado. O lint só é ignorado quando não há conteúdo Ansible aplicável. Havendo playbooks sem inventário, a etapa de sintaxe falha.
+
+### Arquivos cifrados (`ansible-vault`)
+
+O CI não recebe a senha do vault e não decifra nada. Para o `ansible-lint` e o `ansible-playbook --syntax-check`, o `validate.sh` trabalha em uma cópia temporária de `ansible/` em que cada arquivo cifrado (primeira linha `$ANSIBLE_VAULT;`) é substituído por um stub vazio (`{}`); a cópia é apagada ao final e o arquivo versionado não é alterado. Como o `yamllint` ignora arquivos `*vault*.yml`, a etapa `secrets` falha se algum deles estiver em texto puro.
 
 ## 4. Versões fixadas
 
