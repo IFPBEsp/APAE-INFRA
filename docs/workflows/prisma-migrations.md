@@ -43,6 +43,8 @@ Todos os inputs são opcionais e devem ser informados através da chave `with` n
 | `schema-path` | Não | `prisma/schema.prisma` | Caminho do arquivo de schema do Prisma, relativo ao `working-directory`. O diretório de migrations é derivado como `migrations` ao lado do schema. |
 | `postgres-version` | Não | `16` | Versão da imagem do PostgreSQL usada no service container e nos comandos administrativos. |
 | `package-manager` | Não | `pnpm` | Gerenciador de pacotes usado na instalação das dependências. Valores aceitos: `pnpm` e `npm`. |
+| `node-version` | Não | `20` | Versão do Node.js usada no setup do job. |
+| `pnpm-version` | Não | `9` | Versão do pnpm CLI usada no setup do job. |
 
 ### Diretório de migrations
 
