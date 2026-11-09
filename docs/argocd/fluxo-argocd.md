@@ -43,7 +43,7 @@ O ArgoCD faz reconciliação periódica e pode ser notificado por webhook, caso 
 
 | Ambiente | Branch GitOps de referência | Overlay Kustomize | Política esperada para workloads |
 | --- | --- | --- | --- |
-| Desenvolvimento | `dev` | `dev` | Automática, conforme #92 |
+| Desenvolvimento | `main` | `dev` | Automática, conforme #92 |
 | Homologação | `main` | `hml` | Manual, conforme #106 |
 | Produção | `main` | `prod` | Manual, conforme #106 |
 
@@ -104,6 +104,7 @@ argocd/
     ├── dev/              # Applications de desenvolvimento, escopo da #92
     │   ├── apae-geral-dev.yaml
     │   ├── apae-atendimento-dev.yaml
+    │   ├── gestao-escolar-dev.yaml
     │   └── site-comemorativo-dev.yaml
     ├── hml/              # Futuro
     └── prod/             # Futuro

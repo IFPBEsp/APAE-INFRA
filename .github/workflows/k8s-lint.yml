@@ -24,6 +24,7 @@ jobs:
         kubernetes/site-comemorativo/base
         kubernetes/apae-atendimento/overlays/dev
         kubernetes/apae-geral/overlays/dev
+        kubernetes/gestao-escolar/overlays/dev
         kubernetes/site-comemorativo/overlays/dev
 
   argocd:

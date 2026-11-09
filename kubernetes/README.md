@@ -31,6 +31,11 @@ kubernetes/
 │   └── overlays/
 │       └── dev/
 │           └── kustomization.yaml
+├── gestao-escolar/
+│   ├── base/
+│   └── overlays/
+│       └── dev/
+│           └── kustomization.yaml
 ├── site-comemorativo/
 │   ├── base/
 │   └── overlays/
@@ -80,6 +85,8 @@ Os serviços possuem a seguinte configuração:
 | APAE Geral | `management-app` | 0 | Sem imagem publicada |
 | APAE Atendimento | `atendimento` | 0 | Sem imagem publicada |
 | APAE Atendimento | `atendimento-app` | 0 | Sem imagem publicada |
+| APAE Gestão Escolar | `gestao-escolar-backend` | 0 | Publicação e acesso à imagem pendentes de confirmação |
+| APAE Gestão Escolar | `gestao-escolar-frontend` | 0 | Publicação e acesso à imagem pendentes de confirmação |
 | Site Comemorativo | `site-comemorativo` | 0 | Sem imagem publicada |
 
 Os serviços sem imagem publicada permanecem com `replicas: 0`, evitando tentativas de inicialização com imagens indisponíveis.
@@ -171,6 +178,7 @@ argocd/
     └── dev/
         ├── apae-geral-dev.yaml
         ├── apae-atendimento-dev.yaml
+        ├── gestao-escolar-dev.yaml
         └── site-comemorativo-dev.yaml
 ```
 
@@ -185,6 +193,7 @@ Cada Application aponta para o overlay correspondente:
 | --- | --- |
 | `apae-geral-dev` | `kubernetes/apae-geral/overlays/dev` |
 | `apae-atendimento-dev` | `kubernetes/apae-atendimento/overlays/dev` |
+| `gestao-escolar-dev` | `kubernetes/gestao-escolar/overlays/dev` |
 | `site-comemorativo-dev` | `kubernetes/site-comemorativo/overlays/dev` |
 
 As Applications utilizam o AppProject `apae` e direcionam os recursos ao namespace `apae-dev`.
@@ -309,6 +318,7 @@ Execute na raiz do repositório:
 ```bash
 kubectl kustomize kubernetes/apae-geral/overlays/dev
 kubectl kustomize kubernetes/apae-atendimento/overlays/dev
+kubectl kustomize kubernetes/gestao-escolar/overlays/dev
 kubectl kustomize kubernetes/site-comemorativo/overlays/dev
 ```
 
@@ -318,7 +328,7 @@ Esses comandos não criam, modificam ou removem recursos no cluster.
 
 A validação local deve conferir:
 
-1. Renderização bem-sucedida dos três overlays.
+1. Renderização bem-sucedida dos quatro overlays.
 2. Namespace `apae-dev` em todos os recursos.
 3. Quantidade de réplicas de acordo com o ambiente.
 4. Referências de imagens conforme a configuração dos overlays.
@@ -334,6 +344,11 @@ Na validação inicial da issue #92, foram renderizados **16 recursos sem confli
 | APAE Atendimento | 5 |
 | Site Comemorativo | 3 |
 | **Total** | **16** |
+
+Esse resultado registra a validação anterior à inclusão da Gestão Escolar.
+O novo overlay inclui frontend e backend, cada um com Deployment, Service e
+ConfigMap. A validação conjunta dos quatro overlays deve ser repetida após
+essa inclusão; a tabela histórica não comprova a validação do novo overlay.
 
 A validação de sintaxe YAML não substitui a validação de schema dos CRDs do ArgoCD.
 
@@ -379,7 +394,7 @@ A issue #92 estabelece a estrutura inicial dos overlays e das Applications dos p
 As principais dependências são:
 
 - **Issue [#37](https://github.com/IFPBEsp/APAE-INFRA/issues/37):** manifests base do APAE Geral.
-- **Issue [#38](https://github.com/IFPBEsp/APAE-INFRA/issues/38):** manifests base do APAE Gestão Escolar, ainda pendentes.
+- **Issue [#38](https://github.com/IFPBEsp/APAE-INFRA/issues/38):** manifests base do APAE Gestão Escolar, presentes nesta branch.
 - **Issue [#39](https://github.com/IFPBEsp/APAE-INFRA/issues/39):** manifests base do APAE Atendimento.
 - **Issue [#40](https://github.com/IFPBEsp/APAE-INFRA/issues/40):** manifests base do Site Comemorativo.
 - **Issue [#82](https://github.com/IFPBEsp/APAE-INFRA/issues/82):** atualização automatizada das referências das imagens.
@@ -398,13 +413,16 @@ Permanecem fora do escopo inicial:
 
 A issue #92 contempla a criação dos overlays `dev`, das Applications filhas e da documentação da estrutura Kubernetes.
 
-As validações locais já confirmaram a renderização dos overlays, a sintaxe YAML das Applications e a ausência de conflitos de identificação entre os 16 recursos renderizados.
+As validações locais anteriores confirmaram a renderização de três overlays,
+a sintaxe YAML das Applications correspondentes e a ausência de conflitos entre
+os 16 recursos renderizados. A inclusão do overlay e da Application de Gestão
+Escolar amplia o escopo para quatro produtos e exige repetir essas verificações.
 
 A integração com o bootstrap da #91 está presente nesta branch: o Ansible cria
 `apae-dev` e aplica a raiz com descoberta de `apps/*/*.yaml`. A CI renderiza os
-três overlays `dev`, além das bases, para validar os manifests resultantes.
+quatro overlays `dev`, além das bases, para validar os manifests resultantes.
 
-A sincronização real das três Applications ainda precisa ser validada no cluster,
+A sincronização real das quatro Applications ainda precisa ser validada no cluster,
 após aplicar o bootstrap atualizado e disponibilizar os manifests na revisão Git
 acompanhada. Os serviços permanecem com zero réplicas até confirmar a publicação
 e o acesso às imagens; sincronização não significa disponibilidade dos produtos.
