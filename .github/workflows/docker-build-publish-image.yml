@@ -502,15 +502,16 @@ jobs:
         env:
           IMAGE: ${{ steps.image.outputs.name }}
           DIGEST: ${{ steps.candidate.outputs.digest }}
-          CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           SOURCE_REPOSITORY: ${{ github.repository }}
           SOURCE_REF: ${{ github.ref }}
           SOURCE_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
 
+          # github.workflow_ref aponta para o workflow do caller; o certificado
+          # identifica este workflow reutilizável, chamado por @main ou por SHA.
           cosign verify "${IMAGE}@${DIGEST}" \
-            --certificate-identity="$CERTIFICATE_IDENTITY" \
+            --certificate-identity-regexp='^https://github\.com/IFPBEsp/APAE-INFRA/\.github/workflows/docker-build-publish-image\.yml@(refs/heads/main|[0-9a-f]{40})$' \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
             --certificate-github-workflow-ref="$SOURCE_REF" \

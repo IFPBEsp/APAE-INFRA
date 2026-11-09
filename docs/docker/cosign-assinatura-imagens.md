@@ -204,6 +204,8 @@ cosign verify "${IMAGE}@${DIGEST}" \
   --certificate-github-workflow-repository="${{ github.repository }}"
 ```
 
+Dentro do pipeline, a verificação usa `--certificate-identity-regexp` restrita ao workflow reutilizável do `APAE-INFRA` com ref `refs/heads/main` ou um commit SHA completo, pois o contexto `github.workflow_ref` de um workflow reutilizável identifica o workflow do caller, e não o workflow que assinou. A verificação manual de imagens de produção continua exigindo a identidade exata com `@refs/heads/main`.
+
 O consumidor deve chamar `IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main` para corresponder à identidade exigida. Essa referência identifica o workflow reutilizável; a branch ou tag que dispara o consumidor pode ser diferente.
 
 Os callers existentes com `@dev` devem receber `id-token: write` antes da integração do Cosign. A troca para `@main` só deve ocorrer após a promoção do workflow para essa branch, em uma janela coordenada sem execuções dos callers durante a transição. A ordem completa está em [Migração dos callers existentes para Cosign](./pipeline-docker-ghcr.md#migração-dos-callers-existentes-para-cosign).
