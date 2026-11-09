@@ -34,7 +34,7 @@ A versão mínima suportada nos repositórios da APAE é o **Gitleaks `v8.30.1`*
 
 Versões anteriores a `v8.30.1` não são suportadas: os comandos modernos (`gitleaks git`) e os flags usados neste documento exigem essa versão. Ao atualizar a ferramenta, valide o comportamento em um repositório piloto antes de padronizar a nova versão nos demais projetos.
 
-> **Aviso:** o pacote do `apt` do Ubuntu frequentemente vem desatualizado e pode entregar uma versão inferior a `v8.30.1`. Nesse caso, instale o binário oficial a partir dos [GitHub Releases](https://github.com/gitleaks/gitleaks/releases) (veja a seção 3.1, opção 2).
+> **Aviso:** o pacote do `apt` do Ubuntu está desatualizado e **não possui o comando `gitleaks git`** (entrega uma versão antiga, inferior a `v8.30.1`, com a sintaxe legada de detecção). Instale-o diretamente pelo binário oficial dos [GitHub Releases](https://github.com/gitleaks/gitleaks/releases) (veja a seção 3.1, opção 2).
 
 Para verificar a versão instalada:
 
@@ -55,7 +55,7 @@ sudo apt install gitleaks
 
 A disponibilidade do pacote depende da distribuição e dos repositórios configurados. Caso o pacote não esteja disponível, utilize o binário oficial.
 
-> **Aviso:** o pacote do `apt` do Ubuntu pode estar desatualizado e instalar uma versão anterior a `v8.30.1`. Verifique a versão com `gitleaks version` após a instalação; se ela for menor que a mínima suportada, desinstale o pacote e use a opção 2 (binário oficial do GitHub Releases).
+> **Aviso:** o pacote do `apt` do Ubuntu está desatualizado e **não possui o comando `gitleaks git`** — ele instala uma versão anterior a `v8.30.1`, que não executa nenhum dos comandos usados neste guia. Prefira a opção 2 e instale o binário diretamente do [GitHub Releases](https://github.com/gitleaks/gitleaks/releases); apenas use o `apt` se `gitleaks version` indicar `v8.30.1` ou superior.
 
 #### Opção 2: binário oficial do GitHub
 
@@ -115,7 +115,7 @@ Independentemente do sistema operacional, a saída de `gitleaks version` deve in
 
 ## 4. Uso básico
 
-> **Nota:** as versões modernas do Gitleaks (v8.19+) substituíram os comandos legados `gitleaks detect` e `gitleaks protect` pelo comando unificado `gitleaks git`. Todos os exemplos deste documento usam a sintaxe moderna.
+> **Nota:** as versões modernas do Gitleaks (v8.19+) substituíram os comandos legados de detecção e de proteção pelo comando unificado `gitleaks git`. Todos os exemplos deste documento usam exclusivamente a sintaxe moderna `gitleaks git`.
 
 ### 4.1 Analisar o repositório atual
 
