@@ -331,6 +331,12 @@ jobs:
           report_files = sorted(workspace.glob("**/target/surefire-reports/TEST-*.xml"))
 
           if not report_files:
+              output.write_text(
+                  "## Relatório de testes (Surefire)\n\n"
+                  f"Nenhum relatório Surefire gerado no commit {os.environ.get('GITHUB_SHA', '')}\n"
+                  "verifique a etapa de build.\n",
+                  encoding="utf-8",
+              )
               raise SystemExit(0)
 
           totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "time": 0.0}
