@@ -1,0 +1,64 @@
+---
+- name: Criar diretório de plugins Helm
+  ansible.builtin.file:
+    path: "{{ argocd_helm_plugins_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Criar diretório versionado do helm-diff
+  ansible.builtin.file:
+    path: "{{ argocd_helm_diff_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Baixar helm-diff com verificação SHA-256
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/databus23/helm-diff/releases/download/v{{
+      argocd_helm_diff_version
+      }}/diff-{{ argocd_helm_diff_version }}-linux-{{
+      argocd_helm_diff_arch }}.tgz
+    dest: "{{ argocd_helm_diff_install_dir }}/diff.tgz"
+    checksum: "sha256:{{ argocd_helm_diff_archive_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extrair helm-diff versionado
+  ansible.builtin.unarchive:
+    src: "{{ argocd_helm_diff_install_dir }}/diff.tgz"
+    dest: "{{ argocd_helm_diff_install_dir }}"
+    remote_src: true
+    creates: "{{ argocd_helm_diff_install_dir }}/diff/plugin.yaml"
+
+- name: Instalar helm-diff no diretório de plugins
+  ansible.builtin.copy:
+    src: "{{ argocd_helm_diff_install_dir }}/diff/"
+    dest: "{{ argocd_helm_plugins_dir }}/diff/"
+    remote_src: true
+    owner: root
+    group: root
+    directory_mode: "0755"
+    mode: preserve
+
+- name: Verificar versão instalada do helm-diff
+  ansible.builtin.command:
+    argv:
+      - "{{ argocd_helm_binary }}"
+      - diff
+      - version
+  environment:
+    HELM_PLUGINS: "{{ argocd_helm_plugins_dir }}"
+  register: argocd_helm_diff_installed_version
+  changed_when: false
+
+- name: Confirmar versão do helm-diff
+  ansible.builtin.assert:
+    that:
+      - argocd_helm_diff_version in argocd_helm_diff_installed_version.stdout
+    fail_msg: "Versão do helm-diff diferente da versão fixada."
+    success_msg: "Versão do helm-diff validada."
