@@ -591,7 +591,7 @@
       "id": "F73_mkY8tObnNzHvAlTTP",
       "type": "rectangle",
       "x": 1268.074380397856,
-      "y": -887.8822069328515,
+      "y": -887.8290519959911,
       "width": 732.7931161230717,
       "height": 235,
       "angle": 0,
@@ -609,8 +609,8 @@
         "type": 3
       },
       "seed": 1231648410,
-      "version": 246,
-      "versionNonce": 629799750,
+      "version": 248,
+      "versionNonce": 609111420,
       "isDeleted": false,
       "boundElements": [
         {
@@ -626,7 +626,7 @@
           "type": "arrow"
         }
       ],
-      "updated": 1793589778392,
+      "updated": 1794194275139,
       "created": 1793585336532,
       "link": null,
       "locked": false
@@ -635,7 +635,7 @@
       "id": "3zUJiqNf9UmwKUD6RNGZs",
       "type": "text",
       "x": 1277.548849836345,
-      "y": -860.3822069328515,
+      "y": -860.3290519959911,
       "width": 713.8441772460938,
       "height": 180,
       "angle": 0,
@@ -651,22 +651,22 @@
       "index": "aIV",
       "roundness": null,
       "seed": 2136830042,
-      "version": 286,
-      "versionNonce": 2046997717,
+      "version": 304,
+      "versionNonce": 1087180356,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1794011867751,
+      "updated": 1794194293987,
       "created": 1793585674153,
       "link": null,
       "locked": false,
-      "text": "Armazena a nova versão da imagem docker\ne será usado de base para atualizar a tag no\noverlays de APAE-INFRA respectivos ao\nrepositório da aplicação",
+      "text": "Armazena a nova versão da imagem docker\ne será usado de base para atualizar a tag no\noverlay do produto em APAE-INFRA\nrespectivos ao repositório da aplicação",
       "fontSize": 36,
       "baseFontSize": null,
       "fontFamily": 6,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "F73_mkY8tObnNzHvAlTTP",
-      "originalText": "Armazena a nova versão da imagem docker e será usado de base para atualizar a tag no overlays de APAE-INFRA respectivos ao repositório da aplicação",
+      "originalText": "Armazena a nova versão da imagem docker e será usado de base para atualizar a tag no overlay do produto em APAE-INFRA respectivos ao repositório da aplicação",
       "autoResize": true,
       "lineHeight": 1.25,
       "labelPosition": null
@@ -794,9 +794,9 @@
     {
       "id": "-Lcg5sPC9JzOyFdaNoFpr",
       "type": "text",
-      "x": 332.5523729243871,
-      "y": -170.94428831890423,
-      "width": 390.3375549316406,
+      "x": 270.61149956101826,
+      "y": -169.8625780317618,
+      "width": 552.66162109375,
       "height": 180,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -811,22 +811,22 @@
       "index": "aM",
       "roundness": null,
       "seed": 2070980762,
-      "version": 202,
-      "versionNonce": 1436420341,
+      "version": 219,
+      "versionNonce": 440971004,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1794011867751,
+      "updated": 1794194072827,
       "created": 1793585455227,
       "link": null,
       "locked": false,
-      "text": "📁 kubernetes/overlays/\n📁 argocd/\n📁 monitoring/\n📁 terraform/",
+      "text": "📁 kubernetes/{produto}/overlays/\n📁 argocd/\n📁 monitoring/\n📁 terraform/",
       "fontSize": 36,
       "baseFontSize": null,
       "fontFamily": 6,
       "textAlign": "center",
       "verticalAlign": "top",
       "containerId": null,
-      "originalText": "📁 kubernetes/overlays/\n📁 argocd/\n📁 monitoring/\n📁 terraform/",
+      "originalText": "📁 kubernetes/{produto}/overlays/\n📁 argocd/\n📁 monitoring/\n📁 terraform/",
       "autoResize": true,
       "lineHeight": 1.25,
       "labelPosition": null
@@ -914,8 +914,8 @@
     {
       "id": "Nnh1hFMEisyS2fFs-jLqV",
       "type": "text",
-      "x": 1802.1833668914783,
-      "y": 739.3827619981762,
+      "x": 1815.9809239631463,
+      "y": 753.1057376802677,
       "width": 464.1841735839844,
       "height": 45,
       "angle": 0,
@@ -931,11 +931,11 @@
       "index": "aO",
       "roundness": null,
       "seed": 1910186502,
-      "version": 431,
-      "versionNonce": 2091782069,
+      "version": 497,
+      "versionNonce": 2081103428,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1794011867752,
+      "updated": 1794194173451,
       "created": 1793585555151,
       "link": null,
       "locked": false,
@@ -1940,7 +1940,7 @@
       "x": 942.349251768657,
       "y": -758.3430430602039,
       "width": 319.72512862919893,
-      "height": 11.794330064171504,
+      "height": 11.74215426460546,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -1956,8 +1956,8 @@
         "type": 2
       },
       "seed": 1448879898,
-      "version": 64,
-      "versionNonce": 567042502,
+      "version": 66,
+      "versionNonce": 2122194556,
       "isDeleted": false,
       "boundElements": [
         {
@@ -1965,7 +1965,7 @@
           "id": "scVxE0She3zyMiGAAdtkC"
         }
       ],
-      "updated": 1793589778393,
+      "updated": 1794194275140,
       "created": 1793586399201,
       "link": null,
       "locked": false,
@@ -1976,7 +1976,7 @@
         ],
         [
           319.72512862919893,
-          -11.794330064171504
+          -11.74215426460546
         ]
       ],
       "startBinding": {
@@ -2472,97 +2472,6 @@
       "labelPosition": 0.5
     },
     {
-      "id": "14OKM-siD3eEJlk0innVF",
-      "type": "arrow",
-      "x": 2084.889330272151,
-      "y": 933.0905817680002,
-      "width": 908.797354400413,
-      "height": 35.764074613482535,
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "index": "b03",
-      "roundness": {
-        "type": 2
-      },
-      "seed": 2003600666,
-      "version": 620,
-      "versionNonce": 2040634165,
-      "isDeleted": true,
-      "boundElements": [
-        {
-          "type": "text",
-          "id": "afTTFVkRx6iqXqAFxru7i"
-        }
-      ],
-      "updated": 1794011060187,
-      "created": 1793586966321,
-      "link": null,
-      "locked": false,
-      "points": [
-        [
-          0,
-          0
-        ],
-        [
-          -908.797354400413,
-          35.764074613482535
-        ]
-      ],
-      "startBinding": null,
-      "endBinding": null,
-      "startArrowhead": "arrow",
-      "endArrowhead": null,
-      "elbowed": false
-    },
-    {
-      "id": "afTTFVkRx6iqXqAFxru7i",
-      "type": "text",
-      "x": 1489.7666235309287,
-      "y": 926.4511218208477,
-      "width": 281.44805908203125,
-      "height": 45,
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "index": "b04",
-      "roundness": null,
-      "seed": 1449492870,
-      "version": 44,
-      "versionNonce": 524328603,
-      "isDeleted": true,
-      "boundElements": [],
-      "updated": 1794011060187,
-      "created": 1793586979104,
-      "link": null,
-      "locked": false,
-      "text": "provisiona base ",
-      "fontSize": 36,
-      "baseFontSize": null,
-      "fontFamily": 5,
-      "textAlign": "center",
-      "verticalAlign": "middle",
-      "containerId": "14OKM-siD3eEJlk0innVF",
-      "originalText": "provisiona base ",
-      "autoResize": true,
-      "lineHeight": 1.25,
-      "labelPosition": 0.5
-    },
-    {
       "id": "NBQTV_c2oZEATDn9rgbXE",
       "type": "arrow",
       "x": 1051.5478756389718,
@@ -2700,8 +2609,8 @@
     {
       "id": "6VyKRL7TbnG2u2uPFl7Yy",
       "type": "rectangle",
-      "x": 1561.491490366585,
-      "y": 1544.9904234667201,
+      "x": 1572.9049207039984,
+      "y": 1706.3732774600173,
       "width": 503.91798542134984,
       "height": 138.8607582015652,
       "angle": 0,
@@ -2719,8 +2628,8 @@
         "type": 3
       },
       "seed": 712157958,
-      "version": 138,
-      "versionNonce": 514644123,
+      "version": 168,
+      "versionNonce": 202336452,
       "isDeleted": false,
       "boundElements": [
         {
@@ -2732,7 +2641,7 @@
           "type": "arrow"
         }
       ],
-      "updated": 1794009164574,
+      "updated": 1794194032182,
       "created": 1793589031624,
       "link": null,
       "locked": false
@@ -2740,8 +2649,8 @@
     {
       "id": "FYx_FdXu902sIzfacOD_v",
       "type": "text",
-      "x": 1751.7644708091934,
-      "y": 1591.9208025675027,
+      "x": 1763.177901146607,
+      "y": 1753.3036565608,
       "width": 123.37202453613281,
       "height": 45,
       "angle": 0,
@@ -2757,11 +2666,11 @@
       "index": "b0C",
       "roundness": null,
       "seed": 1006479706,
-      "version": 53,
-      "versionNonce": 932610869,
+      "version": 83,
+      "versionNonce": 2066591812,
       "isDeleted": false,
       "boundElements": [],
-      "updated": 1794011867759,
+      "updated": 1794194032182,
       "created": 1793589038838,
       "link": null,
       "locked": false,
@@ -2781,9 +2690,9 @@
       "id": "gbqumlD9jvKxrLmJlkLVn",
       "type": "arrow",
       "x": 923.6453474958245,
-      "y": 1642.5346950100977,
-      "width": 631.8461428707604,
-      "height": 27.799363177837904,
+      "y": 1643.7247647888382,
+      "width": 643.2595732081742,
+      "height": 130.2505962327773,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -2799,8 +2708,8 @@
         "type": 2
       },
       "seed": 2037890950,
-      "version": 243,
-      "versionNonce": 660450779,
+      "version": 299,
+      "versionNonce": 1051720132,
       "isDeleted": false,
       "boundElements": [
         {
@@ -2808,7 +2717,7 @@
           "id": "rS6d4C_wkQHDWhxV3mTng"
         }
       ],
-      "updated": 1794009164576,
+      "updated": 1794194035114,
       "created": 1793589049823,
       "link": null,
       "locked": false,
@@ -2818,12 +2727,12 @@
           0
         ],
         [
-          459.33717766396774,
-          -19.15542227450851
+          447.17487097391665,
+          70.04665732617104
         ],
         [
-          631.8461428707604,
-          -27.799363177837904
+          643.2595732081742,
+          130.2505962327773
         ]
       ],
       "startBinding": {
@@ -3199,92 +3108,12 @@
       "labelPosition": null
     },
     {
-      "id": "93jVbbD7YTisMAKh4drrt",
-      "type": "text",
-      "x": 2223.6881297130312,
-      "y": 1336.567371111471,
-      "width": 438.0841979980469,
-      "height": 90,
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "index": "b0Q",
-      "roundness": null,
-      "seed": 775285083,
-      "version": 4,
-      "versionNonce": 2016108245,
-      "isDeleted": true,
-      "boundElements": null,
-      "updated": 1794010806998,
-      "created": 1794010630407,
-      "link": null,
-      "locked": false,
-      "text": "- ArgoCD Setup (Ansible)\n",
-      "fontSize": 36,
-      "baseFontSize": null,
-      "fontFamily": 5,
-      "textAlign": "center",
-      "verticalAlign": "top",
-      "containerId": null,
-      "originalText": "- ArgoCD Setup (Ansible)\n",
-      "autoResize": true,
-      "lineHeight": 1.25,
-      "labelPosition": null
-    },
-    {
-      "id": "afFC_JlaqvWv7ThpjEDNy",
-      "type": "text",
-      "x": 2191.4731943085403,
-      "y": 1273.0108917637958,
-      "width": 413.064208984375,
-      "height": 90,
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "index": "b0R",
-      "roundness": null,
-      "seed": 1289479445,
-      "version": 4,
-      "versionNonce": 2044617979,
-      "isDeleted": true,
-      "boundElements": null,
-      "updated": 1794010806998,
-      "created": 1794010636921,
-      "link": null,
-      "locked": false,
-      "text": "- Host / k3s (Ansible)  \n",
-      "fontSize": 36,
-      "baseFontSize": null,
-      "fontFamily": 5,
-      "textAlign": "center",
-      "verticalAlign": "top",
-      "containerId": null,
-      "originalText": "- Host / k3s (Ansible)  \n",
-      "autoResize": true,
-      "lineHeight": 1.25,
-      "labelPosition": null
-    },
-    {
       "id": "4eimakfbvUAyLTLWoMMyF",
       "type": "rectangle",
       "x": 1560.520846480314,
-      "y": 1221.8164051520293,
+      "y": 1223.1754770512598,
       "width": 572.2001715124152,
-      "height": 215.60981067270066,
+      "height": 415,
       "angle": 0,
       "strokeColor": "#846358",
       "backgroundColor": "transparent",
@@ -3300,8 +3129,8 @@
         "type": 3
       },
       "seed": 550670101,
-      "version": 293,
-      "versionNonce": 272690747,
+      "version": 299,
+      "versionNonce": 568539076,
       "isDeleted": false,
       "boundElements": [
         {
@@ -3317,7 +3146,7 @@
           "type": "arrow"
         }
       ],
-      "updated": 1794010843675,
+      "updated": 1794194028584,
       "created": 1794010660619,
       "link": null,
       "locked": false
@@ -3325,10 +3154,10 @@
     {
       "id": "r0VyYJ9pm4C7JF1xpdNqm",
       "type": "text",
-      "x": 1604.9348665626935,
-      "y": 1262.1213104883798,
-      "width": 483.37213134765625,
-      "height": 135,
+      "x": 1588.5728670509748,
+      "y": 1228.1754770512598,
+      "width": 516.0961303710938,
+      "height": 405,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -3342,22 +3171,22 @@
       "index": "b0T",
       "roundness": null,
       "seed": 531573659,
-      "version": 171,
-      "versionNonce": 2016731669,
+      "version": 182,
+      "versionNonce": 1672453956,
       "isDeleted": false,
       "boundElements": null,
-      "updated": 1794011867762,
+      "updated": 1794194028585,
       "created": 1794010735417,
       "link": null,
       "locked": false,
-      "text": "- Configuração do Host\n- Instalação/Bootstrap do K3s\n- Deploy base do ArgoCD",
+      "text": "- Configuração do Host (VPS\nHostGator)\n- Instalação/Bootstrap do K3s\n- Deploy base e atualizações do\nArgoCD\n- AppProjects (bootstrap e\ninfraestrutura)\n- Application raiz (app-of-\napps.yaml)",
       "fontSize": 36,
       "baseFontSize": null,
       "fontFamily": 6,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "4eimakfbvUAyLTLWoMMyF",
-      "originalText": "- Configuração do Host\n- Instalação/Bootstrap do K3s\n- Deploy base do ArgoCD",
+      "originalText": "- Configuração do Host (VPS HostGator)\n- Instalação/Bootstrap do K3s\n- Deploy base e atualizações do ArgoCD\n- AppProjects (bootstrap e infraestrutura)\n- Application raiz (app-of-apps.yaml)",
       "autoResize": true,
       "lineHeight": 1.25,
       "labelPosition": null
@@ -3367,8 +3196,8 @@
       "type": "arrow",
       "x": 2057.8350109836283,
       "y": 1021.1919208975953,
-      "width": 97.92510787840092,
-      "height": 194.62448425443404,
+      "width": 72.49958001412006,
+      "height": 195.9835561536645,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -3384,8 +3213,8 @@
         "type": 2
       },
       "seed": 1653042581,
-      "version": 227,
-      "versionNonce": 791694587,
+      "version": 233,
+      "versionNonce": 243472068,
       "isDeleted": false,
       "boundElements": [
         {
@@ -3393,7 +3222,7 @@
           "id": "C0yfQL6hrR7EDafKXe6qZ"
         }
       ],
-      "updated": 1794011065507,
+      "updated": 1794194028587,
       "created": 1794010816853,
       "link": null,
       "locked": false,
@@ -3403,8 +3232,8 @@
           0
         ],
         [
-          -97.92510787840092,
-          194.62448425443404
+          -72.49958001412006,
+          195.9835561536645
         ]
       ],
       "startBinding": {
@@ -3470,10 +3299,10 @@
     {
       "id": "Xderib9PM4_w1w0dqRgd7",
       "type": "arrow",
-      "x": 1554.5208464803143,
-      "y": 1326.9819337020435,
-      "width": 378.42887060857674,
-      "height": 167.829279013024,
+      "x": 1554.5208464803138,
+      "y": 1427.3525389996066,
+      "width": 378.4288706085763,
+      "height": 212.20008201994278,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -3489,8 +3318,8 @@
         "type": 2
       },
       "seed": 1187771483,
-      "version": 47,
-      "versionNonce": 1637649077,
+      "version": 53,
+      "versionNonce": 251371076,
       "isDeleted": false,
       "boundElements": [
         {
@@ -3498,7 +3327,7 @@
           "id": "bVNr79XwE7fo34ujNtFwK"
         }
       ],
-      "updated": 1794010858655,
+      "updated": 1794194028590,
       "created": 1794010843671,
       "link": null,
       "locked": false,
@@ -3508,8 +3337,8 @@
           0
         ],
         [
-          -378.42887060857674,
-          -167.829279013024
+          -378.4288706085763,
+          -212.20008201994278
         ]
       ],
       "startBinding": {
@@ -3575,8 +3404,8 @@
     {
       "id": "ckdjSnRRTUnHc1jWVcy8U",
       "type": "text",
-      "x": 1783.2275380600595,
-      "y": 1176.4439701066008,
+      "x": 1784.2121717829714,
+      "y": 1179.18985006627,
       "width": 123.91204833984375,
       "height": 45,
       "angle": 0,
@@ -3592,11 +3421,11 @@
       "index": "b0X",
       "roundness": null,
       "seed": 1578495893,
-      "version": 37,
-      "versionNonce": 1747467829,
+      "version": 77,
+      "versionNonce": 708262084,
       "isDeleted": false,
       "boundElements": null,
-      "updated": 1794011867763,
+      "updated": 1794194159180,
       "created": 1794010889303,
       "link": null,
       "locked": false,
@@ -3608,46 +3437,6 @@
       "verticalAlign": "top",
       "containerId": null,
       "originalText": "Ansible",
-      "autoResize": true,
-      "lineHeight": 1.25,
-      "labelPosition": null
-    },
-    {
-      "id": "MZBU1Rs2NGkRtf4Y0D-4m",
-      "type": "text",
-      "x": -188.62164863387738,
-      "y": 912.3432138669431,
-      "width": 9.39599609375,
-      "height": 45,
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "index": "b0Y",
-      "roundness": null,
-      "seed": 1733378395,
-      "version": 3,
-      "versionNonce": 55401275,
-      "isDeleted": true,
-      "boundElements": null,
-      "updated": 1794011859952,
-      "created": 1794011857781,
-      "link": null,
-      "locked": false,
-      "text": "",
-      "fontSize": 36,
-      "baseFontSize": null,
-      "fontFamily": 6,
-      "textAlign": "center",
-      "verticalAlign": "top",
-      "containerId": null,
-      "originalText": "",
       "autoResize": true,
       "lineHeight": 1.25,
       "labelPosition": null

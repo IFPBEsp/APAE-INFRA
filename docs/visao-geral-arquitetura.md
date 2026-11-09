@@ -48,7 +48,7 @@ O ArgoCD não acessa o GHCR diretamente — ele lê apenas o APAE-INFRA e reage 
 O **APAE-INFRA** é o repositório GitOps: a única fonte de verdade lida pelo ArgoCD. O padrão adotado é o **App of Apps**:
 
 - **`apae-root`** (Application raiz) — monitora `argocd/` com busca recursiva e garante que as 4 Applications filhas existam no cluster.
-- **4 Applications filhas** — cada uma aponta para o overlay Kustomize correspondente em `kubernetes/overlays/dev/{aplicacao}/` e sincroniza de forma independente.
+- **4 Applications filhas** — cada uma aponta para o overlay Kustomize correspondente em `kubernetes/{produto}/overlays/dev/` (como `kubernetes/apae-geral/overlays/dev`) e sincroniza de forma independente.
 
 **Política de sincronização definida para a implementação:** sync **manual** em todas as Applications filhas. O ArgoCD sinaliza "Out of Sync", mas só aplica quando alguém aprovar manualmente (UI ou CLI). Essa política será reavaliada quando o pipeline de CI/CD tiver testes obrigatórios e histórico estável de releases.
 
@@ -85,7 +85,7 @@ Descoberta de alvos do Prometheus via **Prometheus Operator** (`ServiceMonitor` 
                                  ▼
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │ APAE-INFRA (GitOps repo)                                                         │
-│  kubernetes/overlays/dev/{app}/kustomization.yaml  ← tag atualizada             │
+│  kubernetes/{produto}/overlays/dev/kustomization.yaml  ← tag atualizada           │
 └────────────────────────────────┬─────────────────────────────────────────────────┘
                                  │ ArgoCD detecta Out-of-Sync
                                  │ Aprovação manual → sync
@@ -135,8 +135,9 @@ A arquitetura final do GitOps prevê a introdução de camadas e componentes que
 APAE-INFRA/
 ├── argocd/                 # [Planejado] Manifests do App of Apps: project.yaml, project-infra.yaml, app-of-apps.yaml
 ├── kubernetes/
-│   ├── {produto}/base/     # [Existente] Manifests comuns
-│   └── overlays/{env}/{app}/ # [Planejado] Kustomize overlays por ambiente (dev, hml, prod) para réplicas e tags
+│   └── {produto}/
+│       ├── base/           # [Existente] Manifests comuns
+│       └── overlays/{env}/ # [Planejado] Kustomize overlays por ambiente (dev, hml, prod) para réplicas e tags
 ├── monitoring/
 │   ├── grafana/            # [Planejado] Manifests de datasources, dashboards e alertas provisionados via GitOps
 │   ├── prometheus/         # [Planejado] Prometheus Operator, ServiceMonitors e PodMonitors
@@ -150,7 +151,7 @@ APAE-INFRA/
 ```
 
 > [!NOTE]
-> Os overlays Kustomize por ambiente (`kubernetes/overlays/`), as Applications declarativas do ArgoCD (`argocd/*.yaml`), a stack ativa de observabilidade em cluster (`monitoring/*`) e a automação do host via Ansible estão formalizados conceitualmente em seus respectivos estudos arquiteturais e serão implementados nas próximas etapas da infraestrutura.
+> Os overlays Kustomize por ambiente (`kubernetes/{produto}/overlays/{env}/`), as Applications declarativas do ArgoCD (`argocd/*.yaml`), a stack ativa de observabilidade em cluster (`monitoring/*`) e a automação do host via Ansible estão formalizados conceitualmente em seus respectivos estudos arquiteturais e serão implementados nas próximas etapas da infraestrutura.
 
 ---
 
