@@ -135,7 +135,7 @@ jobs:
 
 Substitua `<commit-sha>` pelo SHA completo de um commit do APAE-INFRA. Evite referências mutáveis como `@main`, `@dev` ou `@v1`.
 
-Como o workflow reutilizável publica comentários automáticos no Pull Request, o token precisa das permissões `contents: read` e `pull-requests: write`. A permissão `pull-requests: write` é necessária para criar ou atualizar o comentário com o relatório Surefire. Sem ela, o workflow emite um aviso e não falha, mas o comentário não é publicado.
+Como o workflow reutilizável publica comentários automáticos no Pull Request, o token precisa das permissões contents: read e pull-requests: write. A permissão pull-requests: write é necessária para criar ou atualizar o comentário com o relatório Surefire. Sem ela, a execução é rejeitada antes de iniciar, porque o workflow reutilizável declara essa permissão.
 
 ### Restringindo a execução por caminhos
 
