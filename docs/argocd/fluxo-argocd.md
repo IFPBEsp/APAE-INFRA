@@ -112,6 +112,9 @@ argocd/
 
 A issue #92 define as Applications de desenvolvimento em `argocd/apps/dev/`. A #91 **não implanta os produtos nem cria seus overlays**. Os diretórios `apps/hml/` e `apps/prod/` representam a organização prevista para os ambientes futuros.
 
+As [evidências da validação da issue #92](validacao-applications-overlays.md) distinguem o
+teste temporário pelo commit do PR da sincronização definitiva pela `main`.
+
 ### Application raiz do cluster único
 
 O arquivo `argocd/app-of-apps.yaml`, administrado pelo Ansible, contém a seguinte configuração de origem:

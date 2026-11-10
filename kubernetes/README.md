@@ -336,19 +336,19 @@ A validação local deve conferir:
 6. Ausência de recursos Kubernetes duplicados entre Applications.
 7. Sintaxe YAML das Applications.
 
-Na validação inicial da issue #92, foram renderizados **16 recursos sem conflitos de identificação** entre os três produtos:
+Na validação de 09/11/2026, foram renderizados **22 recursos sem conflitos de identificação** entre os quatro produtos:
 
 | Produto | Recursos |
 | --- | ---: |
 | APAE Geral | 8 |
 | APAE Atendimento | 5 |
+| APAE Gestão Escolar | 6 |
 | Site Comemorativo | 3 |
-| **Total** | **16** |
+| **Total** | **22** |
 
-Esse resultado registra a validação anterior à inclusão da Gestão Escolar.
-O novo overlay inclui frontend e backend, cada um com Deployment, Service e
-ConfigMap. A validação conjunta dos quatro overlays deve ser repetida após
-essa inclusão; a tabela histórica não comprova a validação do novo overlay.
+O overlay de Gestão Escolar inclui frontend e backend, cada um com Deployment,
+Service e ConfigMap. A validação conjunta dos quatro overlays confirmou o
+namespace `apae-dev` e zero réplicas em todos os Deployments.
 
 A validação de sintaxe YAML não substitui a validação de schema dos CRDs do ArgoCD.
 
@@ -413,18 +413,21 @@ Permanecem fora do escopo inicial:
 
 A issue #92 contempla a criação dos overlays `dev`, das Applications filhas e da documentação da estrutura Kubernetes.
 
-As validações locais anteriores confirmaram a renderização de três overlays,
-a sintaxe YAML das Applications correspondentes e a ausência de conflitos entre
-os 16 recursos renderizados. A inclusão do overlay e da Application de Gestão
-Escolar amplia o escopo para quatro produtos e exige repetir essas verificações.
+As validações locais confirmaram os quatro overlays e 22 recursos sem conflitos.
+Em 09/11/2026, uma validação temporária autorizada no cluster confirmou a
+descoberta das quatro Applications, sincronização `Synced`/`Healthy` no commit
+`3e124a260de1483837fbda35f813cd1d8f66477f`, zero réplicas e funcionamento de
+`selfHeal` e `prune`. Os recursos temporários foram removidos após os testes.
 
 A integração com o bootstrap da #91 está presente nesta branch: o Ansible cria
 `apae-dev` e aplica a raiz com descoberta de `apps/*/*.yaml`. A CI renderiza os
 quatro overlays `dev`, além das bases, para validar os manifests resultantes.
 
-A sincronização real das quatro Applications ainda precisa ser validada no cluster,
-após aplicar o bootstrap atualizado e disponibilizar os manifests na revisão Git
-acompanhada. Os serviços permanecem com zero réplicas até confirmar a publicação
-e o acesso às imagens; sincronização não significa disponibilidade dos produtos.
+A sincronização definitiva pela raiz permanente ainda depende de disponibilizar
+os manifests na `main`. O PR #120 tem `dev` como destino: integrá-lo somente
+nessa branch não altera a revisão acompanhada pelo ArgoCD. A validação temporária
+usou o commit do PR apenas nas cópias de teste, mantendo `targetRevision: main`
+nos manifests versionados. Os serviços continuam com zero réplicas;
+sincronização não significa disponibilidade dos produtos.
 
-Essas verificações precisam ser concluídas no cluster antes de considerar atendido o critério de aceite referente às Applications registradas e sincronizando no ArgoCD.
+Consulte as [evidências e o procedimento após integração à main](../docs/argocd/validacao-applications-overlays.md).
