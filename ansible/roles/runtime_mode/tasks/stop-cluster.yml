@@ -1,0 +1,79 @@
+---
+- name: Consultar estado atual do serviço K3s
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - --property=ActiveState
+      - --value
+      - "{{ runtime_mode_k3s_service }}.service"
+  changed_when: false
+  register: runtime_mode_k3s_previous_state
+
+- name: Consultar sockets Unix com listener ativo
+  ansible.builtin.command:
+    argv:
+      - ss
+      - -H
+      - -l
+      - -x
+  changed_when: false
+  register: runtime_mode_unix_listeners
+
+- name: Consultar containers remanescentes antes da parada
+  ansible.builtin.command:
+    argv:
+      - pgrep
+      - --full
+      - --
+      - "containerd-shim.*[/]run/k3s/containerd/containerd[.]sock"
+  changed_when: false
+  failed_when: runtime_mode_k3s_previous_processes.rc not in [0, 1]
+  register: runtime_mode_k3s_previous_processes
+
+- name: Parar K3s e impedir sua inicialização automática
+  ansible.builtin.systemd_service:
+    name: "{{ runtime_mode_k3s_service }}"
+    state: stopped
+    enabled: false
+
+- name: Encerrar containers e limpar a rede do K3s
+  ansible.builtin.command:
+    argv:
+      - "{{ runtime_mode_k3s_stop_script }}"
+  when: >-
+    runtime_mode_k3s_previous_state.stdout | trim != 'inactive'
+    or (
+      runtime_mode_unix_listeners.stdout_lines
+      | select('search', '/run/k3s/containerd/containerd[.]sock')
+      | list
+      | length > 0
+    )
+    or runtime_mode_k3s_previous_processes.rc == 0
+  changed_when: true
+
+- name: Consultar processos remanescentes dos containers do K3s
+  ansible.builtin.command:
+    argv:
+      - pgrep
+      - --full
+      - --
+      - "containerd-shim.*[/]run/k3s/containerd/containerd[.]sock"
+  changed_when: false
+  failed_when: runtime_mode_k3s_remaining_processes.rc not in [0, 1]
+  register: runtime_mode_k3s_remaining_processes
+
+- name: Confirmar encerramento dos containers do K3s
+  ansible.builtin.assert:
+    that:
+      - runtime_mode_k3s_remaining_processes.rc == 1
+    fail_msg: >-
+      Ainda existem processos de containers do K3s.
+      A inicialização do Compose deve permanecer interrompida.
+
+- name: Confirmar fechamento da API Kubernetes local
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 6443
+    state: stopped
+    timeout: 30

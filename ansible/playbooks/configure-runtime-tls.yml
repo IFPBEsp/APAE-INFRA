@@ -1,0 +1,11 @@
+---
+- name: Configurar renovação automática do TLS do Compose
+  hosts: production
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Instalar automação TLS sem alternar ambientes
+      ansible.builtin.import_role:
+        name: runtime_mode
+        tasks_from: configure-tls.yml

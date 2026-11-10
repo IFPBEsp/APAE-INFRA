@@ -1,0 +1,11 @@
+[Unit]
+Description=APAE - Verificar renovacao do TLS do Compose periodicamente
+
+[Timer]
+OnCalendar={{ runtime_mode_tls_timer_calendar }}
+RandomizedDelaySec={{ runtime_mode_tls_timer_randomized_delay_seconds }}
+Persistent=true
+Unit=apae-compose-tls-renew.service
+
+[Install]
+WantedBy=timers.target

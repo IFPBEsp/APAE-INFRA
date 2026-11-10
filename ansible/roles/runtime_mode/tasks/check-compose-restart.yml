@@ -1,0 +1,70 @@
+---
+- name: Consultar configuração de reinício do projeto
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['docker', 'compose']
+        + (['-f'] | product(runtime_mode_project.files) | list | flatten)
+        + ['config', '--format', 'json']
+      }}
+    chdir: "{{ runtime_mode_project.directory }}"
+  changed_when: false
+  no_log: true
+  register: runtime_mode_restart_config
+
+- name: Identificar serviços selecionados com reinício incompatível
+  ansible.builtin.set_fact:
+    runtime_mode_restart_always_services: >-
+      {{
+        (runtime_mode_restart_config.stdout | from_json).services
+        | dict2items
+        | selectattr('key', 'in', runtime_mode_project.services)
+        | selectattr('value.restart', 'defined')
+        | selectattr('value.restart', 'equalto', 'always')
+        | map(attribute='key')
+        | list
+      }}
+  no_log: true
+
+- name: Rejeitar restart always na configuração dos serviços alternados
+  ansible.builtin.assert:
+    that:
+      - runtime_mode_restart_always_services | length == 0
+    fail_msg: >-
+      O projeto {{ runtime_mode_project.name }} configura restart: always em
+      {{ runtime_mode_restart_always_services }}. Utilize unless-stopped nos
+      serviços alternados e atualize os containers antes de repetir a troca.
+
+- name: Consultar todos os containers selecionados inclusive parados
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['docker', 'compose']
+        + (['-f'] | product(runtime_mode_project.files) | list | flatten)
+        + ['ps', '--all', '--quiet']
+        + runtime_mode_project.services
+      }}
+    chdir: "{{ runtime_mode_project.directory }}"
+  changed_when: false
+  register: runtime_mode_restart_containers
+
+- name: Consultar política efetiva dos containers alternados
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['docker', 'inspect', '--format', '{{.HostConfig.RestartPolicy.Name}}']
+        + runtime_mode_restart_containers.stdout_lines
+      }}
+  register: runtime_mode_restart_policies
+  changed_when: false
+  when: runtime_mode_restart_containers.stdout_lines | length > 0
+
+- name: Rejeitar restart always efetivo nos containers alternados
+  ansible.builtin.assert:
+    that:
+      - "'always' not in runtime_mode_restart_policies.stdout_lines"
+    fail_msg: >-
+      O projeto {{ runtime_mode_project.name }} ainda possui container com
+      política restart always. Corrija o Compose e a política efetiva dos
+      containers selecionados antes de repetir a troca, mesmo se estiverem parados.
+  when: runtime_mode_restart_containers.stdout_lines | length > 0
