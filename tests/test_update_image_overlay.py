@@ -52,6 +52,7 @@ ENV = {
     "IMAGE_DIGEST": DIGEST,
     "IMAGE_TAG": "sha-abcdef0",
     "SOURCE_COMMIT": "abcdef0" + "0" * 33,
+    "SOURCE_WORKFLOW_RUN": "https://github.com/IFPBEsp/apae-site-comemorativo/actions/runs/123456",
     "SOURCE_REPOSITORY": "IFPBEsp/apae-site-comemorativo",
     "CALLER_REPOSITORY": "IFPBEsp/APAE-INFRA",
 }
@@ -301,14 +302,14 @@ class ReleaseDispatchTest(unittest.TestCase):
                      "--source-ref", "--source-digest"):
             self.assertIn(flag, provenance_script)
 
-    def test_release_pr_updates_dev_and_tracks_candidate(self):
+    def test_release_pr_updates_main_and_tracks_candidate(self):
         release = WORKFLOW["jobs"]["update-release"]
         self.assertEqual(release["environment"], "gitops-image-updater")
         checkout = next(step for step in RELEASE_STEPS
                         if step["name"] == "Checkout homologation manifests")
-        self.assertEqual(checkout["with"]["ref"], "dev")
+        self.assertEqual(checkout["with"]["ref"], "main")
         pr = next(step for step in RELEASE_STEPS if step["name"] == "Create or update complete release PR")
-        self.assertEqual(pr["with"]["base"], "dev")
+        self.assertEqual(pr["with"]["base"], "main")
         self.assertEqual(pr["with"]["add-paths"].splitlines(), [
             "${{ steps.release-update.outputs.overlay }}", "${{ steps.release-update.outputs.candidate }}"])
         self.assertNotIn("auto-merge", pr["with"])
@@ -502,8 +503,11 @@ class ProvenanceTest(unittest.TestCase):
 
             for exit_code in (0, 1):
                 with self.subTest(exit_code=exit_code):
+                    attestation = [{"verificationResult": {"statement": {"predicate": {
+                        "runDetails": {"metadata": {"invocationId": ENV["SOURCE_WORKFLOW_RUN"] + "/attempts/1"}}
+                    }}}}]
                     fake_gh.write_text(
-                        f"#!/bin/sh\nexit {exit_code}\n"
+                        "#!/bin/sh\n" + "echo '" + json.dumps(attestation) + "'\n" + f"exit {exit_code}\n"
                     )
                     fake_gh.chmod(0o755)
 
@@ -513,6 +517,7 @@ class ProvenanceTest(unittest.TestCase):
                             **os.environ,
                             **ENV,
                             "PATH": f"{directory}:{os.environ['PATH']}",
+                            "RUNNER_TEMP": directory, "GITHUB_OUTPUT": str(Path(directory) / "outputs"),
                         },
                         capture_output=True,
                         text=True,
@@ -551,7 +556,7 @@ class PublisherSecurityTest(unittest.TestCase):
 
         for required in (
                 "cosign verify",
-                "--certificate-identity=",
+                "--certificate-identity-regexp=",
                 "--certificate-oidc-issuer=",
                 "--certificate-github-workflow-repository=",
                 "--certificate-github-workflow-ref=",
@@ -620,7 +625,7 @@ class OverlayTest(unittest.TestCase):
         self.assertEqual(AUTOMATION["with"]["token"], "${{ github.token }}")
         self.assertFalse(AUTOMATION["with"]["persist-credentials"])
         self.assertEqual(WORKFLOW["jobs"]["update-image"]["permissions"]["contents"], "read")
-        self.assertEqual(MANIFESTS["with"]["ref"], "dev")
+        self.assertEqual(MANIFESTS["with"]["ref"], "main")
         self.assertEqual(MANIFESTS["with"]["path"], "infra")
         self.assertEqual(MANIFESTS["with"]["token"], "${{ steps.app-token.outputs.token }}")
         self.assertFalse(MANIFESTS["with"]["persist-credentials"])
@@ -639,7 +644,7 @@ class OverlayTest(unittest.TestCase):
         self.assertEqual(changed, {self.kustomization.relative_to(self.workspace),
             Path("infra/releases/candidates/site-comemorativo") / (ENV["SOURCE_COMMIT"] + ".json")})
 
-    def test_overlay_resolution_and_pr_paths_are_relative_to_dev(self):
+    def test_overlay_resolution_and_pr_paths_are_relative_to_main(self):
         result = subprocess.run(
             ["bash", "-c", OVERLAY_STEP["run"]], text=True, capture_output=True,
             cwd=self.workspace / OVERLAY_STEP["working-directory"],
@@ -650,7 +655,7 @@ class OverlayTest(unittest.TestCase):
         self.assertEqual(overlay, str(self.relative_overlay))
         config = PULL_REQUEST["with"]
         self.assertEqual(config["path"], MANIFESTS["with"]["path"])
-        self.assertEqual(config["base"], "dev")
+        self.assertEqual(config["base"], "main")
         self.assertEqual(config["token"], "${{ steps.app-token.outputs.token }}")
         self.assertEqual(config["branch"], "${{ steps.image-update.outputs.branch }}")
         # Both exact paths are relative to the manifests checkout.
@@ -674,6 +679,7 @@ class OverlayTest(unittest.TestCase):
         for application, path in (
             ("apae-geral", "kubernetes/apae-geral/overlays/dev"),
             ("apae-atendimento", "kubernetes/apae-atendimento/overlays/dev"),
+            ("apae-gestao-escolar", "kubernetes/gestao-escolar/overlays/dev"),
             ("site-comemorativo", "kubernetes/site-comemorativo/overlays/dev"),
         ):
             with self.subTest(application=application):
@@ -690,14 +696,13 @@ class OverlayTest(unittest.TestCase):
                 self.assert_success(result)
                 self.assertEqual(self.output.read_text(), f"path={path}\n")
 
-    def test_rejects_unknown_paths_environments_and_undefined_school_overlay(self):
+    def test_rejects_unknown_paths_and_environments(self):
         for overrides, message in (
             ({"APPLICATION": "../../etc"}, "Aplicação não autorizada"),
             ({"APPLICATION": "unknown"}, "Aplicação não autorizada"),
             ({"APPLICATION": "kubernetes/apae-geral/overlays/dev"}, "Aplicação não autorizada"),
             ({"ENVIRONMENT": "hml"}, "Somente dev"),
             ({"ENVIRONMENT": "prod"}, "Somente dev"),
-            ({"APPLICATION": "apae-gestao-escolar"}, "issues #38 e #92"),
         ):
             with self.subTest(overrides=overrides):
                 self.output.unlink(missing_ok=True)
@@ -774,7 +779,7 @@ class CompleteReleaseTest(unittest.TestCase):
         for component, item in self.release["images"].items():
             item.update(image=f"ghcr.io/ifpbesp/{application}-{component}",
                         workflow_run=self.release["workflow_run"])
-        self.path = self.root / "kubernetes" / application / "overlays/dev/kustomization.yaml"
+        self.path = self.root / "kubernetes" / ("gestao-escolar" if application == "apae-gestao-escolar" else application) / "overlays/dev/kustomization.yaml"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text("apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n- deployment.yaml\n")
         self.deployment = self.path.with_name("deployment.yaml")
@@ -900,7 +905,7 @@ class ProductionGatesTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.infra = self.root / "approved-dev"
+        self.infra = self.root / "approved-main"
         self.infra.mkdir()
         self.output = self.root / "outputs"
         self.workflows = {name: yaml.safe_load((ROOT / f".github/workflows/{name}-release.yml").read_text())
@@ -930,7 +935,7 @@ class ProductionGatesTest(unittest.TestCase):
         self.candidate.parent.mkdir(parents=True)
         self.candidate.write_text(json.dumps(self.release, indent=2, sort_keys=True) + "\n")
         self.approval = self.infra / "releases/approved" / application / (sha + ".json")
-        overlay = self.infra / "kubernetes" / application / "overlays/dev/kustomization.yaml"
+        overlay = self.infra / "kubernetes" / ("gestao-escolar" if application == "apae-gestao-escolar" else application) / "overlays/dev/kustomization.yaml"
         overlay.parent.mkdir(parents=True)
         targets = self.release.get("images", {"site": self.release})
         overlay.write_text(yaml.safe_dump({"images": [{"name": item["image"], "digest": item["digest"]}
@@ -950,7 +955,6 @@ class ProductionGatesTest(unittest.TestCase):
                     item.update(image=f"ghcr.io/ifpbesp/{application}-{component}", workflow_run=self.release["workflow_run"])
                 if application == "site-comemorativo":
                     self.release.pop("images")
-                    self.release.pop("workflow_run")
                     self.release.update(image=IMAGE, tag=ENV["IMAGE_TAG"], digest=DIGEST,
                                         verification_run="https://github.com/IFPBEsp/APAE-INFRA/actions/runs/42")
                 self.prepare_candidate()

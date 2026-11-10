@@ -187,6 +187,13 @@ https://token.actions.githubusercontent.com
 
 Essa identidade corresponde ao workflow reutilizável responsável pela assinatura.
 
+A publicação e o receptor também aceitam a identidade desse mesmo workflow
+fixado por um SHA completo revisado. A expressão permite somente `refs/heads/main`
+ou 40 caracteres hexadecimais, nunca `dev` ou uma feature branch.
+`github.workflow_ref` identifica o caller e não deve ser usado como identidade
+do reutilizável que assina. Além da identidade e do issuer, as verificações
+exigem o repositório, `refs/heads/main` e o commit de origem do produto.
+
 Essa identidade, sozinha, não identifica o repositório consumidor: como o workflow reutilizável é público, outros repositórios também podem chamá-lo e obter uma assinatura com a mesma identidade e issuer.
 
 Por isso, a verificação também exige `--certificate-github-workflow-repository`, que confere o repositório de origem registrado no certificado. No workflow reutilizável, o valor esperado é `${{ github.repository }}`, correspondente ao repositório que fez a chamada.

@@ -13,7 +13,7 @@ on:
           - apae-gestao-escolar
           - site-comemorativo
       candidate_commit:
-        description: "SHA completo (40 caracteres) da release candidata integrada em dev"
+        description: "SHA completo (40 caracteres) da release candidata integrada em main"
         required: true
         type: string
       evidence_url:
@@ -37,15 +37,16 @@ jobs:
     name: Validate candidate and request approval PR
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == 'refs/heads/main'
     environment: release-approval
     permissions:
       contents: read
     steps:
-      - name: Checkout approved dev branch
+      - name: Checkout homologation records from main
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: IFPBEsp/APAE-INFRA
-          ref: dev
+          ref: main
           path: infra
           persist-credentials: false
 
@@ -110,7 +111,7 @@ jobs:
 
           candidate_path = Path("releases/candidates") / application / f"{sha}.json"
           if not candidate_path.is_file():
-              fail("Candidato nao integrado em dev; conclua o PR de homologacao primeiro.")
+              fail("Candidato nao integrado em main; conclua o PR de homologacao primeiro.")
 
           try:
               candidate_bytes = candidate_path.read_bytes()
@@ -122,7 +123,7 @@ jobs:
           if is_single_image:
               expected = {
                   "application", "source_repository", "source_commit", "image", "tag",
-                  "digest", "verification_run",
+                  "digest", "workflow_run", "verification_run",
               }
           else:
               expected = {"application", "source_repository", "source_commit", "workflow_run", "images"}
@@ -133,9 +134,10 @@ jobs:
                   or candidate["source_commit"] != sha):
               fail("Aplicacao, origem ou commit do candidato nao correspondem.")
 
-          overlay_path = Path("kubernetes") / application / "overlays/dev/kustomization.yaml"
+          directory = "gestao-escolar" if application == "apae-gestao-escolar" else application
+          overlay_path = Path("kubernetes") / directory / "overlays/dev/kustomization.yaml"
           if not overlay_path.is_file():
-              fail("Overlay de homologacao ausente em dev (dependencia da issue #92).")
+              fail("Overlay de homologacao ausente em main (dependencia da issue #92).")
           try:
               overlay = yaml.safe_load(overlay_path.read_text(encoding="utf-8"))
           except (OSError, yaml.YAMLError) as exc:
@@ -160,6 +162,9 @@ jobs:
               digest = candidate["digest"]
               if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
                   fail("Digest do Site Comemorativo invalido.")
+              if not isinstance(candidate["workflow_run"], str) or not re.fullmatch(
+                      r"https://github[.]com/" + re.escape(expected_repository) + r"/actions/runs/[0-9]+", candidate["workflow_run"]):
+                  fail("Workflow de publicacao do Site Comemorativo invalido.")
               verification_run = candidate["verification_run"]
               if not isinstance(verification_run, str) or not re.fullmatch(
                       r"https://github[.]com/IFPBEsp/APAE-INFRA/actions/runs/[0-9]+", verification_run):
@@ -188,7 +193,7 @@ jobs:
 
           approval_path = Path("releases/approved") / application / f"{sha}.json"
           if approval_path.exists():
-              fail("Versao ja possui registro de aprovacao em dev.")
+              fail("Versao ja possui registro de aprovacao em main.")
 
           approval = {
               "schema_version": 1,
@@ -210,6 +215,7 @@ jobs:
                   "image": candidate["image"],
                   "tag": candidate["tag"],
                   "digest": candidate["digest"],
+                  "workflow_run": candidate["workflow_run"],
                   "verification_run": candidate["verification_run"],
               })
           else:
@@ -235,19 +241,19 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Open approval record PR on dev
+      - name: Open approval record PR on main
         id: approval-pr
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
           token: ${{ steps.app-token.outputs.token }}
           path: infra
-          base: dev
+          base: main
           branch: release-approval/${{ inputs.application }}/${{ inputs.candidate_commit }}
           add-paths: releases/approved/${{ inputs.application }}/${{ inputs.candidate_commit }}.json
           commit-message: "chore(release): request approval for ${{ inputs.application }} ${{ inputs.candidate_commit }}"
           title: "chore(release): approve ${{ inputs.application }} ${{ inputs.candidate_commit }}"
           body: |
-            Solicita aprovacao explicita de uma versao homologada em `dev`.
+            Solicita aprovacao explicita de uma versao homologada no overlay `dev`, com registros na `main`.
 
             - Aplicacao: `${{ inputs.application }}`
             - Commit candidato: `${{ inputs.candidate_commit }}`
@@ -257,7 +263,7 @@ jobs:
             - Execucao: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
             **Revisar a evidencia de homologacao e os digests pertinentes antes do merge.**
-            A aprovacao somente se torna efetiva apos o merge deste PR em `dev`.
+            A aprovacao somente se torna efetiva apos o merge deste PR em `main`.
 
       - name: Publish review summary
         shell: bash

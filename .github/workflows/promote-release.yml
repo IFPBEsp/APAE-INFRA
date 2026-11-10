@@ -13,7 +13,7 @@ on:
           - apae-gestao-escolar
           - site-comemorativo
       candidate_commit:
-        description: 'SHA completo (40 caracteres) da release aprovada em dev'
+        description: 'SHA completo (40 caracteres) da release aprovada em main'
         required: true
         type: string
       promotion_reason:
@@ -33,6 +33,7 @@ jobs:
     name: Validate approved digests and request production PR
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == 'refs/heads/main'
     environment: production-promotion
     permissions:
       contents: read
@@ -44,12 +45,12 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Checkout approved records from dev
+      - name: Checkout approved records from main
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: IFPBEsp/APAE-INFRA
-          ref: dev
-          path: approved-dev
+          ref: main
+          path: approved-main
           persist-credentials: false
 
       - name: Validate merged approval and candidate integrity
@@ -88,11 +89,11 @@ jobs:
           if application not in allowed:
               fail('aplicacao nao autorizada')
           source_repository = allowed[application]
-          base = Path('approved-dev')
+          base = Path('approved-main')
           candidate_path = base / 'releases/candidates' / application / f'{sha}.json'
           approval_path = base / 'releases/approved' / application / f'{sha}.json'
           if not candidate_path.is_file() or not approval_path.is_file():
-              fail('candidato e aprovacao precisam estar integrados na branch dev')
+              fail('candidato e aprovacao precisam estar integrados na branch main')
           candidate_raw = candidate_path.read_bytes()
           try:
               candidate = json.loads(candidate_raw)
@@ -101,7 +102,7 @@ jobs:
               fail('registro candidato ou aprovado invalido')
           is_site = application == 'site-comemorativo'
           candidate_fields = (
-              {'application', 'source_repository', 'source_commit', 'image', 'tag', 'digest', 'verification_run'}
+              {'application', 'source_repository', 'source_commit', 'image', 'tag', 'digest', 'workflow_run', 'verification_run'}
               if is_site else
               {'application', 'source_repository', 'source_commit', 'workflow_run', 'images'}
           )
@@ -110,7 +111,7 @@ jobs:
           expected_approval = {
               'schema_version', 'status', 'application', 'source_repository',
               'source_commit', 'candidate_path', 'candidate_sha256', 'homologation',
-          } | ({'image', 'tag', 'digest', 'verification_run'} if is_site else {'workflow_run', 'images'})
+          } | ({'image', 'tag', 'digest', 'workflow_run', 'verification_run'} if is_site else {'workflow_run', 'images'})
           if not isinstance(approval, dict) or set(approval) != expected_approval:
               fail('contrato de aprovacao invalido')
           if type(approval['schema_version']) is not int or approval['schema_version'] != 1:
@@ -142,6 +143,9 @@ jobs:
                   fail('imagem ou tag do site divergente')
               if not isinstance(candidate['digest'], str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', candidate['digest']):
                   fail('digest invalido para o site')
+              if not isinstance(candidate['workflow_run'], str) or not re.fullmatch(
+                      r'https://github[.]com/' + re.escape(source_repository) + r'/actions/runs/[0-9]+', candidate['workflow_run']):
+                  fail('workflow de publicacao do site invalido')
               verification_run = candidate['verification_run']
               if not isinstance(verification_run, str) or not re.fullmatch(
                       r'https://github[.]com/IFPBEsp/APAE-INFRA/actions/runs/[0-9]+', verification_run):
@@ -173,7 +177,7 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'commit={sha}\n')
               output.write(f'application={application}\n')
-          print('Candidato e aprovacao integrados em dev, correspondentes e imutaveis por digest.')
+          print('Candidato e aprovacao integrados em main, correspondentes e imutaveis por digest.')
           PYTHON
 
       - name: Generate PR-only GitHub App token
@@ -229,7 +233,8 @@ jobs:
           application = release.get('application')
           if application not in allowed:
               fail('produto de producao nao autorizado')
-          path = Path('kubernetes') / application / 'overlays/prod/kustomization.yaml'
+          directory = 'gestao-escolar' if application == 'apae-gestao-escolar' else application
+          path = Path('kubernetes') / directory / 'overlays/prod/kustomization.yaml'
           if not path.is_file():
               fail('overlay prod ausente na main; aguarde integracao dos manifests e da issue #92')
           overlay_dir = path.parent
@@ -307,7 +312,7 @@ jobs:
 
             - Produto: `${{ inputs.application }}`
             - Commit da release: `${{ steps.approval.outputs.commit }}`
-            - Registro aprovado em `dev`: `releases/approved/${{ inputs.application }}/${{ steps.approval.outputs.commit }}.json`
+            - Registro aprovado em `main`: `releases/approved/${{ inputs.application }}/${{ steps.approval.outputs.commit }}.json`
             - Imagens: digests imutaveis registrados na aprovacao (uma imagem para o Site Comemorativo; backend + frontend para os demais produtos)
             - Solicitante: `${{ github.actor }}`
             - Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

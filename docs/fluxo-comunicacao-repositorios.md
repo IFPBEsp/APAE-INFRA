@@ -40,10 +40,13 @@ o conteúdo exato que pode ser enviado para a infraestrutura.
 ### 4. Detecção e atualização do APAE-INFRA
 
 O fluxo preparado usa GitHub Actions: o produto envia um evento
-`gitops-image-published` somente após a publicação aprovada. O receptor no
+`gitops-image-published` para o Site ou `gitops-release-published` para a
+combinação frontend/backend dos demais produtos, somente após a publicação
+aprovada. O receptor no
 APAE-INFRA confirma o digest no GHCR, autentica a proveniência da `main` e
 confere se o commit ainda é o HEAD atual da `main` do produto. Só então prepara
-um PR atualizando o digest no overlay. Eventos atrasados de builds antigos são
+um PR para a `main`, atualizando os digests no overlay `dev` e registrando a
+versão candidata. Eventos atrasados de builds antigos são
 recusados, inclusive quando o build terminou depois de uma revisão mais nova.
 
 O PR exige revisão e merge humanos; o sync no ArgoCD continua manual. Antes do
@@ -58,7 +61,14 @@ O ArgoCD monitora continuamente o repositório APAE-INFRA — e não o GHCR dire
 
 ### 6. Aplicação no cluster (padrão App of Apps)
 
-O ArgoCD Controller não sincroniza cada aplicação diretamente. Ele aponta para uma **Aplicação Raiz (App of Apps)**, responsável por garantir que as Applications filhas existam e estejam corretas. Essa Aplicação Raiz gerencia as 4 Applications, uma para cada repositório (APAE, APAE-atendimento, APAE-gestao-escolar, apae-site-comemorativo). Cada Application faz seu próprio `sync`, garantindo que os Pods/Deployments no cluster fiquem idênticos ao que está declarado no manifesto — e é assim que cada repositório é atualizado de forma independente.
+O padrão **App of Apps** usa uma raiz para registrar oito Applications filhas:
+uma por produto e ambiente (`dev` ou `prod`). A raiz e as filhas acompanham a
+`main` e exigem sync manual. A raiz reconcilia as definições das filhas; cada
+filha reconcilia os workloads do seu overlay de forma independente.
+
+A promoção para `prod` é solicitada por um workflow separado e só utiliza
+digests de um registro aprovado após homologação. O procedimento e as
+evidências de rollback estão em [Releases GitOps](workflows/releases-gitops.md).
 
 ## Papel de cada repositório
 

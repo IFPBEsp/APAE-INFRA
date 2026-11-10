@@ -8,8 +8,10 @@ corretas.
 
 ## Contrato de publicação e recebimento
 
-1. Um push na `main` do produto, ou uma execução manual selecionando essa branch,
-   inicia o build de todos os seus serviços. Publicar ambos permite associar as
+1. Um push na `main` do produto inicia o build de todos os seus serviços.
+   O reutilizável também aceita execução manual na `main`, mas o caller deve
+   habilitar tanto a publicação quanto a notificação nesse evento para isso
+   funcionar de ponta a ponta. Publicar ambos permite associar as
    imagens ao mesmo commit, mesmo quando apenas um serviço mudou.
 2. O produto chama `IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main`.
    O caller concede `contents: read`, `packages: write`, `id-token: write` e
@@ -20,14 +22,18 @@ corretas.
 4. Uma publicação aprovada expõe imagem, digest, tag por commit, repositório,
    commit e referência Git de origem. `latest` serve apenas para conveniência;
    a tag `dev` deixa de ser publicada pelo workflow.
-5. O caller notifica o APAE-INFRA apenas quando a publicação do serviço termina
-   com sucesso e a origem continua sendo `refs/heads/main`.
+5. O caller notifica o APAE-INFRA apenas quando a publicação termina com
+   sucesso e a origem continua sendo `refs/heads/main`. Geral, Atendimento e
+   Gestão Escolar enviam `gitops-release-published`, com frontend e backend da
+   mesma execução. Somente o Site envia `gitops-image-published`.
 6. O receptor verifica o commit atual da `main`, a existência da tag, o digest e
    a proveniência autenticada. Reconfere o HEAD antes de abrir ou atualizar o
    PR do overlay. Um evento de commit antigo ou uma falha na API interrompe a
    atualização, sem abrir PR com aquela imagem.
-7. O overlay usa `image@sha256:<digest>`. O ambiente de destino pode se chamar
-   `dev`, mas a imagem continua vindo da `main` do produto.
+7. Um PR para a `main` do APAE-INFRA altera somente o overlay `dev` do produto
+   e seu registro em `releases/candidates/`. O overlay usa
+   `image@sha256:<digest>`. `dev` é o nome do ambiente de homologação;
+   as imagens e os manifests vêm das respectivas branches `main`.
 
 Se o scan do commit mais recente falhar, a infraestrutura mantém a imagem já
 aprovada. Não se troca a origem para a branch `dev` nem se desabilita o scan
@@ -55,23 +61,31 @@ merge automático nem sincronizam o cluster.
   e da publicação de proveniência do workflow compartilhado.
 - Disponibilizar na `main` do APAE-INFRA os overlays de homologação previstos
   pelo receptor. Os caminhos são `kubernetes/apae-geral/overlays/dev`,
-  `kubernetes/apae-atendimento/overlays/dev` e
-  `kubernetes/site-comemorativo/overlays/dev`. Gestão Escolar ainda depende da
-  definição do seu overlay nas issues #38 e #92 e permanece recusada pelo
-  receptor até esse suporte existir.
-- Configurar no environment `gitops-dispatch` dos produtos o secret
-  `GITOPS_DISPATCH_TOKEN`, com permissão de enviar `repository_dispatch` ao
-  APAE-INFRA. No environment `gitops-image-updater` da infraestrutura, configurar
-  `IMAGE_UPDATER_APP_ID` e `IMAGE_UPDATER_APP_PRIVATE_KEY` para o App que abre PRs.
+  `kubernetes/apae-atendimento/overlays/dev`,
+  `kubernetes/gestao-escolar/overlays/dev` e
+  `kubernetes/site-comemorativo/overlays/dev`. O identificador no payload de
+  Gestão Escolar continua sendo `apae-gestao-escolar`.
+- Configurar no environment `gitops-dispatch` dos produtos a variável
+  `GITOPS_DISPATCH_APP_ID` e o secret `GITOPS_DISPATCH_APP_PRIVATE_KEY` do App
+  de notificação, com `contents: write` somente no APAE-INFRA. Esse App não abre
+  PRs. No environment `gitops-image-updater` da infraestrutura, configurar os
+  secrets `IMAGE_UPDATER_APP_ID` e `IMAGE_UPDATER_APP_PRIVATE_KEY` para o App
+  que abre PRs, com `contents: write` e `pull_requests: write` somente no
+  APAE-INFRA. A chave desse segundo App permanece exclusivamente na INFRA.
+- Permitir a branch `main` nos environments usados pela automação. Os jobs
+  receptores, de aprovação, promoção e rollback recusam execução fora da
+  `main` da INFRA. A política antiga que permitia apenas `dev` deve ser migrada.
 - Garantir leitura das imagens no GHCR. O receptor pode usar
   `GHCR_READ_USERNAME` e `GHCR_READ_TOKEN` quando o token da infraestrutura não
   tiver acesso aos pacotes. A consulta da referência `main` também exige
   acesso de leitura ao repositório do produto.
-- Integrar os callers na `main` dos produtos e acompanhar a publicação. Para
-  republicar o HEAD sem modificar código, executar `workflow_dispatch` na
-  `main`. Corrigir eventuais falhas do scan no produto antes de tentar novamente.
+- Integrar os callers na `main` dos produtos e acompanhar a publicação.
+  Corrigir eventuais falhas do scan no produto antes de tentar novamente.
 - Conferir o PR gerado, o digest, o commit da `main` e os checks antes do merge.
   A promoção posterior para produção deve reutilizar o mesmo digest aprovado.
+
+O passo a passo de aprovação, promoção, rollback, configuração dos frontends e
+coleta de evidências está em [Releases GitOps](releases-gitops.md).
 
 ## Validação local
 

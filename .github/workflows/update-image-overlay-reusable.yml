@@ -69,7 +69,7 @@ on:
 jobs:
   update-image:
     name: Update Kubernetes image
-    if: inputs.release-json == ''
+    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == 'refs/heads/main' && inputs.release-json == ''
     runs-on: ubuntu-24.04
     environment: gitops-image-updater
 
@@ -210,6 +210,7 @@ jobs:
           password: ${{ secrets.GHCR_READ_USERNAME != '' && secrets.GHCR_READ_TOKEN != '' && secrets.GHCR_READ_TOKEN || github.token }}
 
       - name: Verify image build provenance
+        id: provenance
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -231,7 +232,19 @@ jobs:
             --repo "$SOURCE_REPOSITORY" \
             --signer-workflow "$SIGNER_WORKFLOW" \
             --source-ref "$SOURCE_REF" \
-            --source-digest "$SOURCE_COMMIT"
+            --predicate-type https://slsa.dev/provenance/v1 \
+            --source-digest "$SOURCE_COMMIT" \
+            --format json > "$RUNNER_TEMP/site-attestation.json"
+
+          invocation="$(jq -er --arg repo "$SOURCE_REPOSITORY" '
+            [.[] | .verificationResult.statement.predicate.runDetails.metadata.invocationId
+             | select(type == "string")
+             | select(startswith("https://github.com/" + $repo + "/actions/runs/"))
+             | select(ltrimstr("https://github.com/" + $repo + "/actions/runs/")
+                      | test("^[0-9]+/attempts/[0-9]+$"))]
+             | unique | if length == 1 then .[0] else error("execucao nao autenticada") end
+          ' "$RUNNER_TEMP/site-attestation.json")"
+          echo "workflow_run=${invocation%/attempts/*}" >> "$GITHUB_OUTPUT"
 
           echo "Proveniência autenticada com sucesso."
 
@@ -248,7 +261,7 @@ jobs:
         run: |
           set -euo pipefail
           cosign verify "${IMAGE}@${IMAGE_DIGEST}" \
-            --certificate-identity-regexp="^https://github[.]com/${SOURCE_REPOSITORY}/[.]github/workflows/[^/]+[.]ya?ml@refs/heads/main$" \
+            --certificate-identity-regexp='^https://github[.]com/IFPBEsp/APAE-INFRA/[.]github/workflows/docker-build-publish-image[.]yml@(refs/heads/main|[0-9a-f]{40})$' \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
             --certificate-github-workflow-ref="refs/heads/main" \
@@ -265,12 +278,12 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Checkout dev manifests
+      - name: Checkout homologation manifests from main
         id: manifests
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: IFPBEsp/APAE-INFRA
-          ref: dev
+          ref: main
           path: infra
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
@@ -298,8 +311,7 @@ jobs:
               overlay="kubernetes/apae-atendimento/overlays/dev"
               ;;
             apae-gestao-escolar)
-              echo "::error::Overlay de Gestão Escolar ainda não definido; depende das issues #38 e #92."
-              exit 1
+              overlay="kubernetes/gestao-escolar/overlays/dev"
               ;;
             site-comemorativo)
               overlay="kubernetes/site-comemorativo/overlays/dev"
@@ -343,6 +355,7 @@ jobs:
           SOURCE_COMMIT: ${{ inputs.source-commit }}
           IMAGE_TAG: ${{ inputs.image-tag }}
           VERIFICATION_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_WORKFLOW_RUN: ${{ steps.provenance.outputs.workflow_run }}
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/gitops-yaml/bin/python" - <<'PYTHON'
@@ -414,7 +427,7 @@ jobs:
 
               # Registra a versão candidata somente após validação do GHCR,
               # da atestação e da renderização do Kustomize.
-              # O registro segue junto do overlay no mesmo PR para dev.
+              # O registro segue junto do overlay no mesmo PR para main.
               if os.environ["APPLICATION"] != "site-comemorativo":
                   raise SystemExit("::error::Candidato individual não autorizado.")
               commit = os.environ["SOURCE_COMMIT"]
@@ -426,6 +439,7 @@ jobs:
                   "image": image,
                   "tag": tag,
                   "digest": digest,
+                  "workflow_run": os.environ["SOURCE_WORKFLOW_RUN"],
                   "verification_run": os.environ["VERIFICATION_RUN"],
               }
               candidate_path = Path("releases/candidates/site-comemorativo") / f"{commit}.json"
@@ -479,7 +493,7 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           path: infra
-          base: dev
+          base: main
           branch: ${{ steps.image-update.outputs.branch }}
           add-paths: |
             ${{ steps.overlay.outputs.path }}/kustomization.yaml
@@ -514,13 +528,13 @@ jobs:
             if [[ -n "$PR_URL" ]]; then
               echo "PR: $PR_URL"
             else
-              echo "Nenhuma diferença em relação à dev; nenhum novo PR necessário."
+              echo "Nenhuma diferença em relação à main; nenhum novo PR necessário."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   update-release:
     name: Update complete release in homologation
-    if: inputs.release-json != ''
+    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == 'refs/heads/main' && inputs.release-json != ''
     runs-on: ubuntu-24.04
     environment: gitops-image-updater
     timeout-minutes: 20
@@ -687,6 +701,7 @@ jobs:
               --repo "$SOURCE_REPOSITORY" \
               --signer-workflow "IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml" \
               --source-ref "refs/heads/main" \
+              --predicate-type https://slsa.dev/provenance/v1 \
               --source-digest "$SOURCE_COMMIT" \
               --format json > "$RUNNER_TEMP/$component-attestation.json"
             run_url="$(jq -er '.workflow_run' "$RUNNER_TEMP/verified-release-input.json")"
@@ -694,7 +709,7 @@ jobs:
               [.[] | .verificationResult.statement.predicate.runDetails.metadata.invocationId
                | select(type == "string")
                | select(startswith($run + "/attempts/"))
-               | select(test("/attempts/[0-9]+$"))] | unique | if length == 1 then .[0] else error("execucao nao autenticada") end
+               | select(ltrimstr($run) | test("^/attempts/[0-9]+$"))] | unique | if length == 1 then .[0] else error("execucao nao autenticada") end
             ' "$RUNNER_TEMP/$component-attestation.json")"
             if [[ "$component" == backend ]]; then
               release_invocation="$invocation"
@@ -718,7 +733,7 @@ jobs:
             image="$(jq -er --arg component "$component" '.images[$component].image' "$RUNNER_TEMP/verified-release-input.json")"
             digest="$(jq -er --arg component "$component" '.images[$component].digest' "$RUNNER_TEMP/verified-release-input.json")"
             cosign verify "${image}@${digest}" \
-              --certificate-identity-regexp="^https://github[.]com/${SOURCE_REPOSITORY}/[.]github/workflows/[^/]+[.]ya?ml@refs/heads/main$" \
+              --certificate-identity-regexp='^https://github[.]com/IFPBEsp/APAE-INFRA/[.]github/workflows/docker-build-publish-image[.]yml@(refs/heads/main|[0-9a-f]{40})$' \
               --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
               --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
               --certificate-github-workflow-ref="refs/heads/main" \
@@ -740,7 +755,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: IFPBEsp/APAE-INFRA
-          ref: dev
+          ref: main
           path: infra
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
@@ -776,7 +791,8 @@ jobs:
           application = os.environ["APPLICATION"]
           if application not in {"apae-geral", "apae-atendimento", "apae-gestao-escolar"}:
               raise SystemExit("::error::Aplicacao nao autorizada para release conjunta.")
-          overlay = Path("kubernetes") / application / "overlays/dev"
+          directory = "gestao-escolar" if application == "apae-gestao-escolar" else application
+          overlay = Path("kubernetes") / directory / "overlays/dev"
           path = overlay / "kustomization.yaml"
           if not path.is_file():
               raise SystemExit("::error::Overlay dev ausente; depende da issue #92.")
@@ -889,7 +905,7 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           path: infra
-          base: dev
+          base: main
           branch: ${{ steps.release-update.outputs.branch }}
           add-paths: |
             ${{ steps.release-update.outputs.overlay }}

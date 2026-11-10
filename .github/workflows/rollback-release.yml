@@ -33,6 +33,7 @@ jobs:
     name: Verify prior deployment and request rollback PR
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == 'refs/heads/main'
     environment: production-promotion
     permissions:
       contents: read
@@ -45,12 +46,12 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Checkout merged approvals from dev
+      - name: Checkout merged approvals from main
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: IFPBEsp/APAE-INFRA
-          ref: dev
-          path: approved-dev
+          ref: main
+          path: approved-main
           persist-credentials: false
 
       - name: Validate approved release record
@@ -90,11 +91,11 @@ jobs:
               fail('aplicacao nao autorizada')
           expected_repository = allowed_repositories[application]
 
-          base = Path('approved-dev')
+          base = Path('approved-main')
           relative_candidate = Path('releases/candidates') / application / f'{sha}.json'
           relative_approval = Path('releases/approved') / application / f'{sha}.json'
           if not (base / relative_candidate).is_file() or not (base / relative_approval).is_file():
-              fail('candidato e aprovacao precisam estar integrados em dev')
+              fail('candidato e aprovacao precisam estar integrados em main')
           candidate_bytes = (base / relative_candidate).read_bytes()
           try:
               candidate = json.loads(candidate_bytes)
@@ -104,14 +105,14 @@ jobs:
 
           is_site = application == 'site-comemorativo'
           expected_candidate = (
-              {'application', 'source_repository', 'source_commit', 'image', 'tag', 'digest', 'verification_run'}
+              {'application', 'source_repository', 'source_commit', 'image', 'tag', 'digest', 'workflow_run', 'verification_run'}
               if is_site else
               {'application', 'source_repository', 'source_commit', 'workflow_run', 'images'}
           )
           expected_approval = {
               'schema_version', 'status', 'application', 'source_repository',
               'source_commit', 'candidate_path', 'candidate_sha256', 'homologation',
-          } | ({'image', 'tag', 'digest', 'verification_run'} if is_site else {'workflow_run', 'images'})
+          } | ({'image', 'tag', 'digest', 'workflow_run', 'verification_run'} if is_site else {'workflow_run', 'images'})
           if not isinstance(candidate, dict) or set(candidate) != expected_candidate:
               fail('contrato de candidato invalido')
           if not isinstance(approved, dict) or set(approved) != expected_approval:
@@ -141,6 +142,10 @@ jobs:
                   fail('tag da imagem do site divergente')
               if not isinstance(candidate['digest'], str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', candidate['digest']):
                   fail('digest invalido para o site')
+              if not isinstance(candidate['workflow_run'], str) or not re.fullmatch(
+                  r'https://github[.]com/' + re.escape(expected_repository) + r'/actions/runs/[0-9]+', candidate['workflow_run']
+              ):
+                  fail('workflow de publicacao do site invalido')
               if not isinstance(candidate['verification_run'], str) or not re.fullmatch(
                   r'https://github[.]com/IFPBEsp/APAE-INFRA/actions/runs/[0-9]+', candidate['verification_run']
               ):
@@ -222,7 +227,8 @@ jobs:
               raise SystemExit(f'::error::Rollback bloqueado: {message}')
 
           release = json.loads((Path(os.environ['RUNNER_TEMP']) / 'rollback-approved-release.json').read_text())
-          path = Path('kubernetes') / release['application'] / 'overlays/prod/kustomization.yaml'
+          directory = 'gestao-escolar' if release['application'] == 'apae-gestao-escolar' else release['application']
+          path = Path('kubernetes') / directory / 'overlays/prod/kustomization.yaml'
           if not path.is_file():
               fail(f'overlay de producao nao existe em main para {release["application"]}; depende dos manifests integrados')
 
@@ -331,6 +337,7 @@ jobs:
               fail('imagens nao relacionadas foram alteradas')
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write(f'previous_main_commit={prior_commit}\n')
+              output.write(f'overlay_path={path.as_posix()}\n')
           print(f'Rollback preparado para versao previamente registrada em main: {prior_commit}.')
           PYTHON
 
@@ -342,7 +349,7 @@ jobs:
           path: production
           base: main
           branch: rollback/${{ inputs.application }}/${{ steps.approval.outputs.commit }}
-          add-paths: kubernetes/${{ inputs.application }}/overlays/prod/kustomization.yaml
+          add-paths: ${{ steps.rollback.outputs.overlay_path }}
           commit-message: 'chore(release): rollback ${{ inputs.application }} to ${{ steps.approval.outputs.commit }}'
           title: 'chore(release): rollback ${{ inputs.application }} to approved ${{ steps.approval.outputs.commit }}'
           body: |
@@ -350,7 +357,7 @@ jobs:
 
             - Produto: `${{ inputs.application }}`
             - Versao alvo: `${{ steps.approval.outputs.commit }}`
-            - Registro aprovado: `releases/approved/${{ inputs.application }}/${{ steps.approval.outputs.commit }}.json` em `dev`
+            - Registro aprovado: `releases/approved/${{ inputs.application }}/${{ steps.approval.outputs.commit }}.json` em `main`
             - Evidencia de configuracao anterior em `main`: `${{ steps.rollback.outputs.previous_main_commit }}`
             - Imagem(ns) do produto: mesmos digests da versao aprovada
             - Solicitante: `${{ github.actor }}`
