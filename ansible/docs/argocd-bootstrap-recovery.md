@@ -62,7 +62,8 @@ O fluxo esperado é:
 6. Configurar as senhas do administrador e da conta `apae-leitura`.
 7. Validar os hashes das duas contas no Secret, sem expor seu conteúdo.
 8. Remover o Secret da senha inicial.
-9. Aplicar os AppProjects e a Application raiz.
+9. Aplicar `argocd/namespaces.yaml` para criar `apae-dev`, seguido dos
+   AppProjects e da Application raiz.
 10. Validar a saúde e a sincronização do ArgoCD.
 
 ## 5. Verificações de saúde
