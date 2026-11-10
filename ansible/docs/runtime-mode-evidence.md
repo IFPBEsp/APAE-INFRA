@@ -1,6 +1,6 @@
 # Evidências da alternância — issue #140
 
-Registro das validações realizadas em 07/11/2026 na VPS de testes da APAE.
+Registro das validações realizadas em 07/11/2026 e 09/11/2026 na VPS de testes da APAE.
 Os trechos abaixo consolidam resultados apresentados nesta implementação;
 não representam uma consulta contínua ao estado da VPS.
 
@@ -129,6 +129,100 @@ registra instalação, teste ACME e execução pelo systemd. Resumo:
 - Os cinco endpoints do inventário responderam HTTP 200 com validação TLS.
 - IDs, horários de início e volumes dos serviços de dados continuaram iguais.
 
+## Validação final das correções do PR #145 em 09/11/2026
+
+Validação realizada sobre o commit `b14dd05`, após as correções da revisão.
+O administrador autorizou a janela para interromper os produtos e executar
+a ida ao cluster e o retorno ao Compose.
+
+### Testes locais e CI
+
+- Suíte completa: **60 testes passaram**, incluindo os 20 cenários TLS.
+- Foi utilizado Kustomize **v5.8.1**, a mesma versão fixada no CI, com checksum
+  conferido pelo valor do instalador versionado. A versão do sistema era
+  diferente; não foi usada para declarar sucesso da suíte.
+- `ansible-lint` dos três playbooks passou sem violações.
+- Quatro cenários adicionais executaram as tarefas reais de verificação de
+  reinício contra um Docker simulado, sem alterar a VPS: rejeição de `always`
+  no Compose, rejeição de `always` em container parado, aceitação de
+  `unless-stopped` e aceitação de projeto sem containers existentes.
+- Os checks disponíveis no [PR #145](https://github.com/IFPBEsp/APAE-INFRA/pull/145)
+  estavam aprovados: commitlint, lint Kubernetes, lint ArgoCD, Markdown e testes.
+  Isso não substitui a aprovação humana do PR.
+
+### Instalação TLS e ida ao cluster
+
+A configuração TLS parametrizada por `ansible_host` foi reaplicada com sucesso:
+
+```text
+apae-prod : ok=14 changed=2 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+```
+
+As duas alterações foram aquisição e liberação da trava; scripts e unidades
+permaneceram sem alterações na VPS.
+
+A ida ao cluster passou pelo novo pré-check de reinício de todos os projetos:
+
+```text
+apae-prod : ok=109 changed=11 unreachable=0 failed=0 skipped=27 rescued=0 ignored=0
+```
+
+O nó ficou `Ready`; os sete componentes obrigatórios ficaram `1/1 Running`.
+Uma verificação adicional confirmou os IDs completos, horários de início e
+montagens esperadas de PostgreSQL e MinIO iguais aos registrados antes da troca:
+
+```text
+apae-prod : ok=7 changed=0 unreachable=0 failed=0 skipped=1 rescued=0 ignored=0
+```
+
+O wrapper TLS foi executado no cluster e adiou a tentativa sem interromper
+os workloads ou os serviços de dados:
+
+```text
+TLS_DEFERRED: Compose não é o modo concluído ou o K3s não está parado.
+```
+
+### Retorno ao Compose e estado final
+
+O retorno executou o fluxo integrado de TLS antes de iniciar os produtos,
+sem necessidade de nova emissão porque o certificado ainda tinha validade
+suficiente. O playbook concluiu:
+
+```text
+apae-prod : ok=112 changed=12 unreachable=0 failed=0 skipped=12 rescued=0 ignored=0
+```
+
+Os cinco endpoints configurados passaram na verificação HTTPS do playbook.
+Uma segunda verificação independente confirmou HTTP 200 com validação TLS,
+registro final `compose`, timer ativo e preservação dos dados:
+
+```text
+apae-prod : ok=6 changed=0 unreachable=0 failed=0 skipped=2 rescued=0 ignored=0
+```
+
+PostgreSQL e MinIO mantiveram os mesmos IDs completos, horários de início e
+volumes registrados na tabela inicial, tanto no cluster quanto após o retorno.
+As verificações consultaram os containers existentes; não houve cópia,
+restauração ou recriação de dados durante a alternância.
+
+Após a conclusão, também foi executado o serviço systemd de TLS:
+
+```text
+apae-compose-tls-renew.service:
+  Result=success
+  ExecMainStatus=0
+k3s:
+  ActiveState=inactive
+  UnitFileState=disabled
+apae-compose-tls-renew.timer:
+  enabled
+```
+
+A trava `/run/lock/apae-runtime-mode` estava ausente ao fim da operação.
+A VPS foi deixada no modo Compose, com os produtos disponíveis.
+Essa rodada completa confirma a integração das correções de reinício e TLS;
+não foi feita nova emissão forçada de certificado de produção.
+
 ## Limites da validação e dependências futuras
 
 Não foi executado reboot da VPS para testar retomada após reinicialização.
@@ -142,12 +236,6 @@ de migrations novas executadas por esses produtos no cluster.
 Essas validações devem integrar as próximas issues de implantação, conforme
 as [responsabilidades documentadas](runtime-mode.md#responsabilidades-das-próximas-issues).
 
-A implementação completa da ida e volta foi testada antes da integração TLS.
-O caminho TLS foi testado separadamente na VPS; não foi repetida uma nova troca
-completa de modos após essa integração. Os registros distinguem esses testes
-para não atribuir evidências a uma execução que não ocorreu.
-
-As correções posteriores da revisão do PR #145 parametrizam o endereço por
-`ansible_host`, incluem dependências e gatilhos dos testes no CI e acrescentam
-a rejeição de `restart: always` no pré-check. Os resultados históricos acima
-não são evidência de execução dessas novas verificações na VPS.
+Os primeiros testes de 07/11 ocorreram antes da integração completa do TLS e
+das correções do PR #145. A seção de 09/11 registra separadamente as execuções
+da versão revisada, sem atribuir essas verificações aos testes anteriores.

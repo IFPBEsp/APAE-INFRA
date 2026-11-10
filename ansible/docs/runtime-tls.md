@@ -163,3 +163,15 @@ a VPS nem substituem o teste real do desafio ACME.
 O certificado servido nessa validação vence em 13/11/2026 às 16:25:01 UTC.
 Não foi forçada uma nova emissão de produção: o certificado ainda estava fora
 da janela de renovação. O teste ACME utilizou o ambiente de testes do Certbot.
+
+### Integração validada em 09/11/2026
+
+A versão revisada foi validada em uma rodada completa Compose → cluster →
+Compose. No cluster, o wrapper retornou `TLS_DEFERRED`; no retorno, o playbook
+validou o certificado antes de retomar os sites. Depois da troca, o serviço
+systemd terminou com `Result=success` e `ExecMainStatus=0`, o timer permaneceu
+ativo e habilitado e os cinco endpoints HTTPS responderam HTTP 200.
+PostgreSQL e MinIO mantiveram IDs, horários de início e volumes.
+
+Os resultados completos estão nas
+[evidências finais da issue #140](runtime-mode-evidence.md#validação-final-das-correções-do-pr-145-em-09112026).
