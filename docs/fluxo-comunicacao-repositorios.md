@@ -20,21 +20,59 @@ O desenvolvedor abre um PR a partir de uma feature branch em um dos quatro repos
 
 ### 2. Pipeline de CI (GitHub Actions)
 
-Cada repositório de aplicação passa por um pipeline de CI em 3 estágios, conforme o código avança até a branch principal:
+A #106 padronizará a publicação rastreável a partir da `main`. O fluxo previsto
+para cada repositório de aplicação passa por um pipeline de CI em 3 estágios, conforme o código avança até a branch principal:
 
 1. **PR para a `dev`** — dispara a pipeline de validação da feature: lint, testes, build e validação do Dockerfile.
 2. **Merge na `dev`** — abre um novo PR para a `main`, que dispara a pipeline de validação de integração: testes completos e testes de integração.
 3. **Merge na `main`** — dispara a pipeline de build da release: testes finais, build da imagem Docker, scan de segurança e versionamento.
 
-> **Observação:** o GitHub Actions também pode atuar como Image Updater no lugar do ArgoCD Image Updater (etapa 4), dependendo da decisão da equipe.
+> **Origem da imagem:** a infraestrutura aceita somente imagens do commit atual
+> da `main` de cada produto, após as verificações de publicação. `dev`, quando
+> usado como nome de ambiente, significa homologação, não a branch do build.
 
 ### 3. Push da imagem
 
-Ao final da pipeline de release (estágio 3 do CI), a imagem gerada recebe uma nova tag e é enviada ao **GHCR (GitHub Container Registry)**. Essa tag é o que identifica de forma única a nova versão da aplicação.
+A pipeline da `main` chama o workflow reutilizável de publicação do APAE-INFRA,
+também referenciado em `@main`. Após build, scan, assinatura e verificação de
+proveniência, publica a tag por commit e expõe o digest OCI. O digest identifica
+o conteúdo exato que pode ser enviado para a infraestrutura.
 
 ### 4. Detecção e atualização do APAE-INFRA
 
-O **ArgoCD Image Updater** monitora o GHCR e identifica que uma nova imagem foi publicada. Ele então abre um Pull Request no repositório APAE-INFRA (GitOps repo) atualizando a tag da imagem no manifesto correspondente. Esse PR passa por aprovação manual antes do merge — é essa aprovação que efetivamente confirma que a nova versão deve ir para o cluster.
+O fluxo preparado usa GitHub Actions: o produto envia um evento
+`gitops-image-published` somente após a publicação aprovada. O receptor no
+APAE-INFRA confirma o digest no GHCR, autentica a proveniência da `main` e
+confere se o commit ainda é o HEAD atual da `main` do produto. Só então prepara
+um PR atualizando o digest no overlay. Eventos atrasados de builds antigos são
+recusados, inclusive quando o build terminou depois de uma revisão mais nova.
+
+O PR exige revisão e merge humanos; o sync no ArgoCD continua manual. Antes do
+merge, confirmar se não houve outra atualização da `main` do produto desde a
+abertura do PR. A ativação depende dos overlays, das credenciais e da
+publicação dos workflows descritos em
+[Publicação a partir da main](workflows/publicacao-main-produtos.md).
+Veja também [inputs, credenciais e exemplos de integração](workflows/update-image-overlay.md).
+
+Os caminhos confirmados no PR #120 são:
+
+| Produto | Overlay |
+| --- | --- |
+| APAE | `kubernetes/apae-geral/overlays/dev` |
+| APAE-atendimento | `kubernetes/apae-atendimento/overlays/dev` |
+| Site Comemorativo | `kubernetes/site-comemorativo/overlays/dev` |
+| Gestão Escolar | Pendente de #38/#92; sem caminho definido |
+
+Os overlays precisam existir em `main`. O receptor aceita apenas `dev`, rejeita
+`hml` e `prod` e não recebe caminhos arbitrários no payload. A promoção de
+`dev` para `prod` pertence à #106 e preservará a combinação de digests aprovada,
+sem novo build.
+
+A #82 permanece aberta até o teste completo com imagens reais.
+
+O PR #120 declara sync automático em `dev`, divergindo do requisito de sync
+manual para homologação. A política precisa ser alinhada com #92/#106 antes
+da ativação; este PR não altera Applications ou bootstrap do ArgoCD.
 
 ### 5. ArgoCD detecta a mudança
 
@@ -42,7 +80,7 @@ O ArgoCD monitora continuamente o repositório APAE-INFRA — e não o GHCR dire
 
 ### 6. Aplicação no cluster (padrão App of Apps)
 
-O ArgoCD Controller não sincroniza cada aplicação diretamente. Ele aponta para uma **Aplicação Raiz (App of Apps)**, responsável por garantir que as Applications filhas existam e estejam corretas. Essa Aplicação Raiz gerencia as 4 Applications, uma para cada repositório (APAE, APAE-atendimento, APAE-gestao-escolar, apae-site-comemorativo). Cada Application faz seu próprio `sync`, garantindo que os Pods/Deployments no cluster fiquem idênticos ao que está declarado no manifesto — e é assim que cada repositório é atualizado de forma independente.
+O ArgoCD Controller não sincroniza cada aplicação diretamente. Ele aponta para uma **Aplicação Raiz (App of Apps)**, responsável por garantir que as Applications filhas existam e estejam corretas. Essa Aplicação Raiz descobre as Applications autorizadas para seu ambiente. O PR #120 define três Applications de produtos; Gestão Escolar ainda depende da #38/#92. Cada Application faz seu próprio `sync`, garantindo que os Pods/Deployments no cluster fiquem idênticos ao que está declarado no manifesto — e é assim que cada repositório é atualizado de forma independente.
 
 ## Papel de cada repositório
 
