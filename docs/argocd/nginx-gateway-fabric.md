@@ -2,10 +2,20 @@
 
 ## Estado e condição para implantação
 
-A preparação da #111 foi validada localmente. **A VPS permanece em operação
-com Docker Compose e não está liberada para operações no cluster.** Não executar
-bootstrap, sync, alterações de portas ou reinícios até uma janela de migração
-explicitamente autorizada pelo responsável pelo ambiente.
+A preparação da #111 foi validada localmente. O modo cluster foi ativado
+pelo procedimento Ansible da issue #140. O nó está `Ready`, e os componentes
+do ArgoCD e de `kube-system` estão em execução. Apenas PostgreSQL e MinIO
+compartilhado permanecem ativos no Docker.
+
+As verificações iniciais não encontraram CRDs dos grupos
+`gateway.networking.k8s.io` ou `gateway.nginx.org`, nem listeners TCP em
+80/443. Os Services observados são do tipo `ClusterIP`.
+
+A implantação do Gateway ainda está pendente: o AppProject efetivo mantém
+as permissões iniciais, e a Application raiz acompanha `main`, que ainda
+não contém as Applications da #111. É necessário disponibilizar os
+manifests nessa revisão e aplicar as permissões pelo Ansible antes dos
+syncs manuais.
 
 | Verificação | Estado nesta preparação |
 | --- | --- |
@@ -14,7 +24,7 @@ explicitamente autorizada pelo responsável pelo ambiente.
 | Chart Helm | Renderizado localmente no commit fixado, com 26 recursos, incluindo CRDs e hooks. |
 | AppProject | Lista de permissões conferida localmente para 43 recursos: chart, Gateway API, Gateway e três Applications. |
 | Validação estática anterior | Kubeconform aprovou 15 recursos de infraestrutura e três Applications; KubeLinter sem erros. Esses resultados não incluem a validação completa do chart no cluster. |
-| Implantação e testes na VPS | Pendentes; nenhuma evidência de funcionamento no cluster foi obtida nesta etapa. |
+| Implantação e testes do Gateway na VPS | Pendentes; a ativação do cluster e as leituras iniciais não comprovam o funcionamento do Gateway. |
 
 A renderização local não comprova compatibilidade efetiva com a API da VPS,
 disponibilidade das portas, convergência do controller ou persistência após
