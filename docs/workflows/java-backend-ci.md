@@ -184,6 +184,8 @@ Quando a compilação falha antes de gerar os XMLs do Surefire, nenhum relatóri
 
 O comentário é atualizado nas execuções seguintes por meio de um marcador fixo, evitando comentários duplicados.
 
+Antes de publicar, o workflow consulta o Pull Request e compara o SHA de origem do run com o HEAD atual do PR. Quando um run antigo termina depois de um commit mais novo, ele é ignorado: o comentário não é criado nem atualizado e o motivo fica registrado no log da execução, preservando o relatório do commit vigente.
+
 A publicação do comentário ocorre apenas em eventos `pull_request`. Em execuções por `push` ou por outros eventos, o resumo Surefire continua disponível no `GITHUB_STEP_SUMMARY`, mas nenhum comentário é criado.
 
 ## Testcontainers
