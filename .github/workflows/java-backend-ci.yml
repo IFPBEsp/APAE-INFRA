@@ -326,6 +326,9 @@ jobs:
         if: always() && steps.validate.outcome == 'success'
         shell: bash
         working-directory: ${{ inputs.working-directory }}
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          JAVA_VERSION: ${{ inputs.java-version }}
         run: |
           set -euo pipefail
 
@@ -342,13 +345,47 @@ jobs:
           workspace = Path.cwd()
           report_files = sorted(workspace.glob("**/target/surefire-reports/TEST-*.xml"))
 
+          working_directory = os.environ.get("WORKING_DIRECTORY", "").strip() or "."
+          java_version = os.environ.get("JAVA_VERSION", "").strip() or "desconhecida"
+          commit_sha = os.environ.get("GITHUB_SHA", "").strip()
+          server_url = (
+              os.environ.get("CI_SERVER_URL", "").strip()
+              or os.environ.get("GITHUB_SERVER_URL", "").strip()
+          ).rstrip("/")
+          repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
+          run_id = os.environ.get("GITHUB_RUN_ID", "").strip()
+
+          run_url = ""
+          if server_url and repository and run_id:
+              run_url = f"{server_url}/{repository}/actions/runs/{run_id}"
+
+          run_link = f"[ver execução]({run_url})" if run_url else "link indisponível"
+          context_lines = [
+              f"- Backend: `{working_directory}`",
+              f"- Java: `{java_version}`",
+              f"- Commit: `{commit_sha}`",
+              f"- Execução: {run_link}",
+          ]
+
+          def publish(content):
+              output.write_text(content, encoding="utf-8")
+
+              summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary_path:
+                  with open(summary_path, "a", encoding="utf-8") as summary:
+                      summary.write(content)
+
           if not report_files:
-              output.write_text(
-                  "## Relatório de testes (Surefire)\n\n"
-                  f"Nenhum relatório Surefire gerado no commit {os.environ.get('GITHUB_SHA', '')}\n"
-                  "verifique a etapa de build.\n",
-                  encoding="utf-8",
-              )
+              lines = [
+                  "## Relatório de testes (Surefire)",
+                  "",
+                  "Nenhum relatório Surefire foi gerado nesta execução; "
+                  "a compilação pode ter falhado antes de gerar os XMLs. "
+                  "Verifique a etapa de build.",
+                  "",
+              ]
+              lines.extend(context_lines)
+              publish("\n".join(lines) + "\n")
               raise SystemExit(0)
 
           totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "time": 0.0}
@@ -412,6 +449,8 @@ jobs:
               return str(value).replace("|", "\\|").replace("\n", " ")
 
           lines = ["## Relatório de testes (Surefire)", ""]
+          lines.extend(context_lines)
+          lines.append("")
 
           if totals["tests"] == 0 and not suites:
               lines.append("Nenhum teste foi encontrado nos relatórios Surefire.")
@@ -458,12 +497,7 @@ jobs:
           if len(content) > 60000:
               content = content[:59500] + "\n\n_Relatório truncado por limite de tamanho._\n"
 
-          output.write_text(content, encoding="utf-8")
-
-          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-          if summary_path:
-              with open(summary_path, "a", encoding="utf-8") as summary:
-                  summary.write(content)
+          publish(content)
           PY
 
           if [[ -f "$report_file" ]]; then
