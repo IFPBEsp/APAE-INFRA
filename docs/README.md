@@ -6,6 +6,8 @@
 - [Estudo de NGINX e Gateway API](nginx/README.md)
 - [Estudo de Terraform e GitOps](terraform/README.md)
 - [Fluxo do ArgoCD e GitOps](argocd/fluxo-argocd.md)
+- [Publicação pela main dos produtos](workflows/publicacao-main-produtos.md)
+- [Homologação, promoção e rollback de releases](workflows/releases-gitops.md)
 - [Fluxo de comunicação entre repositórios](fluxo-comunicacao-repositorios.md)
 - [Boas práticas do repositório](boas-praticas/README.md)
 - [Workflows reutilizáveis de validação Kubernetes](workflows/reusable-k8s-lint.md)

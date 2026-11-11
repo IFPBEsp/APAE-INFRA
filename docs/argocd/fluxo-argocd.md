@@ -43,11 +43,10 @@ O ArgoCD faz reconciliação periódica e pode ser notificado por webhook, caso 
 
 | Ambiente | Branch GitOps de referência | Overlay Kustomize | Política esperada para workloads |
 | --- | --- | --- | --- |
-| Desenvolvimento | `main` | `dev` | Automática, conforme #92 |
-| Homologação | `main` | `hml` | Manual, conforme #106 |
+| Homologação | `main` | `dev` | Manual, conforme #106 |
 | Produção | `main` | `prod` | Manual, conforme #106 |
 
-A #92 contempla inicialmente os overlays `dev`; `hml` e `prod` e seu fluxo de promoção serão implementados nas issues correspondentes. A matriz acima é a **direção arquitetural**, não uma declaração de implantação concluída.
+A #106 utiliza `dev` para homologação e acrescenta `prod`. Os manifests começam com zero réplicas e exigem ativação e sincronização manuais. A automação executa pela branch padrão da INFRA, atualmente `dev`, enquanto os manifests e registros são lidos da `main`.
 
 ## AppProjects: governança e isolamento
 
@@ -106,11 +105,10 @@ argocd/
     │   ├── apae-atendimento-dev.yaml
     │   ├── gestao-escolar-dev.yaml
     │   └── site-comemorativo-dev.yaml
-    ├── hml/              # Futuro
-    └── prod/             # Futuro
+    └── prod/             # Promoção da #106
 ```
 
-A issue #92 define as Applications de desenvolvimento em `argocd/apps/dev/`. A #91 **não implanta os produtos nem cria seus overlays**. Os diretórios `apps/hml/` e `apps/prod/` representam a organização prevista para os ambientes futuros.
+A issue #92 define as Applications de desenvolvimento em `argocd/apps/dev/`. A #91 **não implanta os produtos nem cria seus overlays**. A #106 acrescenta as quatro Applications de produção em `apps/prod/`.
 
 As [evidências da validação da issue #92](validacao-applications-overlays.md) distinguem o
 teste temporário pelo commit do PR da sincronização definitiva pela `main`.
@@ -138,20 +136,17 @@ spec:
     server: https://kubernetes.default.svc
     namespace: argocd
   syncPolicy:
-    automated:
-      selfHeal: true
-      prune: true
     syncOptions:
       - CreateNamespace=false
 ```
 
-O filtro `include: 'apps/*/*.yaml'` permite descobrir as Applications de todos os ambientes sob `argocd/apps/`, incluindo `dev` da #92 e os futuros `hml` e `prod`. Os objetos de bootstrap administrados pelo Ansible (`app-of-apps.yaml`, `project.yaml` e `project-infra.yaml`) ficam na raiz de `argocd/` e não correspondem ao filtro. Os manifests de instalação Helm do próprio ArgoCD também devem permanecer **fora de qualquer Application** reconciliada pelo ArgoCD.
+O filtro `include: 'apps/*/*.yaml'` permite descobrir as Applications de todos os ambientes sob `argocd/apps/`, incluindo `dev` da #92 e `prod` da #106. Os objetos de bootstrap administrados pelo Ansible (`app-of-apps.yaml`, `project.yaml` e `project-infra.yaml`) ficam na raiz de `argocd/` e não correspondem ao filtro. Os manifests de instalação Helm do próprio ArgoCD também devem permanecer **fora de qualquer Application** reconciliada pelo ArgoCD.
 
-A raiz mantém as Applications filhas registradas, enquanto cada filha define seu namespace, revisão Git, overlay e política de sincronização: automática em `dev` e manual nos demais ambientes. As definições das filhas precisam estar na `main`, acompanhada pela raiz, mesmo quando seus workloads acompanham outra revisão. Enquanto não houver arquivos correspondentes ao filtro nessa revisão, a raiz não terá filhas a descobrir. A separação lógica por namespace não substitui RBAC e políticas de rede.
+A raiz mantém as Applications filhas registradas, enquanto cada filha define seu namespace, revisão Git, overlay e política de sincronização: manual em homologação (`dev`) e produção (`prod`). As definições das filhas precisam estar na `main`, acompanhada pela raiz, mesmo quando seus workloads acompanham outra revisão. Enquanto não houver arquivos correspondentes ao filtro nessa revisão, a raiz não terá filhas a descobrir. A separação lógica por namespace não substitui RBAC e políticas de rede.
 
 **Atenção antes de aplicar o filtro em uma raiz já ativa:** com `prune: true`, Applications filhas anteriormente gerenciadas pela raiz e agora excluídas podem ser removidas da reconciliação. É necessário inspecionar os recursos atualmente gerenciados e validar o efeito da mudança antes de sincronizar.
 
-### Exemplo de Application filha de produção (futuro)
+### Application filha de produção
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -196,7 +191,8 @@ kubernetes/
     └── overlays/
         └── dev/
 
-# Os overlays hml/ e prod/ de cada produto serão adicionados futuramente.
+# Cada um dos quatro produtos também possui overlays/prod/ na #106.
+# Gestão Escolar utiliza kubernetes/gestao-escolar/.
 ```
 
 O overlay define características específicas do ambiente, como namespace, réplicas, referências de imagem por digest e configurações não sensíveis. Secrets serão tratados pela estratégia definida na [#93](https://github.com/IFPBEsp/APAE-INFRA/issues/93).
@@ -207,9 +203,8 @@ Não é necessário duplicar todos os manifests base entre ambientes. Cada Appli
 
 | Recurso/ambiente | Política | Justificativa |
 | --- | --- | --- |
-| Application raiz (`apae-root`) | Automática, com `selfHeal` e `prune` | Mantém as **definições** das Applications filhas; exige revisão do conjunto descoberto antes de habilitar o fluxo |
-| Applications filhas de desenvolvimento | Automática, conforme #92 | Agilidade no ambiente de desenvolvimento |
-| Applications filhas de homologação | Manual, conforme #106 | Aprovação e validação antes da promoção |
+| Application raiz (`apae-root`) | Manual | Mantém as **definições** das Applications filhas; exige revisão do conjunto descoberto antes de habilitar o fluxo |
+| Applications filhas de homologação (`dev`) | Manual, conforme #106 | Aprovação e validação antes da promoção |
 | Applications filhas de produção | Manual, conforme #106 | Revisão humana obrigatória antes do deploy |
 
 `prune` automático na raiz pode **remover uma Application filha** quando seu manifesto sair do Git ou deixar de corresponder ao filtro de descoberta. Isso pode ter efeitos nos workloads dependendo das finalizers e configurações de deleção. Exclusões de filhas devem ser revisadas como mudanças potencialmente destrutivas.
@@ -285,3 +280,5 @@ A instalação desses componentes depende das respectivas issues e de permissõe
 - [Documentação oficial — App of Apps](https://argo-cd.readthedocs.io/en/stable/operator-manual/cluster-bootstrapping/)
 - [Diagrama do Fluxo do ArgoCD (SVG)](../diagramas/fluxo-argocd.svg)
 - [Diagrama editável no Excalidraw](../diagramas/fluxo-argocd.excalidraw)
+
+O procedimento de aprovação, promoção e rollback está em [Releases GitOps](../workflows/releases-gitops.md).

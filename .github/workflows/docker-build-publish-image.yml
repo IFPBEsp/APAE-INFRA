@@ -386,7 +386,7 @@ jobs:
 
       - name: Attest image build provenance
         id: provenance
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.image.outputs.name }}
           subject-digest: ${{ steps.candidate.outputs.digest }}
@@ -409,7 +409,8 @@ jobs:
             --repo "$SOURCE_REPOSITORY" \
             --signer-workflow "IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml" \
             --source-ref "$SOURCE_REF" \
-            --source-digest "$SOURCE_COMMIT"
+            --source-digest "$SOURCE_COMMIT" \
+            --predicate-type "https://slsa.dev/provenance/v1"
 
       - name: Sign candidate image with Cosign
         shell: bash
@@ -426,15 +427,16 @@ jobs:
         env:
           IMAGE: ${{ steps.image.outputs.name }}
           DIGEST: ${{ steps.candidate.outputs.digest }}
-          CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           SOURCE_REPOSITORY: ${{ github.repository }}
           SOURCE_REF: ${{ github.ref }}
           SOURCE_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
 
+          # github.workflow_ref aponta para o workflow do caller; o certificado
+          # identifica este workflow reutilizável, chamado por @main ou por SHA.
           cosign verify "${IMAGE}@${DIGEST}" \
-            --certificate-identity="$CERTIFICATE_IDENTITY" \
+            --certificate-identity-regexp='^https://github\.com/IFPBEsp/APAE-INFRA/\.github/workflows/docker-build-publish-image\.yml@(refs/heads/main|[0-9a-f]{40})$' \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
             --certificate-github-workflow-ref="$SOURCE_REF" \

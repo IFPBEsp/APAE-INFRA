@@ -1,0 +1,21 @@
+# Bootstrap: manter replicas zeradas ate a primeira promocao por digest
+# e a configuracao de runtime/Secrets. Ver docs/workflows/releases-gitops.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: apae-prod
+
+resources:
+  - ../../base
+
+replicas:
+  - name: atendimento
+    count: 0
+  - name: atendimento-app
+    count: 0
+
+images:
+  - name: ghcr.io/ifpbesp/apae-atendimento-backend
+    newTag: unpublished
+  - name: ghcr.io/ifpbesp/apae-atendimento-frontend
+    newTag: unpublished

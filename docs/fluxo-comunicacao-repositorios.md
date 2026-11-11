@@ -41,10 +41,13 @@ o conteúdo exato que pode ser enviado para a infraestrutura.
 ### 4. Detecção e atualização do APAE-INFRA
 
 O fluxo preparado usa GitHub Actions: o produto envia um evento
-`gitops-image-published` somente após a publicação aprovada. O receptor no
+`gitops-image-published` para o Site ou `gitops-release-published` para a
+combinação frontend/backend dos demais produtos, somente após a publicação
+aprovada. O receptor no
 APAE-INFRA confirma o digest no GHCR, autentica a proveniência da `main` e
 confere se o commit ainda é o HEAD atual da `main` do produto. Só então prepara
-um PR atualizando o digest no overlay. Eventos atrasados de builds antigos são
+um PR para a `main`, atualizando os digests no overlay `dev` e registrando a
+versão candidata. Eventos atrasados de builds antigos são
 recusados, inclusive quando o build terminou depois de uma revisão mais nova.
 
 O PR exige revisão e merge humanos; o sync no ArgoCD continua manual. Antes do
@@ -61,7 +64,7 @@ Os caminhos confirmados no PR #120 são:
 | APAE | `kubernetes/apae-geral/overlays/dev` |
 | APAE-atendimento | `kubernetes/apae-atendimento/overlays/dev` |
 | Site Comemorativo | `kubernetes/site-comemorativo/overlays/dev` |
-| Gestão Escolar | Pendente de #38/#92; sem caminho definido |
+| Gestão Escolar | `kubernetes/gestao-escolar/overlays/dev` |
 
 Os overlays precisam existir em `main`. O receptor aceita apenas `dev`, rejeita
 `hml` e `prod` e não recebe caminhos arbitrários no payload. A promoção de
@@ -70,9 +73,9 @@ sem novo build.
 
 A #82 permanece aberta até o teste completo com imagens reais.
 
-O PR #120 declara sync automático em `dev`, divergindo do requisito de sync
-manual para homologação. A política precisa ser alinhada com #92/#106 antes
-da ativação; este PR não altera Applications ou bootstrap do ArgoCD.
+A #106 configura sync manual na raiz e nas filhas. A automação de dispatch
+executa na branch padrão da INFRA, atualmente `dev`; seus PRs alteram os
+registros e overlays na `main`.
 
 ### 5. ArgoCD detecta a mudança
 
@@ -80,7 +83,14 @@ O ArgoCD monitora continuamente o repositório APAE-INFRA — e não o GHCR dire
 
 ### 6. Aplicação no cluster (padrão App of Apps)
 
-O ArgoCD Controller não sincroniza cada aplicação diretamente. Ele aponta para uma **Aplicação Raiz (App of Apps)**, responsável por garantir que as Applications filhas existam e estejam corretas. Essa Aplicação Raiz descobre as Applications autorizadas para seu ambiente. O PR #120 define três Applications de produtos; Gestão Escolar ainda depende da #38/#92. Cada Application faz seu próprio `sync`, garantindo que os Pods/Deployments no cluster fiquem idênticos ao que está declarado no manifesto — e é assim que cada repositório é atualizado de forma independente.
+O padrão **App of Apps** usa uma raiz para registrar oito Applications filhas:
+uma por produto e ambiente (`dev` ou `prod`). A raiz e as filhas acompanham a
+`main` e exigem sync manual. A raiz reconcilia as definições das filhas; cada
+filha reconcilia os workloads do seu overlay de forma independente.
+
+A promoção para `prod` é solicitada por um workflow separado e só utiliza
+digests de um registro aprovado após homologação. O procedimento e as
+evidências de rollback estão em [Releases GitOps](workflows/releases-gitops.md).
 
 ## Papel de cada repositório
 

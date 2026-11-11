@@ -68,9 +68,7 @@ Os overlays podem definir:
 - Imagens e versões utilizadas;
 - Configurações específicas do ambiente.
 
-O escopo inicial da issue #92 contempla somente o overlay `dev`.
-
-Os overlays `hml` e `prod` serão implementados posteriormente, conforme a evolução da infraestrutura e do fluxo de promoção.
+A #92 entrega os overlays `dev`. A #106 utiliza esse nome para homologação e acrescenta `prod`, no namespace `apae-prod`. Ambos acompanham a `main` e utilizam sync manual. As Applications da #106 estão em `argocd/apps/dev/` e `argocd/apps/prod/`.
 
 ## Ambiente de desenvolvimento
 
@@ -127,6 +125,12 @@ criar recursos de cluster.
 O namespace compartilhado exige que cada recurso tenha uma identificação única para evitar conflitos entre Applications.
 
 ## Imagens e versionamento
+
+A #106 substitui as referências iniciais por digests verificados. Produtos com
+frontend e backend são registrados e promovidos juntos. Todos os PRs de
+release têm como destino `main`, e a automação executa pela branch padrão da
+INFRA, atualmente `dev`. A configuração inicial abaixo descreve o bootstrap
+da #92 antes da primeira publicação validada.
 
 Os overlays utilizam inicialmente referências de imagens com a tag `dev`.
 
@@ -216,8 +220,7 @@ Os objetos de bootstrap na raiz de `argocd/`, incluindo `namespaces.yaml`,
 não correspondem ao filtro e continuam administrados pelo Ansible.
 
 O bootstrap cria `apae-dev` antes dos AppProjects e da Application raiz.
-Cada filha define sua política de sincronização: automática em `dev` e manual
-nos demais ambientes quando implementados. A organização por diretório e
+Cada filha utiliza sincronização manual em `dev` e `prod`. A organização por diretório e
 namespace não substitui os controles de RBAC e de rede.
 
 As definições precisam estar disponíveis na revisão acompanhada pela raiz para
@@ -273,41 +276,18 @@ Os AppProjects complementam, mas não substituem, os controles de acesso e RBAC 
 
 ## Política de sincronização
 
-As políticas de sincronização são definidas de acordo com o ambiente.
+A raiz e as Applications dos ambientes `dev` e `prod` utilizam sincronização
+manual. Após revisão e merge na `main`, solicitar o sync da Application afetada.
+O bootstrap Ansible atualiza os AppProjects, os namespaces e a raiz. O sync da
+raiz adota as definições das filhas.
 
-| Ambiente | Política | Situação |
-| --- | --- | --- |
-| `dev` | Automática | Configurada nas Applications |
-| `hml` | Manual | Implementação futura |
-| `prod` | Manual | Implementação futura |
+As imagens de produção começam como `unpublished`, com zero réplicas. A primeira
+promoção troca essa referência pelos digests aprovados em homologação e preserva
+as réplicas. Configurar Secrets, bancos e rotas antes da ativação dos serviços.
+O `management-app` continua desativado por não possuir imagem publicada.
 
-### Desenvolvimento
-
-As Applications de desenvolvimento possuem:
-
-```yaml
-syncPolicy:
-  automated:
-    prune: true
-    selfHeal: true
-  syncOptions:
-    - CreateNamespace=false
-```
-
-Com essa configuração:
-
-- O ArgoCD pode aplicar automaticamente alterações detectadas na revisão Git acompanhada.
-- `selfHeal` permite reconciliar divergências entre o estado declarado e o estado do cluster.
-- `prune` permite remover recursos gerenciados que deixaram de existir nos manifests desejados.
-- O namespace de destino precisa existir previamente.
-
-A configuração automática será efetiva somente após as Applications serem registradas em uma instância do ArgoCD com destino apropriado.
-
-### Homologação e produção
-
-Os ambientes `hml` e `prod` devem utilizar sincronização manual para os workloads, conforme o fluxo de aprovação e promoção a ser implementado.
-
-A sincronização automática da Application raiz não deve ser interpretada como autorização para implantar workloads em produção.
+Ver [Releases GitOps](../docs/workflows/releases-gitops.md) para publicação,
+aprovação, promoção, rollback e evidências de implantação.
 
 ## Validação local
 
@@ -402,12 +382,12 @@ As principais dependências são:
 
 Permanecem fora do escopo inicial:
 
-- Overlays de homologação e produção;
+- Ativação dos workloads de homologação e produção;
 - Gerenciamento de Secrets;
 - Configuração de Ingress;
 - Implementação de ApplicationSet;
 - Separação definitiva dos clusters de desenvolvimento, homologação e produção;
-- Implementação de pipelines de promoção entre ambientes.
+- Validação operacional dos pipelines de promoção entre ambientes.
 
 ## Estado da implementação
 

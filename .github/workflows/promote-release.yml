@@ -1,0 +1,335 @@
+name: Promote approved release to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      application:
+        description: 'Produto cuja release aprovada sera promovida'
+        required: true
+        type: choice
+        options:
+          - apae-geral
+          - apae-atendimento
+          - apae-gestao-escolar
+          - site-comemorativo
+      candidate_commit:
+        description: 'SHA completo (40 caracteres) da release aprovada em main'
+        required: true
+        type: string
+      promotion_reason:
+        description: 'Motivo e referencia da autorizacao de producao'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-promotion-${{ inputs.application }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Validate approved digests and request production PR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: production-promotion
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted automation from triggering revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Checkout approved records from main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: main
+          path: approved-main
+          persist-credentials: false
+
+      - name: Validate merged approval and candidate integrity
+        id: approval
+        shell: bash
+        env:
+          APPLICATION: ${{ inputs.application }}
+          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          PROMOTION_REASON: ${{ inputs.promotion_reason }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+
+          def fail(reason):
+              raise SystemExit(f'::error::Promocao bloqueada: {reason}')
+
+          sha = os.environ['CANDIDATE_COMMIT'].strip()
+          if not re.fullmatch(r'[a-f0-9]{40}', sha):
+              fail('commit deve ter 40 caracteres hexadecimais minusculos')
+          reason = os.environ['PROMOTION_REASON'].strip()
+          if not 20 <= len(reason) <= 2000 or any(x in reason for x in '\r\n'):
+              fail('justificativa deve ter de 20 a 2000 caracteres, em uma linha')
+
+          allowed = {
+              'apae-geral': 'IFPBEsp/APAE',
+              'apae-atendimento': 'IFPBEsp/APAE-atendimento',
+              'apae-gestao-escolar': 'IFPBEsp/APAE-gestao-escolar',
+              'site-comemorativo': 'IFPBEsp/apae-site-comemorativo',
+          }
+          application = os.environ['APPLICATION']
+          if application not in allowed:
+              fail('aplicacao nao autorizada')
+          source_repository = allowed[application]
+          base = Path('approved-main')
+          candidate_path = base / 'releases/candidates' / application / f'{sha}.json'
+          approval_path = base / 'releases/approved' / application / f'{sha}.json'
+          if not candidate_path.is_file() or not approval_path.is_file():
+              fail('candidato e aprovacao precisam estar integrados na branch main')
+          candidate_raw = candidate_path.read_bytes()
+          try:
+              candidate = json.loads(candidate_raw)
+              approval = json.loads(approval_path.read_bytes())
+          except (ValueError, OSError):
+              fail('registro candidato ou aprovado invalido')
+          is_site = application == 'site-comemorativo'
+          candidate_fields = (
+              {'application', 'source_repository', 'source_commit', 'image', 'tag', 'digest', 'workflow_run', 'verification_run'}
+              if is_site else
+              {'application', 'source_repository', 'source_commit', 'workflow_run', 'images'}
+          )
+          if not isinstance(candidate, dict) or set(candidate) != candidate_fields:
+              fail('contrato do candidato invalido')
+          expected_approval = {
+              'schema_version', 'status', 'application', 'source_repository',
+              'source_commit', 'candidate_path', 'candidate_sha256', 'homologation',
+          } | ({'image', 'tag', 'digest', 'workflow_run', 'verification_run'} if is_site else {'workflow_run', 'images'})
+          if not isinstance(approval, dict) or set(approval) != expected_approval:
+              fail('contrato de aprovacao invalido')
+          if type(approval['schema_version']) is not int or approval['schema_version'] != 1:
+              fail('versao do esquema de aprovacao invalida')
+          if approval['status'] != 'approved':
+              fail('status nao aprovado')
+          if (candidate['application'] != application
+                  or candidate['source_repository'] != source_repository
+                  or candidate['source_commit'] != sha):
+              fail('origem do candidato nao autorizada')
+          for key in candidate_fields:
+              if approval[key] != candidate[key]:
+                  fail(f'aprovacao diverge do candidato em {key}')
+          if approval['candidate_path'] != f'releases/candidates/{application}/{sha}.json':
+              fail('caminho do candidato divergente')
+          if approval['candidate_sha256'] != 'sha256:' + hashlib.sha256(candidate_raw).hexdigest():
+              fail('hash do candidato diverge do registro aprovado')
+          homologation = approval['homologation']
+          if not isinstance(homologation, dict) or set(homologation) != {
+              'evidence_url', 'approval_reason', 'requested_by', 'approval_workflow_run'
+          }:
+              fail('evidencia de homologacao ausente ou invalida')
+          if not all(isinstance(x, str) and x.strip() for x in homologation.values()):
+              fail('evidencia de homologacao incompleta')
+
+          if is_site:
+              image = 'ghcr.io/ifpbesp/apae-site-comemorativo'
+              if candidate['image'] != image or candidate['tag'] != 'sha-' + sha[:7]:
+                  fail('imagem ou tag do site divergente')
+              if not isinstance(candidate['digest'], str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', candidate['digest']):
+                  fail('digest invalido para o site')
+              if not isinstance(candidate['workflow_run'], str) or not re.fullmatch(
+                      r'https://github[.]com/' + re.escape(source_repository) + r'/actions/runs/[0-9]+', candidate['workflow_run']):
+                  fail('workflow de publicacao do site invalido')
+              verification_run = candidate['verification_run']
+              if not isinstance(verification_run, str) or not re.fullmatch(
+                      r'https://github[.]com/IFPBEsp/APAE-INFRA/actions/runs/[0-9]+', verification_run):
+                  fail('verificacao de origem do site invalida')
+          else:
+              expected_run_pattern = (
+                  r'https://github[.]com/' + re.escape(source_repository)
+                  + r'/actions/runs/[0-9]+'
+              )
+              if (not isinstance(candidate['workflow_run'], str)
+                      or not re.fullmatch(expected_run_pattern, candidate['workflow_run'])):
+                  fail('execucao de origem invalida')
+              images = candidate['images']
+              if not isinstance(images, dict) or set(images) != {'backend', 'frontend'}:
+                  fail('frontend e backend obrigatorios')
+              for component in ('backend', 'frontend'):
+                  item = images[component]
+                  if not isinstance(item, dict) or set(item) != {'image', 'tag', 'digest', 'workflow_run'}:
+                      fail(f'contrato invalido em {component}')
+                  if item['image'] != f'ghcr.io/ifpbesp/{application}-{component}':
+                      fail(f'imagem nao autorizada em {component}')
+                  if item['tag'] != 'sha-' + sha[:7] or item['workflow_run'] != candidate['workflow_run']:
+                      fail(f'tag ou execucao divergente em {component}')
+                  if not isinstance(item['digest'], str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', item['digest']):
+                      fail(f'digest invalido em {component}')
+
+          destination = Path(os.environ['RUNNER_TEMP']) / 'approved-release.json'
+          destination.write_text(json.dumps(candidate, sort_keys=True, indent=2) + '\n')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'commit={sha}\n')
+              output.write(f'application={application}\n')
+          print('Candidato e aprovacao integrados em main, correspondentes e imutaveis por digest.')
+          PYTHON
+
+      - name: Generate PR-only GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.IMAGE_UPDATER_APP_ID }}
+          private-key: ${{ secrets.IMAGE_UPDATER_APP_PRIVATE_KEY }}
+          owner: IFPBEsp
+          repositories: APAE-INFRA
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout production branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: IFPBEsp/APAE-INFRA
+          ref: main
+          path: production
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Set up approved Kustomize
+        uses: ./.github/actions/setup-kustomize
+
+      - name: Install YAML parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/promotion-yaml"
+          "$RUNNER_TEMP/promotion-yaml/bin/pip" install --disable-pip-version-check 'PyYAML==6.0.3'
+
+      - name: Apply only approved digests and validate Kustomize
+        id: manifests
+        shell: bash
+        working-directory: production
+        env:
+          PYTHON: ${{ runner.temp }}/promotion-yaml/bin/python
+        run: |
+          set -euo pipefail
+          "$PYTHON" - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import yaml
+
+          def fail(reason):
+              raise SystemExit(f'::error::Promocao bloqueada: {reason}')
+
+          release = json.loads((Path(os.environ['RUNNER_TEMP']) / 'approved-release.json').read_text())
+          allowed = {'apae-geral', 'apae-atendimento', 'apae-gestao-escolar', 'site-comemorativo'}
+          application = release.get('application')
+          if application not in allowed:
+              fail('produto de producao nao autorizado')
+          directory = 'gestao-escolar' if application == 'apae-gestao-escolar' else application
+          path = Path('kubernetes') / directory / 'overlays/prod/kustomization.yaml'
+          if not path.is_file():
+              fail('overlay prod ausente na main; aguarde integracao dos manifests e da issue #92')
+          overlay_dir = path.parent
+          if application == 'site-comemorativo':
+              targets = {release['image']: release['digest']}
+          else:
+              targets = {release['images'][part]['image']: release['images'][part]['digest'] for part in ('backend', 'frontend')}
+          def render():
+              result = subprocess.run(['kustomize', 'build', str(overlay_dir)], text=True, capture_output=True)
+              if result.returncode:
+                  fail('kustomize build falhou: ' + result.stderr[:500])
+              images = []
+              def visit(node):
+                  if isinstance(node, dict):
+                      for key, value in node.items():
+                          if key in ('containers', 'initContainers', 'ephemeralContainers'):
+                              if not isinstance(value, list):
+                                  fail('lista de containers invalida')
+                              for item in value:
+                                  if isinstance(item, dict) and isinstance(item.get('image'), str):
+                                      images.append(item['image'])
+                          else:
+                              visit(value)
+                  elif isinstance(node, list):
+                      for item in node:
+                          visit(item)
+              for doc in yaml.safe_load_all(result.stdout):
+                  visit(doc)
+              return images
+          def name(ref):
+              return ref.split('@', 1)[0].split(':', 1)[0]
+
+          before = render()
+          for image in targets:
+              if not any(name(ref) == image for ref in before):
+                  fail('imagem nao encontrada no overlay prod: ' + image)
+          original = yaml.safe_load(path.read_text())
+          if not isinstance(original, dict) or not isinstance(original.get('images'), list):
+              fail('kustomization prod nao possui campo images valido')
+          data = yaml.safe_load(path.read_text())
+          for image, digest in targets.items():
+              matches = [e for e in data['images'] if isinstance(e, dict) and e.get('newName', e.get('name')) == image]
+              if len(matches) != 1:
+                  fail('regra de imagem ausente ou ambigua em prod: ' + image)
+              entry = matches[0]
+              entry.pop('newTag', None)
+              entry['digest'] = digest
+          if data != original:
+              path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+          after = render()
+          for image, digest in targets.items():
+              expected = image + '@' + digest
+              if expected not in after or any(name(ref) == image and ref != expected for ref in after):
+                  fail('digest aprovado nao corresponde ao manifesto renderizado: ' + image)
+          if sorted(ref for ref in before if name(ref) not in targets) != sorted(ref for ref in after if name(ref) not in targets):
+              fail('a promocao modificaria imagens nao relacionadas')
+          print('Manifesto de producao alterado somente com os digests aprovados.')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'overlay_path={path.as_posix()}\n')
+          PYTHON
+
+      - name: Open production promotion PR
+        id: promotion-pr
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          path: production
+          base: main
+          branch: promotion/${{ inputs.application }}/${{ steps.approval.outputs.commit }}
+          add-paths: ${{ steps.manifests.outputs.overlay_path }}
+          commit-message: 'chore(release): promote approved ${{ inputs.application }} ${{ steps.approval.outputs.commit }}'
+          title: 'chore(release): promote ${{ inputs.application }} ${{ steps.approval.outputs.commit }} to prod'
+          body: |
+            Promocao explicita de uma versao ja aprovada em homologacao.
+
+            - Produto: `${{ inputs.application }}`
+            - Commit da release: `${{ steps.approval.outputs.commit }}`
+            - Registro aprovado em `main`: `releases/approved/${{ inputs.application }}/${{ steps.approval.outputs.commit }}.json`
+            - Imagens: digests imutaveis registrados na aprovacao (uma imagem para o Site Comemorativo; backend + frontend para os demais produtos)
+            - Solicitante: `${{ github.actor }}`
+            - Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - Motivo: ${{ inputs.promotion_reason }}
+
+            **Sem build ou publicacao no GHCR.** Revisao humana obrigatoria antes do merge.
+
+      - name: Summarize promotion request
+        shell: bash
+        env:
+          PR_URL: ${{ steps.promotion-pr.outputs.pull-request-url }}
+          RELEASE_COMMIT: ${{ steps.approval.outputs.commit }}
+        run: |
+          set -euo pipefail
+          echo "Versao aprovada: $RELEASE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$PR_URL" ]]; then
+            echo "PR de promocao: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Nenhum PR criado (sem alteracoes ou ja existe PR)." >> "$GITHUB_STEP_SUMMARY"
+          fi

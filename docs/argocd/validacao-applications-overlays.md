@@ -162,3 +162,11 @@ sudo k3s kubectl get deployments,pods -n apae-dev
 A validação temporária registrada neste documento encerra o teste pré-merge
 da revisão. O acompanhamento definitivo pela `main` permanece dependente dessa
 integração e da verificação descrita acima.
+
+## Evolução na issue #106
+
+A implementação da #106 acrescenta o ambiente `prod` e remove o auto-sync
+da raiz e das filhas para cumprir a revisão e a sincronização manuais.
+As evidências acima correspondem exclusivamente à revisão #120 mencionada,
+com quatro Applications e auto-sync nas filhas; não validam essa nova revisão.
+O procedimento atual está em [Releases GitOps](../workflows/releases-gitops.md).
