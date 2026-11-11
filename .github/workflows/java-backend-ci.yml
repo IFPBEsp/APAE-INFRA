@@ -182,6 +182,14 @@ jobs:
             safe_dir="root"
           fi
 
+          java_slug="${JAVA_VERSION//[^A-Za-z0-9._-]/-}"
+          if [[ -z "$java_slug" ]]; then
+            java_slug="unknown"
+          fi
+
+          dir_hash="$(printf '%s' "$WORKING_DIRECTORY" | sha256sum | cut -c1-8)"
+          artifact_name="jacoco-coverage-${safe_dir}-jdk${java_slug}-${dir_hash}"
+
           artifact_path="$WORKING_DIRECTORY/$COVERAGE_REPORT_PATH"
           if [[ "$report_dir" != "." ]]; then
             artifact_path="$WORKING_DIRECTORY/$report_dir"
@@ -191,7 +199,7 @@ jobs:
             echo "found=true"
             echo "report-path=$GITHUB_WORKSPACE/$WORKING_DIRECTORY/$COVERAGE_REPORT_PATH"
             echo "artifact-path=$artifact_path"
-            echo "artifact-name=jacoco-coverage-${safe_dir}-jdk${JAVA_VERSION}"
+            echo "artifact-name=$artifact_name"
           } >> "$GITHUB_OUTPUT"
 
       - name: Publish JaCoCo coverage
