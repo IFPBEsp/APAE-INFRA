@@ -3,8 +3,13 @@
 ## O que é
 
 O workflow de scanning de segredos usa o [Gitleaks](https://github.com/gitleaks/gitleaks)
-para detectar automaticamente credenciais, tokens e chaves expostas em PRs,
-falhando o CI antes que o segredo entre no histórico do git.
+para analisar o diff do PR, detectar automaticamente credenciais, tokens e chaves
+expostas e falhar o check do job antes que o segredo entre no histórico do git.
+
+Para que o bloqueio de merge seja efetivo, configure o job
+`call-gitleaks / gitleaks` como **Required** (check obrigatório) nas regras de
+proteção de branch do repositório (**Settings > Branches > Branch protection
+rules**). Sem essa configuração, o check falha, mas o merge não é impedido.
 
 ## Como ativar no seu repositório
 
@@ -30,26 +35,28 @@ para o workflow reutilizável. Configure a secret `GITLEAKS_LICENSE` em
 **Settings > Secrets and variables > Actions** da organização ou do
 repositório (a licença é necessária apenas para uso em organizações).
 
-## Exceções (allowlist)
+## PRs de Forks
 
-Para ignorar paths ou padrões específicos, crie um arquivo `gitleaks.toml`
-na raiz do repositório com uma allowlist:
+PRs originados de forks não possuem acesso às secrets do repositório
+(`GITLEAKS_LICENSE`), fazendo o Gitleaks falhar na inicialização.
 
-```toml
-[extend]
-  useDefault = true
+Por isso, as contribuições devem ser feitas via branches criadas dentro do
+próprio repositório. Caso receba um PR de fork, oriente o autor a recriar a
+branch internamente e abrir um novo PR a partir dela.
 
-[allowlist]
-  paths = [
-    '''^\.env\.example$''',
-  ]
+## Falsos positivos (`.gitleaksignore`)
+
+Para tratar falsos positivos, utilize o arquivo `.gitleaksignore` na raiz do
+projeto, listando o fingerprint específico gerado pelo Gitleaks para cada
+finding:
+
+```bash
+echo <fingerprint> >> .gitleaksignore
 ```
 
-O bloco `[extend]` com `useDefault = true` preserva as regras padrão do
-Gitleaks, garantindo que a allowlist apenas complemente a detecção.
-
-> Atenção: o `.gitleaksignore` ignora findings por fingerprint, não por path.
-> Para excluir arquivos ou padrões, use sempre o `gitleaks.toml`.
+> Atenção: arquivos de exemplo (`.env.example`) devem continuar sendo varridos
+> pelo scanner. Não crie allowlists de path que ignorem o caminho inteiro, pois
+> isso cria uma brecha para segredos reais colados dentro desses arquivos.
 
 ## O que fazer se um segredo real já foi commitado
 
