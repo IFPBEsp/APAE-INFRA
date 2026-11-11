@@ -20,7 +20,8 @@ O desenvolvedor abre um PR a partir de uma feature branch em um dos quatro repos
 
 ### 2. Pipeline de CI (GitHub Actions)
 
-Cada repositório de aplicação passa por um pipeline de CI em 3 estágios, conforme o código avança até a branch principal:
+A #106 padronizará a publicação rastreável a partir da `main`. O fluxo previsto
+para cada repositório de aplicação passa por um pipeline de CI em 3 estágios, conforme o código avança até a branch principal:
 
 1. **PR para a `dev`** — dispara a pipeline de validação da feature: lint, testes, build e validação do Dockerfile.
 2. **Merge na `dev`** — abre um novo PR para a `main`, que dispara a pipeline de validação de integração: testes completos e testes de integração.
@@ -54,6 +55,27 @@ merge, confirmar se não houve outra atualização da `main` do produto desde a
 abertura do PR. A ativação depende dos overlays, das credenciais e da
 publicação dos workflows descritos em
 [Publicação a partir da main](workflows/publicacao-main-produtos.md).
+Veja também [inputs, credenciais e exemplos de integração](workflows/update-image-overlay.md).
+
+Os caminhos confirmados no PR #120 são:
+
+| Produto | Overlay |
+| --- | --- |
+| APAE | `kubernetes/apae-geral/overlays/dev` |
+| APAE-atendimento | `kubernetes/apae-atendimento/overlays/dev` |
+| Site Comemorativo | `kubernetes/site-comemorativo/overlays/dev` |
+| Gestão Escolar | `kubernetes/gestao-escolar/overlays/dev` |
+
+Os overlays precisam existir em `main`. O receptor aceita apenas `dev`, rejeita
+`hml` e `prod` e não recebe caminhos arbitrários no payload. A promoção de
+`dev` para `prod` pertence à #106 e preservará a combinação de digests aprovada,
+sem novo build.
+
+A #82 permanece aberta até o teste completo com imagens reais.
+
+A #106 configura sync manual na raiz e nas filhas. A automação de dispatch
+executa na branch padrão da INFRA, atualmente `dev`; seus PRs alteram os
+registros e overlays na `main`.
 
 ### 5. ArgoCD detecta a mudança
 

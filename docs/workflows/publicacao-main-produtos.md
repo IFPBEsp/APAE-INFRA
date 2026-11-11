@@ -72,9 +72,11 @@ merge automático nem sincronizam o cluster.
   secrets `IMAGE_UPDATER_APP_ID` e `IMAGE_UPDATER_APP_PRIVATE_KEY` para o App
   que abre PRs, com `contents: write` e `pull_requests: write` somente no
   APAE-INFRA. A chave desse segundo App permanece exclusivamente na INFRA.
-- Permitir a branch `main` nos environments usados pela automação. Os jobs
-  receptores, de aprovação, promoção e rollback recusam execução fora da
-  `main` da INFRA. A política antiga que permitia apenas `dev` deve ser migrada.
+- Permitir a branch padrão da INFRA, atualmente `dev`, nos environments
+  `gitops-image-updater`, `release-approval` e `production-promotion`.
+  O `repository_dispatch` executa pela branch padrão. Nos produtos, permitir
+  `main` no environment `gitops-dispatch`. Os registros e manifests da INFRA
+  continuam na `main`, independentemente da revisão da automação.
 - Garantir leitura das imagens no GHCR. O receptor pode usar
   `GHCR_READ_USERNAME` e `GHCR_READ_TOKEN` quando o token da infraestrutura não
   tiver acesso aos pacotes. A consulta da referência `main` também exige

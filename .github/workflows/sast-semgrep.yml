@@ -1,0 +1,316 @@
+name: Reusable Semgrep SAST
+
+on:
+  workflow_call:
+    inputs:
+      rulesets:
+        description: "Rulesets do Semgrep, um por linha (p/default, p/java, etc)"
+        required: false
+        type: string
+        default: "p/default"
+
+      extra-rules-file:
+        description: "Arquivo de regras proprias do repositorio caller; relativo ao workspace"
+        required: false
+        type: string
+        default: ""
+
+      diff-aware:
+        description: "Analisa apenas as mudancas do PR em relacao a base branch"
+        required: false
+        type: boolean
+        default: true
+
+      fail-severity:
+        description: "Severidade minima que bloqueia o PR (ERROR, WARNING, INFO)"
+        required: false
+        type: string
+        default: "ERROR"
+
+      semgrep-version:
+        description: "Versao fixada do Semgrep a ser instalada"
+        required: false
+        type: string
+        default: "1.183.0"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  sast:
+    name: Semgrep SAST Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout application repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout shared Semgrep rules
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .infra-semgrep
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        shell: bash
+        env:
+          SEMGREP_VERSION: ${{ inputs.semgrep-version }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          python3 -m pip install "semgrep==$SEMGREP_VERSION"
+          semgrep --version
+
+      - name: Build Semgrep arguments
+        id: args
+        shell: bash
+        env:
+          RULESETS: ${{ inputs.rulesets }}
+          EXTRA_RULES_FILE: ${{ inputs.extra-rules-file }}
+          DIFF_AWARE: ${{ inputs.diff-aware }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import sys
+          import json
+          from pathlib import Path
+
+          args = []
+
+          # Shared rules from APAE-INFRA
+          shared_rules = Path(".infra-semgrep/.semgrep/rules.yml")
+          if shared_rules.is_file():
+              args.extend(["--config", str(shared_rules)])
+          else:
+              print(f"::warning::Regras compartilhadas nao encontradas em {shared_rules}")
+
+          # Inputs rulesets
+          raw_rulesets = os.environ.get("RULESETS", "").splitlines()
+          for r in raw_rulesets:
+              r = r.strip()
+              if r:
+                  args.extend(["--config", r])
+
+          # Extra rules file
+          extra_file = os.environ.get("EXTRA_RULES_FILE", "").strip()
+          if extra_file:
+              p = Path(extra_file)
+              if p.is_absolute() or ".." in p.parts:
+                  print(f"::error::Caminho extra-rules-file invalido ou inseguro: {extra_file}")
+                  sys.exit(1)
+              if not p.is_file():
+                  print(f"::error::Arquivo extra-rules-file nao encontrado: {extra_file}")
+                  sys.exit(1)
+              args.extend(["--config", str(p)])
+
+          # Diff-aware configuration
+          diff_aware = os.environ.get("DIFF_AWARE", "true").lower() == "true"
+          base_ref = os.environ.get("BASE_REF", "").strip()
+
+          if diff_aware and base_ref:
+              # Fetch target branch if needed
+              fetch_res = subprocess.run(
+                  ["git", "fetch", "origin", base_ref],
+                  capture_output=True,
+                  text=True
+              )
+              # Calculate merge-base
+              mb_res = subprocess.run(
+                  ["git", "merge-base", f"origin/{base_ref}", "HEAD"],
+                  capture_output=True,
+                  text=True
+              )
+              if mb_res.returncode == 0 and mb_res.stdout.strip():
+                  baseline = mb_res.stdout.strip()
+                  print(f"Diff-aware ativado. Baseline commit: {baseline} (origin/{base_ref})")
+                  args.extend(["--baseline-commit", baseline])
+              else:
+                  print(f"::warning::Nao foi possivel determinar merge-base com origin/{base_ref}. Executando scan completo.")
+          else:
+              print("Diff-aware desativado ou executando fora do contexto de Pull Request. Executando scan completo.")
+
+          # Output CLI args as JSON list
+          cli_args_json = json.dumps(args)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"cli_args={cli_args_json}\n")
+          PY
+
+      - name: Run Semgrep SAST scan
+        id: run_scan
+        shell: bash
+        env:
+          CLI_ARGS: ${{ steps.args.outputs.cli_args }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import os
+          import json
+          import subprocess
+          import sys
+
+          cli_args_raw = os.environ.get("CLI_ARGS", "[]")
+          try:
+              extra_args = json.loads(cli_args_raw)
+          except Exception as exc:
+              print(f"::error::Falha ao decodificar argumentos do Semgrep: {exc}")
+              sys.exit(1)
+
+          cmd = ["semgrep", "scan"] + extra_args + ["--sarif", "--output", "semgrep.sarif"]
+          print("Executando Semgrep com argumentos:")
+          print(" ".join(cmd))
+
+          result = subprocess.run(cmd)
+
+          # Exit code 0: execucao concluida sem findings ou findings sem flag --error
+          # Exit code 1: findings encontrados
+          # Exit codes >= 2 (ex: 7 para erro de configuracao): erros operacionais/execucao
+          if result.returncode not in (0, 1):
+              print(f"::error::Semgrep finalizou com erro de execucao (codigo de saida {result.returncode}).")
+              sys.exit(result.returncode)
+
+          if not os.path.isfile("semgrep.sarif") or os.path.getsize("semgrep.sarif") == 0:
+              print("::error::Arquivo semgrep.sarif nao foi gerado ou esta vazio.")
+              sys.exit(1)
+          PY
+
+      - name: Enforce failure threshold
+        shell: bash
+        env:
+          FAIL_SEVERITY: ${{ inputs.fail-severity }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          fail_sev = os.environ.get("FAIL_SEVERITY", "ERROR").upper()
+          valid_sevs = {"ERROR": 3, "WARNING": 2, "INFO": 1}
+
+          if fail_sev not in valid_sevs:
+              print(f"::error::fail-severity invalido: {fail_sev}. Use ERROR, WARNING ou INFO.")
+              sys.exit(1)
+
+          min_level = valid_sevs[fail_sev]
+
+          sarif_path = "semgrep.sarif"
+          if not os.path.isfile(sarif_path):
+              print("::error::semgrep.sarif ausente para avaliacao de findings.")
+              sys.exit(1)
+
+          with open(sarif_path, "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          blocking_findings = []
+          total_findings = 0
+          suppressed_findings = 0
+
+          # Map SARIF levels to rank
+          # SARIF levels: 'error', 'warning', 'note', 'none'
+          level_map = {
+              "error": 3,
+              "warning": 2,
+              "note": 1,
+              "none": 0
+          }
+
+          for run in data.get("runs", []):
+              rules = run.get("tool", {}).get("driver", {}).get("rules", [])
+              rules_by_id = {}
+              for rule in rules:
+                  r_id = rule.get("id")
+                  if r_id:
+                      rules_by_id[r_id] = rule
+
+              for result in run.get("results", []):
+                  total_findings += 1
+
+                  # Verifica supressoes efetivas (ex: // nosemgrep ou # nosemgrep)
+                  suppressions = result.get("suppressions", [])
+                  is_suppressed = any(
+                      isinstance(s, dict) and s.get("status", "accepted") != "rejected"
+                      for s in suppressions
+                  )
+                  if is_suppressed:
+                      suppressed_findings += 1
+                      continue
+
+                  # Resolve a severidade conforme especificacao SARIF e Semgrep:
+                  # 1. result.level se definido no resultado
+                  # 2. tool.driver.rules[].defaultConfiguration.level herdado da regra
+                  # 3. fallback para 'warning'
+                  raw_level = result.get("level")
+                  if not raw_level:
+                      rule_match = None
+                      rule_idx = result.get("ruleIndex")
+                      if isinstance(rule_idx, int) and 0 <= rule_idx < len(rules):
+                          rule_match = rules[rule_idx]
+                      elif result.get("ruleId") in rules_by_id:
+                          rule_match = rules_by_id[result["ruleId"]]
+
+                      if rule_match:
+                          raw_level = rule_match.get("defaultConfiguration", {}).get("level")
+
+                  if not raw_level:
+                      raw_level = "warning"
+
+                  raw_level_str = str(raw_level).lower()
+                  finding_level = level_map.get(raw_level_str, 2)
+
+                  rule_id = result.get("ruleId", "unknown-rule")
+                  msg = result.get("message", {}).get("text", "")
+                  locs = result.get("locations", [])
+                  loc_str = "localizacao desconhecida"
+                  if locs:
+                      phys = locs[0].get("physicalLocation", {})
+                      uri = phys.get("artifactLocation", {}).get("uri", "")
+                      line = phys.get("region", {}).get("startLine", 1)
+                      loc_str = f"{uri}:{line}"
+
+                  if finding_level >= min_level:
+                      blocking_findings.append({
+                          "rule": rule_id,
+                          "level": raw_level_str.upper(),
+                          "location": loc_str,
+                          "message": msg
+                      })
+
+          print(f"Total de findings reportados pelo Semgrep: {total_findings}")
+          if suppressed_findings:
+              print(f"Findings suprimidos (desconsiderados no bloqueio): {suppressed_findings}")
+          print(f"Criterio de bloqueio (fail-severity): {fail_sev}")
+
+          if blocking_findings:
+              print(f"\n::error::{len(blocking_findings)} finding(s) de severidade >= {fail_sev} bloquearam o PR:\n")
+              for b in blocking_findings:
+                  print(f"[{b['level']}] {b['rule']} em {b['location']}")
+                  print(f"  Mensagem: {b['message']}\n")
+              sys.exit(1)
+
+          print("Nenhum finding bloqueante encontrado. Verificacao de seguranca concluida com sucesso!")
+          PY
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+        if: always() && hashFiles('semgrep.sarif') != ''
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep-sast

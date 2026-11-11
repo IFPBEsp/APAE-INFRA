@@ -1,0 +1,30 @@
+---
+- name: Verificar conectividade e ambiente da VPS
+  hosts: production
+  gather_facts: true
+  become: false
+
+  tasks:
+    - name: Testar conectividade Ansible
+      ansible.builtin.ping:
+
+    - name: Exibir informações do host
+      ansible.builtin.debug:
+        msg:
+          - "Sistema: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+          - "Arquitetura: {{ ansible_facts['architecture'] }}"
+          - "CPU: {{ ansible_facts['processor_vcpus'] }}"
+          - "Memória: {{ ansible_facts['memtotal_mb'] }} MB"
+
+    - name: Verificar sudo sem senha
+      ansible.builtin.command: whoami
+      become: true
+      changed_when: false
+      register: sudo_check
+
+    - name: Confirmar usuário administrativo
+      ansible.builtin.assert:
+        that:
+          - sudo_check.stdout == "root"
+        fail_msg: "O usuário Ansible não conseguiu elevar privilégios."
+        success_msg: "Elevação de privilégios funcionando."

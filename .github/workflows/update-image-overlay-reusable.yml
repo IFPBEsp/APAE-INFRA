@@ -69,7 +69,7 @@ on:
 jobs:
   update-image:
     name: Update Kubernetes image
-    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == 'refs/heads/main' && inputs.release-json == ''
+    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && inputs.release-json == ''
     runs-on: ubuntu-24.04
     environment: gitops-image-updater
 
@@ -534,7 +534,7 @@ jobs:
 
   update-release:
     name: Update complete release in homologation
-    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == 'refs/heads/main' && inputs.release-json != ''
+    if: github.repository == 'IFPBEsp/APAE-INFRA' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && inputs.release-json != ''
     runs-on: ubuntu-24.04
     environment: gitops-image-updater
     timeout-minutes: 20

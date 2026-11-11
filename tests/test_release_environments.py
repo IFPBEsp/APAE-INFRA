@@ -26,6 +26,27 @@ PRODUCTS = {
 }
 
 
+class WorkflowRoutingTest(unittest.TestCase):
+    def test_dispatch_and_release_jobs_execute_on_default_branch_but_write_to_main(self):
+        workflows = ROOT / ".github/workflows"
+        paths = ["update-image-overlay-reusable.yml", "approve-release.yml",
+                 "promote-release.yml", "rollback-release.yml"]
+        for path in paths:
+            jobs = yaml.safe_load((workflows / path).read_text())["jobs"]
+            for name, job in jobs.items():
+                with self.subTest(workflow=path, job=name):
+                    conditions = job["if"].split(" && ")
+                    self.assertEqual(conditions[:2], [
+                        "github.repository == 'IFPBEsp/APAE-INFRA'",
+                        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)",
+                    ])
+                    selectors = {"update-image": ["inputs.release-json == ''"],
+                                 "update-release": ["inputs.release-json != ''"]}
+                    self.assertEqual(conditions[2:], selectors.get(name, []))
+                    bases = [s["with"]["base"] for s in job["steps"] if "base" in s.get("with", {})]
+                    self.assertEqual(bases, ["main"])
+
+
 class RealEnvironmentTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

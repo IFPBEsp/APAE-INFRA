@@ -59,16 +59,17 @@ obtidos nem copiados.
 
 | Local | Estado observado | Ajuste necessario |
 | --- | --- | --- |
-| INFRA: `gitops-image-updater` | Permite apenas `dev` | Migrar a politica para `main` |
-| INFRA: `release-approval` | Permite apenas `dev`; possui revisor | Migrar a politica para `main`, preservando revisao |
-| INFRA: `production-promotion` | Permite apenas `dev`; possui revisor | Migrar a politica para `main`, preservando revisao |
+| INFRA: `gitops-image-updater` | Permite apenas `dev` | Manter na branch padrao `dev` |
+| INFRA: `release-approval` | Permite apenas `dev`; possui revisor | Manter na branch padrao `dev`, preservando revisao |
+| INFRA: `production-promotion` | Permite apenas `dev`; possui revisor | Manter na branch padrao `dev`, preservando revisao |
 | Geral: `gitops-dispatch` | `main` permitida; App ID e chave presentes | Conferir a instalacao e as permissoes do App na execucao real |
 | Atendimento: `gitops-dispatch` | App ID e chave presentes; branches irrestritas | Restringir o environment a `main` |
 | Gestao Escolar: `gitops-dispatch` | Environment ausente | Criar para `main` e configurar App ID e chave do dispatcher |
 | Site: `gitops-dispatch` | App ID e chave presentes; branches irrestritas | Restringir o environment a `main` |
 
-As restricoes de branch dos environments devem acompanhar a ativacao dos
-workflows na `main`. Os jobs locais de recebimento, aprovacao, promocao e
+O receptor executa na branch padrao da INFRA, atualmente `dev`, e abre PRs
+para manifests e registros na `main`. As restricoes dos environments da INFRA
+devem permitir a branch padrao da automacao. Os jobs locais de recebimento, aprovacao, promocao e
 rollback tambem verificam a branch da INFRA antes de utilizar os environments.
 
 ## Sequencia para a validacao real
@@ -89,3 +90,11 @@ rollback tambem verificam a branch da INFRA antes de utilizar os environments.
 
 Seguir [Releases GitOps](releases-gitops.md) para os inputs dos workflows e as
 evidencias exigidas antes de encerrar a issue.
+
+## Atualizacao apos o push
+
+O commit `47e38b7` foi publicado no #133. A atualizacao com a `dev` exigiu
+resolver conflitos nas Applications, namespaces, lint e documentacao.
+A revisao confirmou que `repository_dispatch` executa na branch padrao `dev`.
+A condicao anterior, restrita a `main`, foi corrigida para acompanhar a branch
+padrao. Os manifests e registros continuam sendo lidos e atualizados na `main`.

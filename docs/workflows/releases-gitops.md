@@ -46,11 +46,12 @@ O App de notificação tem `contents: write` no APAE-INFRA, necessário ao dispa
 O App de PRs tem `contents: write` e `pull_requests: write` somente na INFRA.
 Não compartilhar a chave do App de PRs com os produtos.
 
-Restringir os quatro environments à branch `main` do respectivo repositório.
+Restringir `gitops-dispatch` dos produtos à `main`. Na INFRA, restringir os
+três environments à branch padrão do repositório, atualmente `dev`.
 `release-approval` e `production-promotion` exigem um revisor humano, com
 autoaprovação pelo solicitante desabilitada. As branches protegidas exigem
 aprovação de PR e resolução de discussões. Os workflows também restringem a
-execução à `main` da INFRA antes do uso das credenciais dos environments.
+execução à branch padrão da INFRA antes do uso das credenciais dos environments.
 
 A consulta de imagens privadas pode usar `GHCR_READ_USERNAME` e
 `GHCR_READ_TOKEN` no receptor. Essas credenciais não autorizam abertura de PRs.
@@ -123,7 +124,7 @@ e validar as funcionalidades, a saúde dos workloads e os digests realmente
 executados. Anexar a evidência a uma issue, PR ou execução do GitHub sob IFPBEsp.
 Um overlay coincidente no Git comprova intenção; não comprova saúde do cluster.
 
-Executar o workflow **Approve homologated release** em `main`, informando
+Executar o workflow **Approve homologated release** na branch padrão da INFRA (`dev`), informando
 `application`, `candidate_commit` completo, `evidence_url` e `approval_reason`.
 O environment exige revisão antes do job. O workflow compara o candidato com
 o overlay e abre outro PR com `releases/approved/<produto>/<commit>.json`.
@@ -135,7 +136,7 @@ da candidata anterior é recusada: homologar a versão selecionada novamente.
 
 ## Promoção, bootstrap de produção e rollback
 
-Executar **Promote approved release to production** em `main`, com o produto,
+Executar **Promote approved release to production** na branch padrão da INFRA (`dev`), com o produto,
 commit aprovado e motivo. O workflow lê o registro aprovado já integrado,
 valida seu hash e abre um PR alterando exclusivamente as imagens de
 `overlays/prod`. O corpo referencia o registro aprovado. Não executa build,
@@ -150,7 +151,7 @@ rotas, TLS e a primeira promoção. O `management-app` permanece desativado e
 fora da combinação frontend/backend, pois não possui imagem publicada.
 
 Para rollback, executar **Roll back production to previously deployed release**
-em `main`, informando um commit aprovado anteriormente, produto e motivo do
+na branch padrão da INFRA (`dev`), informando um commit aprovado anteriormente, produto e motivo do
 incidente. Os digests precisam aparecer juntos numa mesma revisão do histórico
 da `main` para aquele overlay de produção. Após revisão e merge do PR de
 rollback, sincronizar manualmente e confirmar os digests em execução.
