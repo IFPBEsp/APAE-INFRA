@@ -307,9 +307,9 @@ jobs:
           export PATH="$PWD/node_modules/.bin:$PATH"
 
           if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
-            pnpm exec next typegen || echo "::warning::Falha ao executar 'pnpm exec next typegen'; seguindo para o typecheck."
+            pnpm exec next typegen
           else
-            npx next typegen || echo "::warning::Falha ao executar 'npx next typegen'; seguindo para o typecheck."
+            npx next typegen
           fi
 
       - name: Typecheck
