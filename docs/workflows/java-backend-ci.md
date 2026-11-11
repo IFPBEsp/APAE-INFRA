@@ -157,23 +157,30 @@ Em monorepos, ajuste os caminhos para incluir o diretório do backend.
 
 O workflow publica o relatório de cobertura de duas formas:
 
-- artefato `jacoco-coverage-<diretório>-jdk<java>`, com o XML e o diretório do relatório;
+- artefato `jacoco-coverage-<diretório-slugificado>-jdk<java>-<hash>`, com o XML e o diretório do relatório;
 - tabela no resumo do workflow, com cobertura de instruções, ramos, linhas, complexidade, métodos e classes.
+
+O nome do artefato mantém o caminho legível, slugificado (por exemplo, `services/api` vira `services-api`) e com a versão do Java, e ainda recebe um sufixo de oito caracteres calculado a partir do `working-directory` completo. Como o `upload-artifact` v4 exige nomes distintos no mesmo run, o sufixo evita que dois backends cujos caminhos colidem após a slugificação, como `services/api` e `services-api`, disputem o mesmo artefato.
 
 O artefato é mantido por 14 dias.
 
-A verificação de `coverage-min` usa a cobertura de linhas do contador `LINE` do relatório JaCoCo.
+A verificação de `coverage-min` usa a cobertura de linhas do contador `LINE` do relatório JaCoCo e compara o valor exato, sem arredondamento prévio. Quando a cobertura reprova, o log informa o percentual com quatro casas decimais e a contagem de linhas cobertas e perdidas, para que diferenças pequenas, como `99.9950%` contra um mínimo de `100%`, fiquem evidentes.
 
 ## Relatório Surefire
 
 O workflow procura arquivos `**/target/surefire-reports/TEST-*.xml` dentro do `working-directory`.
 
+Todo comentário identifica a execução que o produziu, com o backend (`working-directory`), a versão do Java, o SHA do commit (`GITHUB_SHA`) e o link direto para a execução do GitHub Actions, montado com `CI_SERVER_URL` (ou `GITHUB_SERVER_URL`, quando a primeira não existe), `GITHUB_REPOSITORY` e `GITHUB_RUN_ID`.
+
 Quando há relatórios, ele publica no Pull Request um comentário com:
 
+- identificação da execução (backend, Java, commit e link da execução);
 - status geral dos testes;
 - total de testes, falhas, erros, testes ignorados e tempo;
 - tabela por suíte;
 - lista das falhas encontradas.
+
+Quando a compilação falha antes de gerar os XMLs do Surefire, nenhum relatório é produzido. Nesse caso o workflow atualiza o mesmo comentário com o aviso de que nenhum relatório Surefire foi gerado nesta execução e a build pode ter falhado antes de gerar os XMLs, acompanhado da mesma identificação: backend, versão do Java, commit e link da execução. Assim, o Pull Request não continua exibindo o resultado antigo do commit anterior. Esse aviso também é enviado ao `GITHUB_STEP_SUMMARY`.
 
 O comentário é atualizado nas execuções seguintes por meio de um marcador fixo, evitando comentários duplicados.
 
