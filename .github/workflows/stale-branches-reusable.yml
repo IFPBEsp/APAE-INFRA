@@ -25,91 +25,161 @@ jobs:
       pull-requests: read
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Remove stale branches
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DAYS_BEFORE_DELETE: ${{ inputs.days-before-delete }}
           PROTECTED: ${{ inputs.protected-branches }}
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
-          REPO="${{ github.repository }}"
-          DEFAULT_BRANCH=$(gh repo view "$REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')
-          CUTOFF_DATE=$(date -d "-${DAYS_BEFORE_DELETE} days" +%s)
+          set -euo pipefail
 
-          echo "## Relatório de branches obsoletas" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | Motivo | PR | SHA |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          REPO="$GITHUB_REPOSITORY"
+          FAILED=()
 
-          FAILED_BRANCHES=""
+          {
+            echo "## Relatório de branches obsoletas"
+            echo ""
+            echo "- Repositório: \`$REPO\`"
+            echo "- dry-run: \`$DRY_RUN\`"
+            echo "- days-before-delete: \`$DAYS_BEFORE_DELETE\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          for BRANCH in $(gh api "repos/$REPO/branches" --paginate --jq '.[].name'); do
-            # nunca remove a branch padrão
-            if [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
-              continue
-            fi
+          abort() {
+            echo "::error::$1"
+            echo "**Erro:** $1 Nenhuma branch foi avaliada ou removida." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
 
-            # nunca remove branches protegidas no GitHub
-            PROTECTED_ON_GH=$(gh api "repos/$REPO/branches/$BRANCH" --jq '.protected' 2>/dev/null)
-            if [ "$PROTECTED_ON_GH" = "true" ]; then
-              continue
-            fi
+          # Listagem validada ANTES do loop: se falhar, o job falha.
+          DEFAULT_BRANCH=$(gh repo view "$REPO" --json defaultBranchRef --jq '.defaultBranchRef.name') \
+            || abort "Não foi possível obter a branch padrão."
 
-            # nunca remove branches listadas em protected-branches
-            SKIP=false
-            IFS=',' read -ra PROTECTED_LIST <<< "$PROTECTED"
-            for P in "${PROTECTED_LIST[@]}"; do
-              P=$(echo "$P" | xargs)
-              if [[ "$BRANCH" == $P ]]; then
-                SKIP=true
-                break
+          BRANCH_LIST=$(gh api "repos/$REPO/branches?per_page=100" --paginate \
+            --jq '.[] | [.name, .protected, .commit.sha] | @tsv') \
+            || abort "Não foi possível listar as branches."
+
+          CUTOFF=$(date -d "-${DAYS_BEFORE_DELETE} days" +%s)
+
+          echo "| Branch | Motivo | PR | SHA | Resultado |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
+          add_row() {
+            echo "| \`$1\` | $2 | $3 | \`$4\` | $5 |" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          fail_branch() {
+            add_row "$1" "$2" "N/A" "$3" "falhou"
+            FAILED+=("$1")
+          }
+
+          is_protected_by_input() {
+            local branch="$1" pattern
+            local -a patterns
+            IFS=',' read -ra patterns <<< "$PROTECTED"
+            for pattern in "${patterns[@]}"; do
+              pattern=$(echo "$pattern" | xargs)
+              if [[ -n "$pattern" && "$branch" == $pattern ]]; then
+                return 0
               fi
             done
-            if [ "$SKIP" = "true" ]; then
+            return 1
+          }
+
+          # Conta PRs abertos que partem desta branch no próprio repositório
+          # (ignora branches homônimas de forks).
+          count_open_prs() {
+            gh pr list --repo "$REPO" --head "$1" --state open --limit 100 \
+              --json isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository | not)] | length'
+          }
+
+          while IFS=$'\t' read -r BRANCH PROTECTED_GH SHA; do
+            [ -z "$BRANCH" ] && continue
+            [ "$BRANCH" = "$DEFAULT_BRANCH" ] && continue
+            [ "$PROTECTED_GH" = "true" ] && continue
+            if is_protected_by_input "$BRANCH"; then continue; fi
+
+            # 1) PR aberto: preserva sempre.
+            if ! OPEN_PRS=$(count_open_prs "$BRANCH"); then
+              fail_branch "$BRANCH" "Falha ao consultar PRs abertos" "$SHA"
+              continue
+            fi
+            [ "$OPEN_PRS" -gt 0 ] && continue
+
+            # 2) Só depois avalia PRs mergeados/fechados.
+            if ! PRS_JSON=$(gh pr list --repo "$REPO" --head "$BRANCH" --state all --limit 100 \
+              --json state,url,isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository | not)]'); then
+              fail_branch "$BRANCH" "Falha ao consultar PRs da branch" "$SHA"
               continue
             fi
 
-            SHA=$(gh api "repos/$REPO/branches/$BRANCH" --jq '.commit.sha')
-            LAST_COMMIT_DATE=$(gh api "repos/$REPO/commits/$SHA" --jq '.commit.committer.date')
-            LAST_COMMIT_TS=$(date -d "$LAST_COMMIT_DATE" +%s)
+            if ! LAST_DATE=$(gh api "repos/$REPO/commits/$SHA" --jq '.commit.committer.date'); then
+              fail_branch "$BRANCH" "Falha ao consultar o último commit" "$SHA"
+              continue
+            fi
+            LAST_TS=$(date -d "$LAST_DATE" +%s)
 
-            # verifica PR associado
-            PR_STATE=$(gh pr list --repo "$REPO" --head "$BRANCH" --state all --json state,number,url \
-              --jq 'if length > 0 then .[0] else null end')
-
-            PR_NUMBER=$(echo "$PR_STATE" | jq -r '.number // empty')
-            PR_URL=$(echo "$PR_STATE" | jq -r '.url // empty')
-            STATE=$(echo "$PR_STATE" | jq -r '.state // "NO_PR"')
+            ANY_PR=$(jq 'length' <<< "$PRS_JSON")
+            MERGED_URL=$(jq -r '[.[] | select(.state=="MERGED")] | .[0].url // empty' <<< "$PRS_JSON")
+            CLOSED_URL=$(jq -r '[.[] | select(.state=="CLOSED")] | .[0].url // empty' <<< "$PRS_JSON")
 
             REASON=""
-
-            if [ "$STATE" = "MERGED" ]; then
+            PR_REF="N/A"
+            if [ -n "$MERGED_URL" ]; then
               REASON="PR mergeado"
-            elif [ "$STATE" = "CLOSED" ] && [ "$LAST_COMMIT_TS" -lt "$CUTOFF_DATE" ]; then
+              PR_REF="$MERGED_URL"
+            elif [ "$ANY_PR" -gt 0 ] && [ "$LAST_TS" -lt "$CUTOFF" ]; then
               REASON="PR fechado sem merge e sem commits há mais de ${DAYS_BEFORE_DELETE} dias"
-            elif [ "$STATE" = "NO_PR" ] && [ "$LAST_COMMIT_TS" -lt "$CUTOFF_DATE" ]; then
+              PR_REF="$CLOSED_URL"
+            elif [ "$ANY_PR" -eq 0 ] && [ "$LAST_TS" -lt "$CUTOFF" ]; then
               REASON="Sem PR e sem commits há mais de ${DAYS_BEFORE_DELETE} dias"
-            elif [ "$STATE" = "OPEN" ]; then
-              continue
             else
               continue
             fi
 
-            PR_REF="${PR_URL:-N/A}"
-
-            echo "| \`$BRANCH\` | $REASON | $PR_REF | \`$SHA\` |" >> $GITHUB_STEP_SUMMARY
-
-            if [ "$DRY_RUN" = "false" ]; then
-              if ! gh api --method DELETE "repos/$REPO/git/refs/heads/$BRANCH"; then
-                echo "::warning::Falha ao remover $BRANCH"
-                FAILED_BRANCHES="$FAILED_BRANCHES $BRANCH"
-              fi
+            if [ "$DRY_RUN" != "false" ]; then
+              add_row "$BRANCH" "$REASON" "$PR_REF" "$SHA" "seria removida"
+              continue
             fi
-          done
 
-          if [ -n "$FAILED_BRANCHES" ]; then
-            echo "## Branches que falharam na remoção" >> $GITHUB_STEP_SUMMARY
-            for B in $FAILED_BRANCHES; do
-              echo "- \`$B\`" >> $GITHUB_STEP_SUMMARY
-            done
+            # 3) Revalida SHA e PRs abertos imediatamente antes de excluir.
+            if ! CURRENT_SHA=$(gh api "repos/$REPO/branches/$BRANCH" --jq '.commit.sha') \
+              || ! OPEN_NOW=$(count_open_prs "$BRANCH"); then
+              fail_branch "$BRANCH" "Falha na revalidação antes da exclusão" "$SHA"
+              continue
+            fi
+
+            if [ "$CURRENT_SHA" != "$SHA" ] || [ "$OPEN_NOW" -gt 0 ]; then
+              add_row "$BRANCH" "$REASON" "$PR_REF" "$SHA" "preservada após revalidação"
+              continue
+            fi
+
+            # 4) Exclusão condicionada ao SHA: só apaga se a branch ainda
+            #    estiver exatamente em $SHA no remoto.
+            if git push --force-with-lease="refs/heads/$BRANCH:$SHA" origin ":refs/heads/$BRANCH"; then
+              add_row "$BRANCH" "$REASON" "$PR_REF" "$SHA" "removida"
+            else
+              add_row "$BRANCH" "$REASON" "$PR_REF" "$SHA" "falhou"
+              FAILED+=("$BRANCH")
+            fi
+          done <<< "$BRANCH_LIST"
+
+          if [ "${#FAILED[@]}" -gt 0 ]; then
+            {
+              echo ""
+              echo "## Branches com falha"
+              for B in "${FAILED[@]}"; do
+                echo "- \`$B\`"
+              done
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
