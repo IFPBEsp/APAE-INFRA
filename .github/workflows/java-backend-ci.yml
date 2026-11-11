@@ -532,6 +532,33 @@ jobs:
               return;
             }
 
+            const runSha = context.payload?.pull_request?.head?.sha || "";
+
+            if (!runSha) {
+              core.warning(
+                "Não foi possível identificar o SHA de origem do run; o comentário será publicado sem a verificação de HEAD."
+              );
+            } else {
+              try {
+                const { data: pull } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: issueNumber,
+                });
+
+                if (pull.head.sha !== runSha) {
+                  core.info(
+                    `Run antigo ignorado: o commit ${runSha} não é mais o HEAD do PR (${pull.head.sha}); o comentário não será atualizado.`
+                  );
+                  return;
+                }
+              } catch (error) {
+                core.warning(
+                  `Não foi possível verificar o HEAD atual do PR: ${error.message}`
+                );
+              }
+            }
+
             try {
               const comments = await github.paginate(
                 github.rest.issues.listComments,
