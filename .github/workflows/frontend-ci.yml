@@ -38,6 +38,12 @@ on:
         type: boolean
         default: false
 
+      run-build:
+        description: "Executa a etapa de build"
+        required: false
+        type: boolean
+        default: true
+
       build-env:
         description: "Variáveis NEXT_PUBLIC_* no formato CHAVE=VALOR, uma por linha"
         required: false
@@ -62,7 +68,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Detect package manager and validate directory
+      - name: Prepare workspace and detect package manager
         id: prepare
         shell: bash
         env:
@@ -110,6 +116,15 @@ jobs:
                   f"::error::package.json não encontrado em: {raw_directory}"
               )
 
+          def find_lockfile(directory):
+              for name, detected in (
+                  ("pnpm-lock.yaml", "pnpm"),
+                  ("package-lock.json", "npm"),
+              ):
+                  if (directory / name).is_file():
+                      return name, detected
+              return None, None
+
           requested = os.environ["PACKAGE_MANAGER"].strip().lower()
 
           if requested not in {"detect", "pnpm", "npm"}:
@@ -117,61 +132,131 @@ jobs:
                   f"::error::package-manager inválido: {requested}"
               )
 
+          target_lockfile, target_manager = find_lockfile(target)
+          root_lockfile, root_manager = find_lockfile(workspace)
+          root_is_workspace = (workspace / "pnpm-workspace.yaml").is_file()
+
           if requested == "detect":
-              if (target / "pnpm-lock.yaml").is_file():
-                  manager = "pnpm"
-              elif (target / "package-lock.json").is_file():
-                  manager = "npm"
+              if target_lockfile:
+                  install_dir = target
+                  lockfile, manager = target_lockfile, target_manager
+              elif root_lockfile or root_is_workspace:
+                  install_dir = workspace
+                  lockfile, manager = root_lockfile, root_manager
+                  if not lockfile:
+                      raise SystemExit(
+                          "::error::pnpm-workspace.yaml encontrado na raiz, "
+                          "mas nenhum lockfile (pnpm-lock.yaml ou "
+                          "package-lock.json)."
+                      )
               else:
                   raise SystemExit(
-                      "::error::Nenhum lockfile encontrado "
-                      "(pnpm-lock.yaml ou package-lock.json)."
+                      "::error::Nenhum lockfile encontrado em "
+                      "working-directory nem na raiz (pnpm-lock.yaml ou "
+                      "package-lock.json)."
                   )
           else:
               manager = requested
+              lockfile = (
+                  "pnpm-lock.yaml"
+                  if manager == "pnpm"
+                  else "package-lock.json"
+              )
+              if (target / lockfile).is_file():
+                  install_dir = target
+              elif (workspace / lockfile).is_file() or (
+                  manager == "pnpm" and root_is_workspace
+              ):
+                  install_dir = workspace
+              else:
+                  raise SystemExit(
+                      f"::error::Lockfile obrigatório não encontrado: {lockfile}"
+                  )
 
-          lockfile = (
-              "pnpm-lock.yaml"
-              if manager == "pnpm"
-              else "package-lock.json"
-          )
+          lockfile_path = (install_dir / lockfile).relative_to(
+              workspace
+          ).as_posix()
 
-          if not (target / lockfile).is_file():
+          if not (install_dir / lockfile).is_file():
               raise SystemExit(
                   "::error::Lockfile obrigatório não encontrado: "
-                  f"{lockfile}"
+                  f"{lockfile_path}"
+              )
+
+          install_relative = install_dir.relative_to(workspace).as_posix()
+          install_package_json = install_dir / "package.json"
+
+          if not install_package_json.is_file():
+              raise SystemExit(
+                  "::error::package.json não encontrado no diretório de "
+                  f"instalação: {install_relative}"
               )
 
           package_json = json.loads(
-              (target / "package.json").read_text(encoding="utf-8")
+              install_package_json.read_text(encoding="utf-8")
           )
 
-          package_manager = package_json.get("packageManager", "")
-          match = (
-              re.match(r"^pnpm@([0-9][0-9A-Za-z._-]*)", package_manager)
-              if isinstance(package_manager, str)
-              else None
+          package_manager_field = package_json.get("packageManager", "")
+          has_pnpm_package_manager = (
+              isinstance(package_manager_field, str)
+              and package_manager_field.startswith("pnpm@")
           )
-          pnpm_version = match.group(1) if match else "10"
+          pnpm_version = "" if has_pnpm_package_manager else "10"
+
+          if has_pnpm_package_manager:
+              match = re.match(
+                  r"^pnpm@([0-9][0-9A-Za-z._-]*)", package_manager_field
+              )
+              declared_pnpm_version = match.group(1) if match else "?"
+          else:
+              declared_pnpm_version = "10 (padrão)"
+
+          app_package = json.loads(
+              (target / "package.json").read_text(encoding="utf-8")
+          )
+          dependency_blocks = (
+              "dependencies",
+              "devDependencies",
+              "peerDependencies",
+              "optionalDependencies",
+          )
+          is_next = any(
+              isinstance(app_package.get(block), dict)
+              and "next" in app_package[block]
+              for block in dependency_blocks
+          )
 
           directory = target.relative_to(workspace).as_posix()
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"package-manager={manager}\n")
               output.write(f"working-directory={directory}\n")
+              output.write(f"install-dir={install_relative}\n")
+              output.write(f"lockfile-path={lockfile_path}\n")
               output.write(f"pnpm-version={pnpm_version}\n")
-              output.write(f"lockfile={lockfile}\n")
+              output.write(f"is-next={'true' if is_next else 'false'}\n")
 
           print(f"Diretório: {directory}")
+          print(f"Diretório de instalação: {install_relative}")
           print(f"Gerenciador de pacotes: {manager}")
-          print(f"Lockfile: {lockfile}")
+          print(f"Lockfile: {lockfile_path}")
+          print(f"Versão do pnpm: {declared_pnpm_version}")
+          print(f"Next.js: {'sim' if is_next else 'não'}")
           PY
 
-      - name: Setup pnpm
-        if: steps.prepare.outputs.package-manager == 'pnpm'
+      - name: Setup pnpm from packageManager
+        if: steps.prepare.outputs.package-manager == 'pnpm' && steps.prepare.outputs.pnpm-version == ''
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          package_json_file: ${{ steps.prepare.outputs.install-dir }}/package.json
+          run_install: false
+
+      - name: Setup pnpm with default version
+        if: steps.prepare.outputs.package-manager == 'pnpm' && steps.prepare.outputs.pnpm-version != ''
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           version: ${{ steps.prepare.outputs.pnpm-version }}
+          package_json_file: ${{ steps.prepare.outputs.install-dir }}/package.json
           run_install: false
 
       - name: Setup Node.js
@@ -179,11 +264,11 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: ${{ steps.prepare.outputs.package-manager }}
-          cache-dependency-path: ${{ steps.prepare.outputs.working-directory }}/${{ steps.prepare.outputs.lockfile }}
+          cache-dependency-path: ${{ steps.prepare.outputs.lockfile-path }}
 
       - name: Install dependencies
         shell: bash
-        working-directory: ${{ steps.prepare.outputs.working-directory }}
+        working-directory: ${{ steps.prepare.outputs.install-dir }}
         env:
           PACKAGE_MANAGER: ${{ steps.prepare.outputs.package-manager }}
         run: |
@@ -208,6 +293,23 @@ jobs:
             pnpm run lint
           else
             npm run lint
+          fi
+
+      - name: Next.js typegen
+        if: inputs.typecheck-command != '' && steps.prepare.outputs.is-next == 'true'
+        shell: bash
+        working-directory: ${{ steps.prepare.outputs.working-directory }}
+        env:
+          PACKAGE_MANAGER: ${{ steps.prepare.outputs.package-manager }}
+        run: |
+          set -euo pipefail
+
+          export PATH="$PWD/node_modules/.bin:$PATH"
+
+          if [[ "$PACKAGE_MANAGER" == "pnpm" ]]; then
+            pnpm exec next typegen || echo "::warning::Falha ao executar 'pnpm exec next typegen'; seguindo para o typecheck."
+          else
+            npx next typegen || echo "::warning::Falha ao executar 'npx next typegen'; seguindo para o typecheck."
           fi
 
       - name: Typecheck
@@ -238,6 +340,7 @@ jobs:
           fi
 
       - name: Build
+        if: inputs.run-build == true
         shell: bash
         working-directory: ${{ steps.prepare.outputs.working-directory }}
         env:
