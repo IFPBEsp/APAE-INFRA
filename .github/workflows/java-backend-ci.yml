@@ -297,15 +297,19 @@ jobs:
 
           covered, missed = counters["LINE"]
           line_coverage = coverage_percentage(covered, missed)
-          display_coverage = format_percentage(covered, missed)
+          precise_coverage = line_coverage.quantize(Decimal("0.0001"))
 
           if line_coverage < minimum:
               print(
-                  f"::error::Cobertura de linhas {display_coverage}% abaixo do mínimo de {minimum}%."
+                  f"::error::Cobertura de linhas {precise_coverage}% abaixo do mínimo de {minimum}% "
+                  f"(linhas cobertas: {covered}, perdidas: {missed} de {covered + missed})."
               )
               raise SystemExit(1)
 
-          print(f"Cobertura de linhas {display_coverage}% atende ao mínimo de {minimum}%.")
+          print(
+              f"Cobertura de linhas {precise_coverage}% atende ao mínimo de {minimum}% "
+              f"({covered} cobertas, {missed} perdidas)."
+          )
           PY
 
       - name: Upload JaCoCo coverage report
