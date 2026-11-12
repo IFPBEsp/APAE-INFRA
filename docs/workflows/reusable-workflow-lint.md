@@ -41,7 +41,8 @@ Para atualizar, altere as variáveis `*_VERSION` e `*_SHA256` no workflow e vali
 2. **Aba Security**: o zizmor gera um relatório SARIF com **todas** as severidades, publicado em **Security > Code scanning** na categoria `zizmor`. Os findings abaixo do limite ficam visíveis ali sem bloquear o PR.
 3. **Bloqueio**:
    - qualquer erro do actionlint falha o job `actionlint`;
-   - qualquer finding do zizmor com severidade igual ou superior a `zizmor-min-severity` falha o job `zizmor`.
+   - qualquer finding do zizmor com severidade igual ou superior a `zizmor-min-severity` falha o job `zizmor`;
+   - qualquer workflow ou action com erro de sintaxe ou de schema falha o job `zizmor` (`--strict-collection`). Isso cobre as composite actions em `.github/actions/`, que o actionlint não valida. Nesse caso o SARIF não é publicado.
 
 > [!NOTE]
 > Em PRs abertos a partir de forks, o token não tem `security-events: write`. Nesse caso a publicação do SARIF é pulada, mas as anotações e o bloqueio continuam funcionando.

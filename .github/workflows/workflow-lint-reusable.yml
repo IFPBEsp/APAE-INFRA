@@ -136,16 +136,24 @@ jobs:
           [[ "$("$tools/zizmor" --version)" == "zizmor ${ZIZMOR_VERSION}" ]]
 
       - name: Generate SARIF report (all severities)
+        id: sarif
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          "$RUNNER_TEMP/workflow-lint-tools/zizmor" \
+          # --strict-collection reprova workflows e actions com erro de sintaxe ou
+          # de schema. Sem ela, o zizmor só emite um aviso e ignora o arquivo.
+          # --no-exit-codes mantém o código 1 para falhas da ferramenta.
+          if ! "$RUNNER_TEMP/workflow-lint-tools/zizmor" \
             --format=sarif \
             --no-exit-codes \
-            . > zizmor.sarif
+            --strict-collection \
+            . > zizmor.sarif; then
+            echo "::error title=zizmor::Falha ao coletar ou interpretar workflows/actions. Verifique a sintaxe YAML dos arquivos indicados no log."
+            exit 1
+          fi
 
       - name: Enforce severity threshold
         shell: bash
@@ -155,16 +163,27 @@ jobs:
         run: |
           set -euo pipefail
 
-          # --format=github gera anotações no PR. O código de saída é diferente
-          # de zero quando há findings com severidade >= MIN_SEVERITY.
+          # --format=github gera anotações no PR.
+          # Códigos de saída: 0 sem findings, 1 falha da ferramenta,
+          # 10-14 findings com severidade >= MIN_SEVERITY.
+          rc=0
           "$RUNNER_TEMP/workflow-lint-tools/zizmor" \
             --format=github \
             --min-severity "$MIN_SEVERITY" \
-            .
+            --strict-collection \
+            . || rc=$?
+
+          if [[ "$rc" -eq 1 ]]; then
+            echo "::error title=zizmor::Falha ao coletar ou interpretar workflows/actions. Verifique a sintaxe YAML dos arquivos indicados no log."
+          fi
+          exit "$rc"
 
       - name: Publish SARIF to GitHub Security
+        # Só publica um SARIF gerado com sucesso; em falha de coleta o arquivo
+        # fica vazio ou incompleto e o upload apenas geraria um segundo erro.
         if: >-
           always() &&
+          steps.sarif.outcome == 'success' &&
           hashFiles('zizmor.sarif') != '' &&
           (github.event_name != 'pull_request' ||
            github.event.pull_request.head.repo.full_name == github.repository)
