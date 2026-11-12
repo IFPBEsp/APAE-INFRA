@@ -5,6 +5,7 @@ namespace: apae-dev
 
 resources:
   - ../../base
+  - networkpolicy-site-comemorativo.yaml
 
 replicas:
   - name: site-comemorativo

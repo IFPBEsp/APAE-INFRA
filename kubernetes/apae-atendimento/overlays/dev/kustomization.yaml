@@ -5,6 +5,8 @@ namespace: apae-dev
 
 resources:
   - ../../base
+  - networkpolicy-atendimento.yaml
+  - networkpolicy-atendimento-app.yaml
 
 replicas:
   - name: atendimento

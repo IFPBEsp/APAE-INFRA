@@ -5,6 +5,8 @@ namespace: apae-dev
 
 resources:
   - ../../base
+  - networkpolicy-api.yaml
+  - networkpolicy-apae.yaml
 
 replicas:
   - name: apae

@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: atendimento-app-allow-from-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: atendimento-app
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nginx-gateway
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: ngf
+              app.kubernetes.io/managed-by: ngf-nginx
+              app.kubernetes.io/name: apae-gateway-nginx
+              gateway.networking.k8s.io/gateway-name: apae-gateway
+      ports:
+        - protocol: TCP
+          port: 3000

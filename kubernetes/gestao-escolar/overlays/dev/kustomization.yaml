@@ -5,6 +5,7 @@ namespace: apae-dev
 
 resources:
   - ../../base
+  - networkpolicy-gestao-escolar-frontend.yaml
 
 replicas:
   - name: gestao-escolar-backend
