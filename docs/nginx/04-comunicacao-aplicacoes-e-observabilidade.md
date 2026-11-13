@@ -51,7 +51,7 @@ Controles de rede e autenticação continuam necessários: a ausência de `HTTPR
 
 ## 20. Uploads
 
-O estudo identifica funcionalidades com uploads de até aproximadamente **50 MB**, incluindo o APAE Atendimento. O backend do APAE Geral também declara `max-request-size: 50MB`.
+A [investigação de código de 06/11/2026](../backup/07-limites-de-upload-das-aplicacoes.md) confirma no APAE Atendimento `max-file-size=50MB` e `max-request-size=50MB`, sem margem no corpo para o overhead multipart de um arquivo no teto. No APAE Geral, o limite é **10MB por arquivo** e **50MB por requisição**. No Comemorativo, o handler de imagem investigado não declara teto explícito; na Gestão Escolar, o limite permanece a confirmar. Os valores do código não comprovam a configuração efetiva em produção.
 
 Na arquitetura selecionada, o caminho lógico é:
 
