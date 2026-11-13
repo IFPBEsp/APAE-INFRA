@@ -1,0 +1,193 @@
+name: Reusable GitHub Actions Workflow Lint
+
+on:
+  workflow_call:
+    inputs:
+      run-actionlint:
+        description: "Executa o actionlint (sintaxe, expressões e scripts shell com shellcheck)"
+        required: false
+        type: boolean
+        default: true
+
+      run-zizmor:
+        description: "Executa o zizmor (auditoria de segurança dos workflows)"
+        required: false
+        type: boolean
+        default: true
+
+      zizmor-min-severity:
+        description: "Severidade mínima do zizmor que bloqueia o PR (informational, low, medium, high)"
+        required: false
+        type: string
+        default: "medium"
+
+permissions: {}
+
+jobs:
+  actionlint:
+    name: actionlint
+    if: inputs.run-actionlint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint and shellcheck
+        shell: bash
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          SHELLCHECK_VERSION: "0.11.0"
+          SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+        run: |
+          set -euo pipefail
+
+          tools="$RUNNER_TEMP/workflow-lint-tools"
+          mkdir -p "$tools"
+
+          curl --fail --silent --show-error --location \
+            --retry 3 --connect-timeout 10 --max-time 120 \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            --output "$tools/actionlint.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $tools/actionlint.tar.gz" | sha256sum --check -
+          tar -xzf "$tools/actionlint.tar.gz" -C "$tools" actionlint
+
+          curl --fail --silent --show-error --location \
+            --retry 3 --connect-timeout 10 --max-time 120 \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            --output "$tools/shellcheck.tar.xz"
+          echo "${SHELLCHECK_SHA256}  $tools/shellcheck.tar.xz" | sha256sum --check -
+          tar -xJf "$tools/shellcheck.tar.xz" -C "$tools" --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+
+          chmod 0755 "$tools/actionlint" "$tools/shellcheck"
+          "$tools/actionlint" -version
+          "$tools/shellcheck" --version
+
+      - name: Run actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tools="$RUNNER_TEMP/workflow-lint-tools"
+
+          # Cada erro vira uma anotação no PR (::error file=...,line=...,col=...).
+          # A configuração .github/actionlint.yaml do repositório é aplicada automaticamente.
+          # O template abaixo é Go template, não expansão do shell.
+          # shellcheck disable=SC2016
+          "$tools/actionlint" \
+            -shellcheck "$tools/shellcheck" \
+            -format '{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}},title=actionlint ({{$err.Kind}})::{{$err.Message}}\n{{end}}'
+
+  zizmor:
+    name: zizmor
+    if: inputs.run-zizmor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+
+    steps:
+      - name: Validate inputs
+        shell: bash
+        env:
+          MIN_SEVERITY: ${{ inputs.zizmor-min-severity }}
+        run: |
+          set -euo pipefail
+          case "$MIN_SEVERITY" in
+            informational|low|medium|high) ;;
+            *)
+              echo "::error::zizmor-min-severity inválido: '$MIN_SEVERITY'. Use informational, low, medium ou high."
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        shell: bash
+        env:
+          ZIZMOR_VERSION: "1.31.1"
+          ZIZMOR_SHA256: "d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99"
+        run: |
+          set -euo pipefail
+
+          tools="$RUNNER_TEMP/workflow-lint-tools"
+          mkdir -p "$tools"
+
+          curl --fail --silent --show-error --location \
+            --retry 3 --connect-timeout 10 --max-time 120 \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz" \
+            --output "$tools/zizmor.tar.gz"
+          echo "${ZIZMOR_SHA256}  $tools/zizmor.tar.gz" | sha256sum --check -
+          tar -xzf "$tools/zizmor.tar.gz" -C "$tools" zizmor
+          chmod 0755 "$tools/zizmor"
+
+          [[ "$("$tools/zizmor" --version)" == "zizmor ${ZIZMOR_VERSION}" ]]
+
+      - name: Generate SARIF report (all severities)
+        id: sarif
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # --strict-collection reprova workflows e actions com erro de sintaxe ou
+          # de schema. Sem ela, o zizmor só emite um aviso e ignora o arquivo.
+          # --no-exit-codes mantém o código 1 para falhas da ferramenta.
+          if ! "$RUNNER_TEMP/workflow-lint-tools/zizmor" \
+            --format=sarif \
+            --no-exit-codes \
+            --strict-collection \
+            . > zizmor.sarif; then
+            echo "::error title=zizmor::Falha ao coletar ou interpretar workflows/actions. Verifique a sintaxe YAML dos arquivos indicados no log."
+            exit 1
+          fi
+
+      - name: Enforce severity threshold
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MIN_SEVERITY: ${{ inputs.zizmor-min-severity }}
+        run: |
+          set -euo pipefail
+
+          # --format=github gera anotações no PR.
+          # Códigos de saída: 0 sem findings, 1 falha da ferramenta,
+          # 10-14 findings com severidade >= MIN_SEVERITY.
+          rc=0
+          "$RUNNER_TEMP/workflow-lint-tools/zizmor" \
+            --format=github \
+            --min-severity "$MIN_SEVERITY" \
+            --strict-collection \
+            . || rc=$?
+
+          if [[ "$rc" -eq 1 ]]; then
+            echo "::error title=zizmor::Falha ao coletar ou interpretar workflows/actions. Verifique a sintaxe YAML dos arquivos indicados no log."
+          fi
+          exit "$rc"
+
+      - name: Publish SARIF to GitHub Security
+        # Só publica um SARIF gerado com sucesso; em falha de coleta o arquivo
+        # fica vazio ou incompleto e o upload apenas geraria um segundo erro.
+        if: >-
+          always() &&
+          steps.sarif.outcome == 'success' &&
+          hashFiles('zizmor.sarif') != '' &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor

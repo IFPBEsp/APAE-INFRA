@@ -1,0 +1,9 @@
+# Configuração do zizmor para os workflows do APAE-INFRA.
+# Referência: https://docs.zizmor.sh/configuration/
+rules:
+  github-env:
+    ignore:
+      # setup-kustomize adiciona ao PATH um diretório criado pela própria action em
+      # $RUNNER_TEMP, contendo apenas o binário do Kustomize verificado por SHA-256.
+      # Nenhum valor controlado pelo usuário é escrito em GITHUB_PATH.
+      - action.yml:11
