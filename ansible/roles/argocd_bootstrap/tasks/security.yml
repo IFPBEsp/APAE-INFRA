@@ -5,24 +5,24 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - get
       - secret
       - argocd-secret
       - -o
       - json
-  register: argocd_admin_secret
+  register: argocd_bootstrap_admin_secret
   changed_when: false
   no_log: true
 
 - name: Identificar hash administrativo atual
   ansible.builtin.set_fact:
-    argocd_current_admin_hash: >-
+    argocd_bootstrap_current_admin_hash: >-
       {{
         (
-          (argocd_admin_secret.stdout | from_json)
+          (argocd_bootstrap_admin_secret.stdout | from_json)
           .get('data', {})
           .get('admin.password', '')
         ) | b64decode
@@ -35,9 +35,9 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - patch
       - secret
       - argocd-secret
@@ -56,9 +56,9 @@
         } | to_json
       }}
     stdin_add_newline: true
-  when: argocd_current_admin_hash != argocd_admin_password_hash
-  register: argocd_admin_password_update
-  changed_when: argocd_admin_password_update.rc == 0
+  when: argocd_bootstrap_current_admin_hash != argocd_admin_password_hash
+  register: argocd_bootstrap_admin_password_update
+  changed_when: argocd_bootstrap_admin_password_update.rc == 0
   no_log: true
 
 - name: Verificar hash administrativo após configuração
@@ -67,15 +67,15 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - get
       - secret
       - argocd-secret
       - -o
       - json
-  register: argocd_admin_secret_verified
+  register: argocd_bootstrap_admin_secret_verified
   changed_when: false
   no_log: true
 
@@ -85,7 +85,7 @@
       - >-
         (
           (
-            (argocd_admin_secret_verified.stdout | from_json)
+            (argocd_bootstrap_admin_secret_verified.stdout | from_json)
             .get('data', {})
             .get('admin.password', '')
           ) | b64decode
@@ -100,24 +100,24 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - get
       - secret
       - argocd-secret
       - -o
       - json
-  register: argocd_readonly_secret
+  register: argocd_bootstrap_readonly_secret
   changed_when: false
   no_log: true
 
 - name: Identificar hash da conta de leitura atual
   ansible.builtin.set_fact:
-    argocd_current_readonly_hash: >-
+    argocd_bootstrap_current_readonly_hash: >-
       {{
         (
-          (argocd_readonly_secret.stdout | from_json)
+          (argocd_bootstrap_readonly_secret.stdout | from_json)
           .get('data', {})
           .get('accounts.apae-leitura.password', '')
         ) | b64decode
@@ -130,9 +130,9 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - patch
       - secret
       - argocd-secret
@@ -151,9 +151,9 @@
         } | to_json
       }}
     stdin_add_newline: true
-  when: argocd_current_readonly_hash != argocd_readonly_password_hash
-  register: argocd_readonly_password_update
-  changed_when: argocd_readonly_password_update.rc == 0
+  when: argocd_bootstrap_current_readonly_hash != argocd_readonly_password_hash
+  register: argocd_bootstrap_readonly_password_update
+  changed_when: argocd_bootstrap_readonly_password_update.rc == 0
   no_log: true
 
 - name: Verificar hash da conta de leitura após configuração
@@ -162,15 +162,15 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - get
       - secret
       - argocd-secret
       - -o
       - json
-  register: argocd_readonly_secret_verified
+  register: argocd_bootstrap_readonly_secret_verified
   changed_when: false
   no_log: true
 
@@ -180,7 +180,7 @@
       - >-
         (
           (
-            (argocd_readonly_secret_verified.stdout | from_json)
+            (argocd_bootstrap_readonly_secret_verified.stdout | from_json)
             .get('data', {})
             .get('accounts.apae-leitura.password', '')
           ) | b64decode
@@ -195,16 +195,16 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - get
       - secret
       - argocd-initial-admin-secret
       - --ignore-not-found
       - -o
       - name
-  register: argocd_initial_secret
+  register: argocd_bootstrap_initial_secret
   changed_when: false
   no_log: true
 
@@ -214,13 +214,13 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - delete
       - secret
       - argocd-initial-admin-secret
-  when: argocd_initial_secret.stdout | trim | length > 0
-  register: argocd_initial_secret_removal
-  changed_when: argocd_initial_secret_removal.rc == 0
+  when: argocd_bootstrap_initial_secret.stdout | trim | length > 0
+  register: argocd_bootstrap_initial_secret_removal
+  changed_when: argocd_bootstrap_initial_secret_removal.rc == 0
   no_log: true

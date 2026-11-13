@@ -39,11 +39,10 @@
   when: not ansible_check_mode
 
 - name: Verificar serviço de proteção da API
-  ansible.builtin.command:
-    cmd: systemctl is-active k3s-api-firewall.service
+  ansible.builtin.systemd_service:
+    name: k3s-api-firewall.service
   register: k3s_firewall_status
-  changed_when: false
-  failed_when: k3s_firewall_status.rc != 0
+  failed_when: k3s_firewall_status.status.ActiveState != 'active'
   when: not ansible_check_mode
 
 - name: Verificar bloqueios IPv4 e IPv6

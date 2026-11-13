@@ -23,7 +23,7 @@ server:
   replicas: 1
 
   service:
-    type: {{ argocd_server_service_type }}
+    type: {{ argocd_bootstrap_server_service_type }}
 
   resources:
     requests:
@@ -44,7 +44,7 @@ repoServer:
       memory: 512Mi
 
 redis-ha:
-  enabled: {{ argocd_redis_ha_enabled | lower }}
+  enabled: {{ argocd_bootstrap_redis_ha_enabled | lower }}
 
 redis:
   enabled: true
@@ -57,10 +57,10 @@ redis:
       memory: 192Mi
 
 dex:
-  enabled: {{ argocd_dex_enabled | lower }}
+  enabled: {{ argocd_bootstrap_dex_enabled | lower }}
 
 notifications:
-  enabled: {{ argocd_notifications_enabled | lower }}
+  enabled: {{ argocd_bootstrap_notifications_enabled | lower }}
 
 applicationSet:
   replicas: 0
@@ -85,7 +85,7 @@ configs:
 
   repositories:
     apae-infra:
-      url: {{ argocd_git_repository | to_json }}
+      url: {{ argocd_bootstrap_git_repository | to_json }}
       name: apae-infra
       type: git
 

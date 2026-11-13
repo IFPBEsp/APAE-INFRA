@@ -1,0 +1,27 @@
+---
+extends: default
+
+ignore: |
+  .collections/
+  .cache/
+  # Arquivos cifrados com ansible-vault nao sao YAML legivel. O validate.sh
+  # garante que todo arquivo *vault*.yml esteja de fato cifrado.
+  *vault*.yml
+  *vault*.yaml
+
+rules:
+  line-length:
+    max: 160
+    level: warning
+  # Compativel com o estilo recomendado pelo ansible-lint.
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: false
+  braces:
+    max-spaces-inside: 1
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
