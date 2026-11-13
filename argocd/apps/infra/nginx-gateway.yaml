@@ -1,0 +1,17 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-gateway
+  namespace: argocd
+spec:
+  project: apae-infra
+
+  source:
+    repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
+    targetRevision: main
+    path: kubernetes/infra/nginx-gateway
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nginx-gateway

@@ -172,6 +172,7 @@ jobs:
             -output text
             -schema-location default
             -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRD_CATALOG_REVISION}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+            -schema-location "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/{{.NormalizedKubernetesVersion}}/{{.ResourceKind}}{{.KindSuffix}}.json"
           )
 
           if [[ -n "$KUBERNETES_VERSION" ]]; then

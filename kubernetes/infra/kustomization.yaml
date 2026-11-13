@@ -1,0 +1,8 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gateway-api/namespace.yaml
+  - gateway-api/standard-install.yaml
+  - nginx-gateway/gateway.yaml
+  - nginx-gateway-smoke/httproute.yaml

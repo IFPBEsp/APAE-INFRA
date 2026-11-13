@@ -26,6 +26,7 @@ jobs:
         kubernetes/apae-geral/overlays/dev
         kubernetes/gestao-escolar/overlays/dev
         kubernetes/site-comemorativo/overlays/dev
+        kubernetes/infra
 
   argocd:
     name: Lint Argo CD manifests

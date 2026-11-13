@@ -1,0 +1,21 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway-api-crds
+  namespace: argocd
+spec:
+  project: apae-infra
+
+  source:
+    repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
+    targetRevision: main
+    path: kubernetes/infra/gateway-api
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

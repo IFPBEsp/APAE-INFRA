@@ -9,16 +9,51 @@ spec:
 
   sourceRepos:
     - https://github.com/IFPBEsp/APAE-INFRA.git
+    - https://github.com/nginx/nginx-gateway-fabric.git
 
   destinations:
     - server: https://kubernetes.default.svc
       namespace: argocd
+    - server: https://kubernetes.default.svc
+      namespace: nginx-gateway
 
-  clusterResourceWhitelist: []
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: gateway.networking.k8s.io
+      kind: GatewayClass
+    - group: admissionregistration.k8s.io
+      kind: ValidatingAdmissionPolicy
+    - group: admissionregistration.k8s.io
+      kind: ValidatingAdmissionPolicyBinding
 
   namespaceResourceWhitelist:
     - group: argoproj.io
       kind: Application
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: Service
+    - group: apps
+      kind: Deployment
+    - group: batch
+      kind: Job
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
+    - group: gateway.nginx.org
+      kind: NginxGateway
+    - group: gateway.nginx.org
+      kind: NginxProxy
+    - group: gateway.networking.k8s.io
+      kind: Gateway
 
   orphanedResources:
     warn: true
