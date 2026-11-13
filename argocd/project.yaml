@@ -42,3 +42,5 @@ spec:
       kind: CronJob
     - group: networking.k8s.io
       kind: Ingress
+    - group: networking.k8s.io
+      kind: NetworkPolicy

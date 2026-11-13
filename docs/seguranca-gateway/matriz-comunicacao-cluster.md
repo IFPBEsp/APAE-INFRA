@@ -57,3 +57,51 @@ entre os pods `site-comemorativo` e `apae`.
 | Coletor autorizado pela #116 | Endpoints de métricas do Gateway | `9113/TCP` | Coletar métricas por acesso interno | Porta registrada na #111. Identidade do coletor a definir na #116 |
 | Administrador autorizado | `argocd-server` (`argocd`) | `443/TCP` no Service | Acessar a interface via túnel SSH e port-forward em loopback | Procedimento documentado |
 | Administrador autorizado | Console do MinIO | A confirmar | Administrar o storage | Caminho privado a definir. Auditoria da #111 registrou ausência de portas Docker publicadas |
+
+### Teste de conectividade no ambiente temporário
+
+Em 12/11/2026, a VPS estabeleceu conexões TCP com o PostgreSQL (5432),
+a API do MinIO (9000) e o console do MinIO (9001) na rede Docker
+`apae-net`. As mesmas conexões expiraram a partir de um pod de teste em
+`apae-dev`.
+
+A captura do teste com PostgreSQL mostrou SYNs na interface do pod,
+sem tráfego observado na bridge Docker. Regras em `raw/PREROUTING`
+descartam tráfego direto para os dois contêineres quando os pacotes
+entram por outra interface.
+
+#### Teste de autenticação mTLS no nó
+
+Um pod em `apae-dev` alcançou um servidor mTLS temporário em
+`10.42.0.1:15432`. Sem certificado de cliente, o servidor recusou a sessão
+com `TLSV13_ALERT_CERTIFICATE_REQUIRED`. Com um certificado de cliente
+assinado pela CA de teste, o servidor retornou `HTTP 200`.
+
+Os pods, o Secret e os arquivos temporários de TLS foram removidos. Após
+encerrar o servidor de teste, o `ss` confirmou que a porta `15432/TCP`
+ficou livre.
+
+#### Teste ponta a ponta entre k3s e Docker
+
+O cliente autorizado pela NetworkPolicy recebeu `HTTP 200` com corpo
+`ok` do backend descartável na `apae-net`. A conexão passou pelo
+Service ClusterIP, pelo HAProxy no k3s e pelo HAProxy na rede Docker.
+O trecho entre os proxies usou mTLS.
+
+O cliente bloqueado resolveu o mesmo Service e recebeu
+`Connection refused`. Em um teste direto ao HAProxy da rede Docker,
+a conexão sem certificado de cliente foi recusada pelo TLS.
+
+O namespace, os contêineres e os arquivos temporários foram removidos.
+A porta `15432/TCP` ficou livre. A ponte entre k3s e Docker foi validada
+com um backend descartável no ambiente temporário da VPS.
+
+### Acesso aos serviços de dados em produção
+
+O desenho de produção prevê que os workloads acessem PostgreSQL e MinIO
+por Services internos do k3s. Os manifests desses serviços definirão os
+nomes, namespaces e seletores. A issue #114 usará essas definições para
+restringir o acesso aos consumidores da matriz e validar os fluxos
+permitidos e bloqueados.
+
+[Estudo de comunicação interna](../nginx/04-comunicacao-aplicacoes-e-observabilidade.md#18-comunicação-interna)
