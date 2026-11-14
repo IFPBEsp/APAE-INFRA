@@ -57,6 +57,7 @@ docs/             # documentação de padrões e boas práticas do repositório
   diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
   docker/         # documentação de Docker, pipelines, assinatura, SBOM e proveniência de imagens
   nginx/          # estudo de NGINX Gateway Fabric e Gateway API
+  seguranca/      # guias de segurança (detecção de segredos com Gitleaks)
   terraform/      # estudo de Terraform e arquitetura GitOps
   workflows/      # guias dos workflows reutilizáveis
 kubernetes/       # manifests e configurações do cluster
