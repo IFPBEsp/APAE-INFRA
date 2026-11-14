@@ -43,7 +43,7 @@ O ArgoCD faz reconciliação periódica e pode ser notificado por webhook, caso 
 
 | Ambiente | Branch GitOps de referência | Overlay Kustomize | Política esperada para workloads |
 | --- | --- | --- | --- |
-| Desenvolvimento | `dev` | `dev` | Automática, conforme #92 |
+| Desenvolvimento | `main` | `dev` | Automática, conforme #92 |
 | Homologação | `main` | `hml` | Manual, conforme #106 |
 | Produção | `main` | `prod` | Manual, conforme #106 |
 
@@ -104,12 +104,16 @@ argocd/
     ├── dev/              # Applications de desenvolvimento, escopo da #92
     │   ├── apae-geral-dev.yaml
     │   ├── apae-atendimento-dev.yaml
+    │   ├── gestao-escolar-dev.yaml
     │   └── site-comemorativo-dev.yaml
     ├── hml/              # Futuro
     └── prod/             # Futuro
 ```
 
 A issue #92 define as Applications de desenvolvimento em `argocd/apps/dev/`. A #91 **não implanta os produtos nem cria seus overlays**. Os diretórios `apps/hml/` e `apps/prod/` representam a organização prevista para os ambientes futuros.
+
+As [evidências da validação da issue #92](validacao-applications-overlays.md) distinguem o
+teste temporário pelo commit do PR da sincronização definitiva pela `main`.
 
 ### Application raiz do cluster único
 

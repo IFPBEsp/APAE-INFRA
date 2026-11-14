@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gestao-escolar-dev
+  namespace: argocd
+spec:
+  project: apae
+
+  source:
+    repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
+    targetRevision: main
+    path: kubernetes/gestao-escolar/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: apae-dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

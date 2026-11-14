@@ -109,12 +109,16 @@ Create candidate manifest
   ↓
 Verify candidate image
   ↓
+Attest and verify build provenance and SBOM
+  ↓
 Sign candidate image with Cosign
   ↓
 Verify Cosign signature
   ↓
 Promote verified image to final tags
 ```
+
+A proveniência e o SBOM do mesmo digest estão documentados em [SBOM e atestação de proveniência das imagens Docker](./sbom-proveniencia-imagens.md).
 
 ## Permissões necessárias
 
@@ -199,6 +203,8 @@ cosign verify "${IMAGE}@${DIGEST}" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
   --certificate-github-workflow-repository="${{ github.repository }}"
 ```
+
+Dentro do pipeline, a verificação usa `--certificate-identity-regexp` restrita ao workflow reutilizável do `APAE-INFRA` com ref `refs/heads/main` ou um commit SHA completo, pois o contexto `github.workflow_ref` de um workflow reutilizável identifica o workflow do caller, e não o workflow que assinou. A verificação manual de imagens de produção continua exigindo a identidade exata com `@refs/heads/main`.
 
 O consumidor deve chamar `IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main` para corresponder à identidade exigida. Essa referência identifica o workflow reutilizável; a branch ou tag que dispara o consumidor pode ser diferente.
 
