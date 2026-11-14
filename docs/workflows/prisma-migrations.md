@@ -83,7 +83,7 @@ permissions:
 
 jobs:
   prisma:
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-prisma-migration-check.yml@<commit-sha>
+    uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-prisma-migration-check.yml@main
     with:
       working-directory: "."
       schema-path: "prisma/schema.prisma"
@@ -91,7 +91,7 @@ jobs:
       package-manager: "pnpm"
 ```
 
-A referência `<commit-sha>` deve ser substituída pelo SHA completo do commit aprovado no APAE-INFRA. Evite referências mutáveis como `@dev` ou `@main`.
+A referência adotada para os callers é `IFPBEsp/APAE-INFRA/.github/workflows/reusable-prisma-migration-check.yml@main`, no mesmo padrão do `docker-build-publish-image.yml` (#106). A chamada com `@main` seleciona a referência do workflow reutilizável no `APAE-INFRA`; o gatilho `pull_request` refere-se ao repositório consumidor. O `APAE-INFRA` deve publicar o workflow na `main` antes de os callers integrarem a chamada.
 
 ## Permissões
 
