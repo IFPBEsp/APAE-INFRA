@@ -186,6 +186,8 @@ O comentário é atualizado nas execuções seguintes por meio de um marcador fi
 
 Antes de publicar, o workflow consulta o Pull Request e compara o SHA de origem do run com o HEAD atual do PR. Quando um run antigo termina depois de um commit mais novo, ele é ignorado: o comentário não é criado nem atualizado e o motivo fica registrado no log da execução, preservando o relatório do commit vigente.
 
+A publicação é interrompida sem tocar no comentário existente quando o SHA de origem do run está ausente ou quando a consulta à API do GitHub falha (por exemplo, um erro 503). A mesma checagem de HEAD é repetida logo antes de criar ou editar o comentário, cobrindo mudanças de ponta que ocorram durante a listagem dos comentários: se o HEAD mudou nesse intervalo, nada é publicado.
+
 A publicação do comentário ocorre apenas em eventos `pull_request`. Em execuções por `push` ou por outros eventos, o resumo Surefire continua disponível no `GITHUB_STEP_SUMMARY`, mas nenhum comentário é criado.
 
 ## Testcontainers
