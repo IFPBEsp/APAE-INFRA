@@ -536,27 +536,47 @@ jobs:
 
             if (!runSha) {
               core.warning(
-                "Não foi possível identificar o SHA de origem do run; o comentário será publicado sem a verificação de HEAD."
+                "SHA de origem do run ausente; publicação interrompida para não sobrescrever o relatório atual."
               );
-            } else {
+              return;
+            }
+
+            async function isRunStillCurrentHead() {
+              let headSha;
+
               try {
                 const { data: pull } = await github.rest.pulls.get({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   pull_number: issueNumber,
                 });
-
-                if (pull.head.sha !== runSha) {
-                  core.info(
-                    `Run antigo ignorado: o commit ${runSha} não é mais o HEAD do PR (${pull.head.sha}); o comentário não será atualizado.`
-                  );
-                  return;
-                }
+                headSha = pull.head.sha;
               } catch (error) {
                 core.warning(
-                  `Não foi possível verificar o HEAD atual do PR: ${error.message}`
+                  `Consulta da API do GitHub falhou ao verificar o HEAD do PR; publicação interrompida: ${error.message}`
                 );
+                return false;
               }
+
+              if (!headSha) {
+                core.warning(
+                  "HEAD do PR ausente na resposta da API; publicação interrompida."
+                );
+                return false;
+              }
+
+              if (headSha !== runSha) {
+                core.info(
+                  `Run antigo ignorado: o commit ${runSha} não é mais o HEAD do PR (${headSha}); o comentário não será atualizado.`
+                );
+                return false;
+              }
+
+              return true;
+            }
+
+            if (!(await isRunStillCurrentHead())) {
+              return;
             }
 
             try {
@@ -573,6 +593,13 @@ jobs:
               const existing = comments.find(
                 (comment) => comment.body && comment.body.includes(marker)
               );
+
+              if (!(await isRunStillCurrentHead())) {
+                core.info(
+                  "HEAD do PR mudou antes da publicação; comentário não será criado nem atualizado."
+                );
+                return;
+              }
 
               if (existing) {
                 await github.rest.issues.updateComment({
