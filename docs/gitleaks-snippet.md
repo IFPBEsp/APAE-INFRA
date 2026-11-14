@@ -2,9 +2,8 @@
 
 ## O que é
 
-O workflow de scanning de segredos usa o [Gitleaks](https://github.com/gitleaks/gitleaks)
-para analisar o diff do PR, detectar automaticamente credenciais, tokens e chaves
-expostas e falhar o check do job antes que o segredo entre no histórico do git.
+O [Gitleaks](https://github.com/gitleaks/gitleaks) analisa os commits do PR e
+falha o check quando encontra uma credencial.
 
 Para que o bloqueio de merge seja efetivo, configure o job
 `call-gitleaks / gitleaks` como **Required** (check obrigatório) nas regras de
@@ -51,8 +50,11 @@ projeto, listando o fingerprint específico gerado pelo Gitleaks para cada
 finding:
 
 ```bash
-echo <fingerprint> >> .gitleaksignore
+printf '%s\n' 'COLE_O_FINGERPRINT_AQUI' >> .gitleaksignore
 ```
+
+Substitua `'COLE_O_FINGERPRINT_AQUI'` pelo fingerprint real gerado pelo
+Gitleaks para o finding que você deseja ignorar.
 
 > Atenção: arquivos de exemplo (`.env.example`) devem continuar sendo varridos
 > pelo scanner. Não crie allowlists de path que ignorem o caminho inteiro, pois
