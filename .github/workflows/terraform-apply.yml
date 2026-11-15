@@ -1,0 +1,66 @@
+name: Terraform Apply
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform/**"
+
+permissions:
+  contents: read
+
+# Serializa todos os applies: apenas um por vez no ambiente production,
+# evitando corridas sobre o mesmo state/lock do backend remoto.
+concurrency:
+  group: terraform-apply-production
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VERSION: "1.13.5"
+
+jobs:
+  apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Required reviewers (aprovação manual) são configurados em
+    # Settings > Environments > production, fora deste YAML.
+    environment: production
+
+    defaults:
+      run:
+        working-directory: terraform/environments/dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        id: init
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        id: plan
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+        run: terraform plan -input=false -lock-timeout=5m -out="$RUNNER_TEMP/tfplan"
+
+      - name: Terraform Apply
+        id: apply
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+        run: terraform apply -input=false -lock-timeout=5m "$RUNNER_TEMP/tfplan"
