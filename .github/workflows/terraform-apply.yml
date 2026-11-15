@@ -11,8 +11,6 @@ on:
 permissions:
   contents: read
 
-# Serializa todos os applies: apenas um por vez no ambiente production,
-# evitando corridas sobre o mesmo state/lock do backend remoto.
 concurrency:
   group: terraform-apply-production
   cancel-in-progress: false
@@ -28,9 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # Required reviewers (aprovação manual) são configurados em
-    # Settings > Environments > production, fora deste YAML.
-    environment: production
+    environment: terraform-apply
 
     defaults:
       run:

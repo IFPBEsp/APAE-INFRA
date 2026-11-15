@@ -2,7 +2,6 @@ name: Terraform Drift Detection
 
 on:
   schedule:
-    # Diário às 09:00 UTC (06:00 BRT).
     - cron: "0 9 * * *"
   workflow_dispatch:
 
