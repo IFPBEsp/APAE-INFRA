@@ -1,15 +1,14 @@
 name: Terraform PR Validation
 
+# Não use `paths` neste gatilho. Com o filtro, o workflow nem é criado nos PRs
+# que não mexem em Terraform e os checks obrigatórios (TFLint e Trivy config)
+# ficam pendentes, travando o merge. A seleção de caminhos é feita no job
+# `changes`: os demais jobs são pulados, o que o GitHub conta como sucesso.
 on:
   pull_request:
     branches:
       - dev
       - main
-    paths:
-      - "terraform/**"
-      - ".tflint.hcl"
-      - ".trivyignore"
-      - ".github/workflows/terraform-validate.yml"
 
 permissions:
   contents: read
@@ -25,8 +24,51 @@ env:
   TFLINT_VERSION: "v0.64.0"
 
 jobs:
+  changes:
+    name: Detect Terraform Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      terraform: ${{ steps.filter.outputs.terraform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect relevant changes
+        id: filter
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          changed="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+
+          # Mesmos caminhos que antes ficavam no filtro `paths` do gatilho.
+          # O grep lê de uma variável (e não de um pipe) para o `pipefail`
+          # não tratar a saída antecipada do `grep -q` como erro.
+          if grep -Eq '^(terraform/|\.tflint\.hcl$|\.trivyignore$|\.github/workflows/terraform-validate\.yml$)' <<< "$changed"; then
+            echo "terraform=true" >> "$GITHUB_OUTPUT"
+            echo "O PR altera arquivos relacionados ao Terraform."
+          else
+            echo "terraform=false" >> "$GITHUB_OUTPUT"
+            echo "O PR não altera arquivos relacionados ao Terraform. Os checks serão pulados."
+          fi
+
+
   fmt:
     name: Terraform Format
+    needs: changes
+
+    # Roda também se o `changes` falhar (a saída vem vazia): na dúvida, valida.
+    if: ${{ !cancelled() && needs.changes.outputs.terraform != 'false' }}
+
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -47,6 +89,8 @@ jobs:
 
   tflint:
     name: TFLint
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.terraform != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -108,6 +152,8 @@ jobs:
 
   trivy:
     name: Trivy config
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.terraform != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -157,6 +203,8 @@ jobs:
 
   discover:
     name: Discover Terraform Environments
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.terraform != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
 

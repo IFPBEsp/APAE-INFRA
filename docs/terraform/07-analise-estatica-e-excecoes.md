@@ -11,7 +11,7 @@ Os checks rodam no workflow [`terraform-validate.yml`](../../.github/workflows/t
 | `TFLint` | [TFLint](https://github.com/terraform-linters/tflint) | Más práticas da linguagem e dos providers (variáveis sem uso, versões não fixadas, valores inválidos) | Qualquer problema encontrado |
 | `Trivy config` | [Trivy](https://trivy.dev/) em modo `config` | Configurações inseguras (ex.: porta aberta para a internet, disco sem criptografia) | Finding de severidade `HIGH` ou `CRITICAL` |
 
-Os dois rodam em PRs que alteram `terraform/**`, `.tflint.hcl`, `.trivyignore` ou o próprio workflow. O resultado aparece no resumo do workflow (aba **Summary** da execução).
+O workflow roda em todo PR para `dev` e `main`, mas os checks só executam quando o PR altera `terraform/**`, `.tflint.hcl`, `.trivyignore` ou o próprio workflow. Nos demais PRs, os jobs aparecem como **Skipped**, e o GitHub conta job pulado como sucesso. O resultado aparece no resumo do workflow (aba **Summary** da execução).
 
 ## Arquivos de configuração
 
@@ -41,7 +41,7 @@ A primeira opção é sempre corrigir o código. Só abra uma exceção quando o
 
 Toda exceção precisa de:
 
-- um comentário com o **motivo**;
+- um comentário com o **motivo**, em uma linha separada, acima da linha que ignora a regra;
 - a **issue ou PR** onde foi discutida;
 - a aprovação de pelo menos uma pessoa do time de infraestrutura na revisão do PR.
 
@@ -50,7 +50,8 @@ Toda exceção precisa de:
 Prefira ignorar no próprio recurso, para a exceção ficar ao lado do código:
 
 ```hcl
-# trivy:ignore:AVD-AWS-0086 Bucket público de propósito, só serve arquivos estáticos (issue #XX)
+# Bucket público de propósito, só serve arquivos estáticos (issue #XX)
+# trivy:ignore:AVD-AWS-0086
 resource "aws_s3_bucket_public_access_block" "site" {
   # ...
 }
@@ -67,15 +68,24 @@ Exceções no `.trivyignore` valem para todo o repositório, por isso use esse a
 
 ### Exceção do TFLint
 
-Ignore a regra na linha ou no bloco, com o motivo:
+Ignore a regra na linha ou no bloco, com o motivo em um comentário separado:
 
 ```hcl
-# tflint-ignore: terraform_unused_declarations - usada só pelo módulo X (issue #XX)
-variable "exemplo" {}
+# Usada só pelo módulo X (issue #XX)
+# tflint-ignore: terraform_unused_declarations
+variable "exemplo" {
+  type = string
+}
 ```
+
+Não escreva o motivo na mesma linha, depois do nome da regra (por exemplo, `# tflint-ignore: regra - motivo`). O TFLint lê esse texto como parte do nome da regra, a exceção não é aplicada e o check continua falhando. Se preferir manter tudo na mesma linha, comece um segundo `#` antes do motivo: `# tflint-ignore: regra # motivo`.
 
 Para desligar uma regra em todo o repositório, use `rule "nome" { enabled = false }` no `.tflint.hcl`, com um comentário explicando o motivo.
 
 ## Tornar os checks obrigatórios
 
 Os jobs `TFLint` e `Trivy config` só bloqueiam o merge se estiverem marcados como **required status checks** nas regras de proteção da branch. Essa configuração é feita por quem administra o repositório (Settings → Branches).
+
+É seguro marcar os dois como obrigatórios porque o workflow não usa o filtro `paths` no gatilho. Em PRs sem mudança em Terraform, o job `Detect Terraform Changes` identifica isso e os demais jobs são pulados, o que o GitHub conta como sucesso. Se o filtro `paths` fosse usado, o workflow não seria criado nesses PRs e os checks obrigatórios ficariam **Pending**, bloqueando o merge. Por isso, **não reintroduza `paths` no gatilho** de `terraform-validate.yml`. Veja a explicação do GitHub em [Troubleshooting required status checks](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks).
+
+Se for necessário mudar os caminhos que disparam os checks, edite o padrão do job `Detect Terraform Changes`.
