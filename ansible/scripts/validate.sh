@@ -38,17 +38,20 @@ has_ansible_content() {
   [ -n "$(ansible_content_paths)" ]
 }
 
-# Arquivos cifrados com ansible-vault (primeira linha "$ANSIBLE_VAULT;...").
+# Arquivos cifrados com ansible-vault (linha "$ANSIBLE_VAULT;..."). Sao detectados
+# pelo conteudo, nao pelo nome.
 list_vault_files() {
+  # shellcheck disable=SC2016 # "$" literal na expressao regular
   grep -rIl --include='*.yml' --include='*.yaml' \
     --exclude-dir=.collections --exclude-dir=.cache \
     -e '^\$ANSIBLE_VAULT;' . || true
 }
 
-# O CI nao recebe senha de vault. Para lint e syntax-check, passa a trabalhar numa
-# copia temporaria em que cada arquivo cifrado vira um stub vazio ("{}"); nada e
-# decifrado. Deve ser chamada dentro de um subshell (as funcoes check_lint e
-# check_syntax usam corpo em "( ... )"), que apaga a copia ao terminar.
+# O CI nao recebe senha de vault. Para yamllint, ansible-lint e syntax-check, passa
+# a trabalhar numa copia temporaria em que cada arquivo cifrado vira um stub vazio
+# ("{}"); nada e decifrado e o arquivo versionado nao e alterado. Deve ser chamada
+# dentro de um subshell (as funcoes check_yaml, check_lint e check_syntax usam corpo
+# em "( ... )"), que apaga a copia ao terminar.
 enter_vault_stub_tree() {
   local vault_files f
   vault_files="$(list_vault_files)"
@@ -70,9 +73,10 @@ check_secrets() {
     return 1
   fi
 
-  # O yamllint ignora arquivos *vault*.yml; aqui garante-se que nao ha segredo em texto puro.
+  # Todo arquivo com nome de vault deve estar cifrado: segredo em texto puro nao passa.
   local f status=0
   while IFS= read -r f; do
+    # shellcheck disable=SC2016 # "$" literal na expressao regular
     if ! head -n 1 "$f" | grep -q '^\$ANSIBLE_VAULT;'; then
       echo "ERRO: $f tem nome de vault, mas nao esta cifrado com ansible-vault." >&2
       status=1
@@ -120,10 +124,11 @@ PY
   fi
 }
 
-check_yaml() {
+check_yaml() (
+  enter_vault_stub_tree
   log "yamllint"
   yamllint --strict -c .yamllint .
-}
+)
 
 check_lint() (
   enter_vault_stub_tree

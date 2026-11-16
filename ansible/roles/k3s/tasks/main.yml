@@ -42,7 +42,7 @@
   ansible.builtin.systemd_service:
     name: k3s-api-firewall.service
   register: k3s_firewall_status
-  failed_when: k3s_firewall_status.status.ActiveState != 'active'
+  failed_when: (k3s_firewall_status.status.ActiveState | default('unknown')) != 'active'
   when: not ansible_check_mode
 
 - name: Verificar bloqueios IPv4 e IPv6
