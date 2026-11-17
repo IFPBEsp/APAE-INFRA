@@ -3,6 +3,9 @@
 ## Guias e estudos
 
 - [Estudo de Ansible para gerenciamento da VPS](ansible/README.md)
+- [Alternância operacional entre Compose e K3s](../ansible/docs/runtime-mode.md)
+- [Evidências de validação da alternância](../ansible/docs/runtime-mode-evidence.md)
+- [Renovação automática do TLS no modo Compose](../ansible/docs/runtime-tls.md)
 - [Estudo de NGINX e Gateway API](nginx/README.md)
 - [Estudo de Terraform e GitOps](terraform/README.md)
 - [Fluxo do ArgoCD e GitOps](argocd/fluxo-argocd.md)
