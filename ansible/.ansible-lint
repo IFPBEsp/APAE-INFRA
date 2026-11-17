@@ -1,0 +1,10 @@
+---
+# Configuracao do ansible-lint (executado a partir do diretorio ansible/).
+profile: production
+
+exclude_paths:
+  - .collections/
+  - .cache/
+
+# Nao baixa nada durante o lint; collections vem de requirements.yml.
+offline: true

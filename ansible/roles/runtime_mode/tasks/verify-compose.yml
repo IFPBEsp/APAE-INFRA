@@ -1,0 +1,21 @@
+---
+- name: Verificar acesso HTTPS aos serviços do Compose
+  ansible.builtin.uri:
+    url: "{{ item.url }}"
+    method: GET
+    status_code: "{{ item.expected_status }}"
+    follow_redirects: safe
+    validate_certs: true
+    use_proxy: false
+    use_netrc: false
+    return_content: false
+    timeout: 10
+  register: runtime_mode_http_check
+  until: >-
+    runtime_mode_http_check.status | default(0)
+    == item.expected_status
+  retries: 12
+  delay: 5
+  loop: "{{ runtime_mode_compose_http_checks }}"
+  loop_control:
+    label: "{{ item.name }}"

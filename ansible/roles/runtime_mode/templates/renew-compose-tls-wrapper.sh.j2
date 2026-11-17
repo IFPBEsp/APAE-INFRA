@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+lock_directory={{ runtime_mode_lock_directory | quote }}
+state_file={{ runtime_mode_state_file | quote }}
+k3s_service={{ runtime_mode_k3s_service | quote }}
+core_script={{ runtime_mode_tls_core_script | quote }}
+health_url={{ (runtime_mode_compose_http_checks | first).url | quote }}
+
+log() { printf '[apae-tls] %s\n' "$*"; }
+fail() { log "ERRO: $*" >&2; exit 1; }
+
+[[ "$EUID" -eq 0 ]] || fail "Execute como root."
+operation="${1:---renew}"
+[[ "$#" -le 1 ]] || fail "Quantidade de argumentos inválida."
+case "$operation" in
+    --timer|--renew|--dry-run) ;;
+    *) fail "Utilize --timer, --renew ou --dry-run." ;;
+esac
+
+if ! mkdir --mode=0700 -- "$lock_directory"; then
+    if [[ "$operation" == --timer && -d "$lock_directory" ]]; then
+        log "TLS_DEFERRED: outra operação possui a trava."
+        exit 0
+    fi
+    fail "Não foi possível adquirir a trava; confira concorrência ou permissões."
+fi
+
+release_lock() {
+    local result=$?
+    trap - EXIT
+    trap '' INT TERM
+    if ! rmdir -- "$lock_directory"; then
+        log "ERRO: não foi possível liberar a trava." >&2
+        result=1
+    fi
+    exit "$result"
+}
+trap release_lock EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+recorded_mode=""
+if [[ -f "$state_file" ]]; then
+    recorded_mode="$(cat "$state_file")"
+fi
+cluster_state="$(systemctl show "$k3s_service.service" --property=ActiveState --value)"
+if [[ "$recorded_mode" != compose || "$cluster_state" != inactive ]]; then
+    if [[ "$operation" == --timer ]]; then
+        log "TLS_DEFERRED: Compose não é o modo concluído ou o K3s não está parado."
+        exit 0
+    fi
+    fail "Renovação manual exige modo compose concluído e K3s parado."
+fi
+
+if [[ "$operation" == --dry-run ]]; then
+    "$core_script" --dry-run
+else
+    "$core_script" --renew
+fi
+
+# Confere o certificado efetivamente servido após eventual reinício do proxy.
+curl --fail --silent --show-error --noproxy '*' \
+    --retry 5 --retry-connrefused --retry-delay 2 --max-time 10 \
+    "$health_url" >/dev/null
+log "TLS_ENDPOINT_OK: endpoint HTTPS acessível com certificado confiável."

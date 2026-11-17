@@ -1,0 +1,12 @@
+---
+- name: Exigir validade mínima do certificado antes de iniciar o proxy
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - "{{ runtime_mode_compose_tls_certificate }}"
+      - -noout
+      - -checkend
+      - "{{ runtime_mode_compose_tls_minimum_validity_seconds | string }}"
+  changed_when: false

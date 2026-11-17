@@ -1,0 +1,11 @@
+---
+- name: Ativar ambiente Docker Compose
+  hosts: production
+  become: true
+  gather_facts: false
+
+  vars:
+    runtime_mode: compose
+
+  roles:
+    - runtime_mode

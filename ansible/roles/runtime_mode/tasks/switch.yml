@@ -1,0 +1,36 @@
+---
+- name: Ativar modo Compose
+  when: runtime_mode == 'compose'
+  block:
+    - name: Pausar cluster
+      ansible.builtin.import_tasks: stop-cluster.yml
+
+    - name: Conferir portas do Compose
+      ansible.builtin.import_tasks: check-compose-ports.yml
+
+    - name: Preparar certificado antes de iniciar os sites
+      ansible.builtin.import_tasks: renew-compose-tls.yml
+
+    - name: Iniciar aplicações Compose
+      ansible.builtin.import_tasks: start-compose.yml
+
+    - name: Atualizar destinos do proxy
+      ansible.builtin.import_tasks: reload-compose-proxy.yml
+
+    - name: Verificar disponibilidade do Compose
+      ansible.builtin.import_tasks: verify-compose.yml
+
+- name: Ativar modo cluster
+  when: runtime_mode == 'cluster'
+  block:
+    - name: Parar aplicações Compose
+      ansible.builtin.import_tasks: stop-compose.yml
+
+    - name: Conferir portas do cluster
+      ansible.builtin.import_tasks: check-cluster-ports.yml
+
+    - name: Retomar cluster e verificar componentes
+      ansible.builtin.import_tasks: start-cluster.yml
+
+- name: Verificar serviços de dados após a alternância
+  ansible.builtin.import_tasks: verify-data-services.yml

@@ -1,0 +1,11 @@
+---
+- name: Validar configuração completa do SSH
+  ansible.builtin.command: /usr/sbin/sshd -t
+  changed_when: false
+  listen: Aplicar configuração SSH
+
+- name: Recarregar SSH
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded
+  listen: Aplicar configuração SSH
