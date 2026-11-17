@@ -5,7 +5,7 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - apply
       - -f
       - "-"
