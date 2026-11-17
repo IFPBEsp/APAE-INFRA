@@ -52,6 +52,8 @@ Cada tipo de elemento usa sempre a mesma forma, cor de contorno e logo em todos 
 | Provisionamento e configuração (Terraform, Ansible) | Caixa | Preto `#1e1e1e` | Terraform / Ansible |
 | Servidor ou recurso externo (VPS) | Caixa | Preto `#1e1e1e` | Servidor |
 | Serviço externo (Discord) | Caixa | Preto `#1e1e1e` | Logo do serviço |
+| Banco de dados (PostgreSQL) | Caixa | Preto `#1e1e1e` | Logo do banco (PostgreSQL); sem logo quando o banco não estiver definido |
+| Usuário externo (responsável, profissional da APAE, visitante do site) | Caixa | Preto `#1e1e1e` | Sem logo; o título nomeia o papel do usuário |
 | Etapa de processo sem tecnologia própria (Commit, Code Review, Merge) | Caixa | Preto `#1e1e1e` | Sem logo |
 | Elemento planejado, ainda não implantado | Caixa tracejada | Cinza `#868e96` | Logo da tecnologia |
 
@@ -104,6 +106,8 @@ As logos ficam em [`logos/`](logos/) e devem ser reaproveitadas em vez de baixad
 | `docker.svg` | Dockerfile e imagens, quando a imagem for o assunto principal |
 | `server.svg` | VPS e servidores (a HostGator não tem logo padronizada) |
 
+A logo do PostgreSQL ainda não está em `logos/`: ela entra no primeiro diagrama que representar o banco, seguindo as regras abaixo. Usuários externos não usam ícone de pessoa nem bonecos: o papel fica escrito no título da caixa, para não depender de iconografia que varia de diagrama para diagrama.
+
 Logos novas devem ter fundo transparente, ser recortadas sem margem e ter no máximo 160 px no maior lado, para não aumentar demais o `.excalidraw`.
 
 ## Conectores
@@ -150,8 +154,20 @@ Antes deste padrão, cada diagrama usava uma fonte diferente (Virgil, Excalifont
 
 | Diagrama | Issue | Situação |
 | :--- | :--- | :--- |
-| [`fluxo-comunicacao-repositorios`](fluxo-comunicacao-repositorios.svg) | #10 | Refeito no padrão. Application e Pods de cada produto passaram a ser uma única caixa por produto |
-| [`fluxo-argocd`](fluxo-argocd.svg) | #11 | Refeito no padrão. Elipses de etapas viraram caixas de CI. O quadro vazio "Fluxo Repositórios Terraform" foi removido, porque esse fluxo está em `fluxo-terraform`. Pods → Loki e Loki → Grafana substituem a seta Prometheus → Loki |
+| [`fluxo-comunicacao-repositorios`](fluxo-comunicacao-repositorios.svg) | #10 | Refeito no padrão. Application e Pods de cada produto passaram a ser uma única caixa por produto. A detecção da nova imagem é um job do GitHub Actions que recebe o evento `gitops-image-published`, como em `fluxo-argocd` e na [documentação do fluxo](../fluxo-comunicacao-repositorios.md), e não o ArgoCD Image Updater. Observabilidade marcada como planejada |
+| [`fluxo-argocd`](fluxo-argocd.svg) | #11 | Refeito no padrão. Elipses de etapas viraram caixas de CI. O quadro vazio "Fluxo Repositórios Terraform" foi removido, porque esse fluxo está em `fluxo-terraform`. Pods → Loki e Loki → Grafana substituem a seta Prometheus → Loki. Prometheus, Loki e Grafana marcados como planejados |
 | [`fluxo-terraform`](fluxo-terraform.svg) | #12 | Refeito no padrão |
-| [`fluxo-observabilidade`](fluxo-observabilidade.svg) | #13 | Refeito no padrão, com o cluster Kubernetes como limite explícito |
-| [`visao-geral-arquitetura`](visao-geral-arquitetura.svg) | #14 | Refeito no padrão |
+| [`fluxo-observabilidade`](fluxo-observabilidade.svg) | #13 | Refeito no padrão, com o cluster Kubernetes como limite explícito. Stack de observabilidade, Applications filhas, ajuste do AppProject, namespace `monitoring` e alertas no Discord marcados como planejados |
+| [`visao-geral-arquitetura`](visao-geral-arquitetura.svg) | #14 | Refeito no padrão. Namespace `monitoring`, seus componentes, as Apps de monitoramento e o Discord marcados como planejados |
+
+### Estado dos componentes de observabilidade
+
+A stack de observabilidade ainda não está implantada: `monitoring/` contém só os READMEs de cada componente, e nenhuma Application, AppProject ou namespace em `argocd/` faz referência a ela. Por isso, nos diagramas, os componentes abaixo aparecem em tracejado cinza com `(planejado)`:
+
+* Prometheus, Prometheus Operator, kube-state-metrics e node-exporter;
+* Loki e Grafana Alloy;
+* Grafana e Grafana Alerting, com notificação no Discord;
+* Applications filhas de observabilidade, ajuste do AppProject e namespace `monitoring`;
+* Exposição de métricas do backend Spring Boot via Actuator.
+
+Pods das aplicações, ArgoCD e as métricas que o próprio ArgoCD já expõe continuam em contorno sólido, porque já existem. Quando um componente for implantado, o PR que o implanta deve trocar o contorno para o padrão da tabela de elementos e retirar o `(planejado)` do título.
