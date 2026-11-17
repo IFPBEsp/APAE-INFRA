@@ -73,6 +73,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Prepare migration snapshots
         id: snapshot
@@ -299,7 +300,7 @@ jobs:
                 )
 
                 for sql_file in "${sql_files[@]}"; do
-                  relative="${sql_file#$GITHUB_WORKSPACE/}"
+                  relative="${sql_file#"$GITHUB_WORKSPACE"/}"
                   run_psql_file "$relative" "$database"
                 done
 

@@ -15,6 +15,7 @@
 - [Workflows reutilizáveis de validação Kubernetes](workflows/reusable-k8s-lint.md)
 - [Workflow de validação Ansible](workflows/ansible-ci.md)
 - [Workflow reutilizável de SAST com Semgrep](workflows/reusable-sast-semgrep.md)
+- [Workflow reutilizável de lint e auditoria de segurança do GitHub Actions](workflows/reusable-workflow-lint.md)
 - [ADRs](adr/)
   - [ADR 001 — Remoção de HEALTHCHECK das imagens Distroless](adr/001-remocao-healthchecks.md)
   - [ADR 002 — Estratégia GitOps para Terraform e ArgoCD](adr/002-estrategia-gitops-terraform.md)
