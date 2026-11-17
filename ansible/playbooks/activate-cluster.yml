@@ -1,0 +1,11 @@
+---
+- name: Ativar ambiente Kubernetes
+  hosts: production
+  become: true
+  gather_facts: false
+
+  vars:
+    runtime_mode: cluster
+
+  roles:
+    - runtime_mode

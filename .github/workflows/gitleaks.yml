@@ -1,0 +1,10 @@
+name: Gitleaks
+
+on:
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  call-gitleaks:
+    uses: ./.github/workflows/reusable-gitleaks.yml
+    secrets: inherit
