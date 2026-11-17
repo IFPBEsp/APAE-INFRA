@@ -33,12 +33,12 @@ Itens abaixo são critérios propostos para detalhar a [issue #108](https://gith
 | --- | --- | --- |
 | Confirmar recuperação do provedor | Infra/HostGator | Protocolo, passos sem SSH, impacto em IP/disco e prazo conhecido |
 | Fechar inventário por produto | Squads | Motores, versões, paths/PVCs, blobs externos, tamanhos e responsáveis |
-| Fixar datastore e versão k3s | #90 / Infra | Escolha registrada e um ramo do runbook homologado |
+| Homologar recuperação do SQLite definido na #90 / PR #118 | Infra / #108 | k3s `v1.36.5+k3s1` com SQLite embarcado já definido no [runbook k3s](https://github.com/IFPBEsp/APAE-INFRA/blob/f534bc267dab69f4ccd972a2f6b4ec2439422b16/ansible/docs/k3s-backup-restore.md); falta ensaio isolado de restauração; etcd e datastore externo não se aplicam |
 | Definir recuperação dos Secrets | #93 / custodiantes | Chaves e fontes recuperáveis fora do cluster, inclusive versões antigas |
 | Homologar bootstrap controlado | #91 / Infra | ArgoCD reconstruído sem liberar escrita antes dos dados |
 | Provisionar destino e acessos | Infra e administrador da conta | Bucket privado, MFA, tokens restritos e teste de leitura/exclusão |
-| Implantar pipeline no host | Infra / Ansible | Timers com timezone, locks, timeouts, staging protegido, dumps e retomada em falha |
-| Validar retenção real | Infra | Capturas intradiárias preservadas; dry-run revisado; prune e check sem conflito |
+| Implantar pipeline no host | Infra / Ansible | Timers com timezone, trava compartilhada com alternância/TLS (#140 / PR #145), timeouts, staging protegido, dumps e restauração do estado anterior do k3s em sucesso/falha |
+| Validar retenção real | Infra | Todas as capturas das últimas 48h e uma diária até 7 dias; validar reserva de até 15 dumps por banco; dry-run revisado; prune e check sem conflito |
 | Implantar observabilidade externa | Observabilidade | Falha e ausência do host detectadas; mensagens recebidas por titular e suplente |
 | Validar estimativa inicial na implementação | Infra | Cenários do documento 06 revistos com piloto de 14 dias, operações, duração e orçamento |
 | Implantar segunda cópia, se aprovada | Infra com administração independente | B2 ou Coldline escolhido; conjunto completo restaurável sem R2, retenção própria, alertas e credencial ausente da VPS |

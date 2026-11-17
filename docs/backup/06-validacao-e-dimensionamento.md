@@ -20,6 +20,12 @@ Revisão local e consulta às fontes oficiais; sem conexão à VPS, criação de
 
 Fontes reconsultadas: [issue #107](https://github.com/IFPBEsp/APAE-INFRA/issues/107), [issue #108](https://github.com/IFPBEsp/APAE-INFRA/issues/108), [HostGator](https://suporte.hostgator.com.br/hc/pt-br/articles/45911662214419-Como-funciona-a-VPS-simples), [backup k3s](https://docs.k3s.io/datastore/backup-restore), [restore restic](https://restic.readthedocs.io/en/stable/050_restore.html), [retenção restic](https://restic.readthedocs.io/en/stable/060_forget.html) e [preços R2](https://developers.cloudflare.com/r2/pricing/).
 
+## Atualização após comentários do PR — 17/11/2026
+
+Conferidas as referências Git locais de #90 / PR #118 e #140 / PR #145. O k3s definido é `v1.36.5+k3s1` com SQLite embarcado; etcd e datastore externo não se aplicam. A matriz passa a explicitar os containers PostgreSQL/MinIO e seus volumes compartilhados fora do cluster. O pipeline deve compartilhar a trava da alternância e restaurar o estado anterior do k3s, preservando o modo Compose.
+
+Corrigida a retenção da matriz para todas as capturas das últimas 48h e uma diária até completar 7 dias, conforme o cálculo abaixo de até 15 dumps por banco. As estimativas permanecem as mesmas. O plano de testes inclui concorrência e preservação de estado nos dois modos; nenhum ensaio operacional foi executado nesta revisão.
+
 ## Estimativa inicial sem dados de produção
 
 O responsável confirmou em 06/11/2026 que ainda não há produção; existem apenas bancos de desenvolvimento. PDFs e anexos de produto são o perfil esperado. Portanto, o estudo pode concluir uma avaliação inicial por cenários, sem depender de medição de produção inexistente. Os números abaixo são hipóteses de planejamento, não medidas nem previsão de quantidade de usuários.

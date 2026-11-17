@@ -15,7 +15,7 @@ Registrar volume, banda, hardware, versões, commit, snapshot, custos previstos 
 | ID | Cenário | Execução e evidência exigida |
 | --- | --- | --- |
 | T01 | Perda completa da VPS | Recuperar pelo documento 03, sem ler o host original; demonstrar cluster, Secrets, bancos, arquivos e fluxos funcionais |
-| T02 | Datastore efetivamente escolhido | Restaurar SQLite ou etcd ou externo na versão fixada; validar token, API, nós, recursos e acesso administrativo |
+| T02 | SQLite embarcado definido na #90 / PR #118 | Restaurar `server/db/`, token e configuração do k3s `v1.36.5+k3s1`; validar API, nós, recursos e acesso administrativo em modo cluster. Embedded etcd e datastore externo: não aplicáveis |
 | T03 | Consistência de negócio | Criar registros/anexos sentinela antes e depois do ponto de captura; validar vínculo banco/arquivo, contagens e checksums no conjunto recuperado |
 | T04 | Exclusão/corrupção recente | Recuperar um conjunto mais antigo em ambiente vazio e demonstrar ausência da corrupção; medir perda adicional |
 | T05 | Falha de backup | Simular credencial inválida e erro de dump em ambiente de teste; nenhum conjunto parcial pode ser declarado sucesso; alerta chega ao canal correto |
@@ -27,6 +27,7 @@ Registrar volume, banda, hardware, versões, commit, snapshot, custos previstos 
 | T11 | Reconstrução por GitOps | Cluster vazio, sem datastore antigo; restaurar chaves, bootstrap, volumes e dados, validando que Git sozinho não é tratado como backup |
 | T12 | Controle de recursos | Medir pausa de escrita, CPU/RAM/disco e duração de backup/restauração sob volume representativo; comprovar margem no host |
 | T13 | B2, se aprovado | Recuperar snapshots sem R2 nem VPS original; validar manifesto, retenção, permissões, alerta de cópia ausente, meta de 26h e custo de download/checks |
+| T14 | Backup e alternância Compose/k3s | Nos dois modos, registrar atividade/habilitação do k3s antes e depois de sucesso, falha de captura, timeout e encerramento do job; preservar estado anterior e saúde de PostgreSQL/MinIO. Simular concorrência com alternância e renovação TLS: a trava compartilhada deve impedir sobreposição, sem remover trava de outra execução. Em Compose, k3s deve permanecer parado e desabilitado |
 
 Para serviços ainda não implantados, registrar `não executado — dependência pendente`, sem declarar aprovação. Não testar motores hipotéticos como se fossem usados em produção.
 
