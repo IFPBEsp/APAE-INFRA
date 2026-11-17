@@ -23,16 +23,26 @@ on:
       - dev
       - main
 
+permissions: {}
+
 jobs:
   call-gitleaks:
+    permissions:
+      contents: read
+      pull-requests: write
     uses: IFPBEsp/APAE-INFRA/.github/workflows/reusable-gitleaks.yml@dev
-    secrets: inherit
+    secrets:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 ```
 
-A diretiva `secrets: inherit` repassa as secrets do repositório chamador
-para o workflow reutilizável. Configure a secret `GITLEAKS_LICENSE` em
+O caller repassa explicitamente apenas `GITLEAKS_LICENSE` ao workflow
+reutilizável. Configure essa secret em
 **Settings > Secrets and variables > Actions** da organização ou do
 repositório (a licença é necessária apenas para uso em organizações).
+
+As permissões `contents: read` e `pull-requests: write` permitem o checkout e
+a publicação dos comentários do Gitleaks no PR, respectivamente. O chamador
+precisa concedê-las ao workflow reutilizável.
 
 ## PRs de Forks
 
