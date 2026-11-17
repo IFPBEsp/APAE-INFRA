@@ -530,6 +530,7 @@ class OverlayTest(unittest.TestCase):
         for application, path in (
             ("apae-geral", "kubernetes/apae-geral/overlays/dev"),
             ("apae-atendimento", "kubernetes/apae-atendimento/overlays/dev"),
+            ("apae-gestao-escolar", "kubernetes/gestao-escolar/overlays/dev"),
             ("site-comemorativo", "kubernetes/site-comemorativo/overlays/dev"),
         ):
             with self.subTest(application=application):
@@ -546,14 +547,13 @@ class OverlayTest(unittest.TestCase):
                 self.assert_success(result)
                 self.assertEqual(self.output.read_text(), f"path={path}\n")
 
-    def test_rejects_unknown_paths_environments_and_undefined_school_overlay(self):
+    def test_rejects_unknown_paths_and_environments(self):
         for overrides, message in (
             ({"APPLICATION": "../../etc"}, "Aplicação não autorizada"),
             ({"APPLICATION": "unknown"}, "Aplicação não autorizada"),
             ({"APPLICATION": "kubernetes/apae-geral/overlays/dev"}, "Aplicação não autorizada"),
             ({"ENVIRONMENT": "hml"}, "Somente dev"),
             ({"ENVIRONMENT": "prod"}, "Somente dev"),
-            ({"APPLICATION": "apae-gestao-escolar"}, "issues #38 e #92"),
         ):
             with self.subTest(overrides=overrides):
                 self.output.unlink(missing_ok=True)

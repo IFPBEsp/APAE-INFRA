@@ -17,6 +17,7 @@
         )
       }}
   loop:
+    - namespaces.yaml
     - project.yaml
     - project-infra.yaml
     - app-of-apps.yaml
