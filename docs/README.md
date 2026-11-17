@@ -2,6 +2,7 @@
 
 ## Guias e estudos
 
+- [Estratégia de backup e recuperação da VPS e aplicações](backup/README.md)
 - [Estudo de Ansible para gerenciamento da VPS](ansible/README.md)
 - [Alternância operacional entre Compose e K3s](../ansible/docs/runtime-mode.md)
 - [Evidências de validação da alternância](../ansible/docs/runtime-mode-evidence.md)
