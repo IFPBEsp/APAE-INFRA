@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+lock_directory={{ runtime_mode_lock_directory | quote }}
+certificate={{ runtime_mode_compose_tls_certificate | quote }}
+renew_before={{ runtime_mode_tls_renew_before_seconds | quote }}
+certbot_image={{ runtime_mode_certbot_image | quote }}
+k3s_service={{ runtime_mode_k3s_service | quote }}
+proxy_container={{ runtime_mode_compose_proxy_container | quote }}
+certificate_name={{ runtime_mode_certbot_certificate_name | quote }}
+config_directory={{ runtime_mode_certbot_config_directory | quote }}
+work_directory={{ runtime_mode_certbot_work_directory | quote }}
+log_directory={{ runtime_mode_certbot_log_directory | quote }}
+minimum_validity={{ runtime_mode_compose_tls_minimum_validity_seconds | quote }}
+renew_timeout={{ runtime_mode_tls_renew_timeout_seconds | quote }}
+certbot_container=apae-certbot-renew
+
+log() {
+    printf '[apae-tls] %s\n' "$*"
+}
+
+fail() {
+    log "ERRO: $*" >&2
+    exit 1
+}
+
+# Este núcleo é chamado somente com a trava já adquirida pelo responsável:
+# playbook de alternância ou wrapper do timer.
+[[ "$EUID" -eq 0 ]] ||
+    fail "A renovação precisa ser executada como root."
+
+[[ -d "$lock_directory" ]] ||
+    fail "A trava da operação não está presente."
+
+operation="${1:---renew}"
+[[ "$#" -le 1 ]] || fail "Quantidade de argumentos inválida."
+case "$operation" in
+    --renew|--dry-run) ;;
+    *) fail "Utilize --renew ou --dry-run." ;;
+esac
+
+[[ -r "$certificate" ]] ||
+    fail "Certificado não encontrado ou sem permissão de leitura."
+
+openssl x509 -in "$certificate" -noout >/dev/null ||
+    fail "O arquivo do certificado não pôde ser interpretado."
+
+# Evita interromper o proxy enquanto o certificado tem validade suficiente.
+if [[ "$operation" == --renew ]] && openssl x509 -in "$certificate" -noout \
+    -checkend "$renew_before" >/dev/null; then
+    log "TLS_UNCHANGED: certificado fora da janela de renovação."
+    exit 0
+fi
+
+cluster_state="$(systemctl show "$k3s_service.service" \
+    --property=ActiveState --value)"
+
+[[ "$cluster_state" == "inactive" ]] ||
+    fail "O K3s precisa estar parado antes da renovação standalone."
+
+# Mesmo com o serviço parado, seus containers podem ter permanecido ativos.
+if pgrep --full -- \
+    'containerd-shim.*[/]run/k3s/containerd/containerd[.]sock' >/dev/null; then
+    fail "Ainda existem containers do K3s em execução."
+else
+    process_status=$?
+    [[ "$process_status" -eq 1 ]] ||
+        fail "Não foi possível consultar os processos do K3s."
+fi
+
+for protected_container in {{ runtime_mode_data_services | map(attribute='container') | map('quote') | join(' ') }}; do
+    [[ "$proxy_container" != "$protected_container" ]] || fail "Proxy corresponde a um serviço de dados."
+done
+
+docker image inspect "$certbot_image" >/dev/null ||
+    fail "A imagem configurada do Certbot não está disponível localmente."
+
+certificate_before="$(openssl x509 -in "$certificate" \
+    -noout -fingerprint -sha256)"
+
+[[ -f "$config_directory/renewal/$certificate_name.conf" ]] || fail "Lineage do Certbot ausente."
+[[ -d "$work_directory" && -d "$log_directory" ]] || fail "Diretórios do Certbot não preparados."
+existing_certbot="$(docker ps --all --quiet --filter "name=^/${certbot_container}$")"
+[[ -z "$existing_certbot" ]] || fail "Container Certbot remanescente; confira antes de continuar."
+
+restore_proxy=false
+certbot_owned=false
+
+cleanup() {
+    local result=$?
+    local remaining_container
+    trap - EXIT
+    trap '' INT TERM
+    if [[ "$certbot_owned" == true ]]; then
+        if remaining_container="$(docker ps --all --quiet --filter "name=^/${certbot_container}$")"; then
+            if [[ -n "$remaining_container" ]]; then
+                if ! docker rm --force "$remaining_container" >/dev/null; then
+                    log "ERRO: não foi possível encerrar o Certbot." >&2
+                    result=1
+                fi
+            fi
+        else
+            log "ERRO: não foi possível consultar o container Certbot." >&2
+            result=1
+        fi
+    fi
+    if [[ "$restore_proxy" == true ]]; then
+        log "Retomando proxy."
+        if ! docker start "$proxy_container" >/dev/null; then
+            log "ERRO: não foi possível retomar o proxy; intervenção necessária." >&2
+            result=1
+        fi
+    fi
+    exit "$result"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+running_proxy="$(docker ps --quiet --filter "name=^/${proxy_container}$")"
+if [[ -n "$running_proxy" ]]; then
+    restore_proxy=true
+    log "Parando proxy para liberar a porta 80."
+    docker stop --time 30 "$proxy_container" >/dev/null
+fi
+
+[[ -z "$(docker ps --quiet --filter publish=80/tcp)" ]] || fail "Porta 80 publicada por outro container."
+[[ -z "$(ss -H -l -t -n 'sport = :80')" ]] || fail "Porta 80 ocupada por outro serviço."
+
+renew_args=(renew --cert-name "$certificate_name" --non-interactive --no-random-sleep-on-renew)
+if [[ "$operation" == --dry-run ]]; then
+    renew_args+=(--dry-run)
+fi
+certbot_owned=true
+timeout --signal=TERM --kill-after=30s "$renew_timeout" \
+    docker run --rm --name "$certbot_container" --pull never --publish 80:80 \
+    --volume "$config_directory:/etc/letsencrypt" \
+    --volume "$work_directory:/var/lib/letsencrypt" \
+    --volume "$log_directory:/var/log/letsencrypt" \
+    "$certbot_image" "${renew_args[@]}"
+
+certificate_after="$(openssl x509 -in "$certificate" -noout -fingerprint -sha256)"
+if [[ "$operation" == --dry-run ]]; then
+    [[ "$certificate_before" == "$certificate_after" ]] || fail "Dry-run alterou o certificado de produção."
+    log "TLS_DRY_RUN_OK: desafio simulado, certificado de produção preservado."
+else
+    openssl x509 -in "$certificate" -noout -checkend "$minimum_validity" >/dev/null ||
+        fail "Certificado continua sem a validade mínima exigida."
+    if [[ "$certificate_before" != "$certificate_after" ]]; then
+        log "TLS_RENEWED: certificado atualizado."
+    else
+        log "TLS_UNCHANGED: Certbot manteve o certificado atual."
+    fi
+fi
