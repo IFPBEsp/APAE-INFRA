@@ -40,6 +40,8 @@ A documentação de infraestrutura está em [`docs/`](docs/).
 | ArgoCD (GitOps) | [docs/argocd/fluxo-argocd.md](docs/argocd/fluxo-argocd.md) |
 | Observabilidade | [docs/fluxo-observabilidade.md](docs/fluxo-observabilidade.md) |
 
+Os diagramas seguem o [padrão visual dos diagramas](docs/diagramas/padrao-visual.md), que define fonte, cores por tipo de elemento, logos e conectores. Diagramas novos ou revisados devem seguir esse padrão e reutilizar as logos de [`docs/diagramas/logos/`](docs/diagramas/logos/).
+
 ## Estrutura de diretórios
 
 O esquema abaixo representa a organização pretendida do repositório; nem todos os ambientes e componentes listados já possuem implementação. O estado observado e as decisões propostas para a VPS estão no [estudo de Ansible](docs/ansible/07-arquitetura-proposta-e-proximos-passos.md).
@@ -54,7 +56,7 @@ docs/             # documentação de padrões e boas práticas do repositório
   ansible/        # estudo de gerenciamento declarativo da VPS
   boas-praticas/  # padrões técnicos e operacionais
   argocd/         # documentação do fluxo do ArgoCD (GitOps)
-  diagramas/      # diagramas e arquitetura do projeto (Excalidraw, SVG)
+  diagramas/      # diagramas do projeto (Excalidraw, SVG), logos e padrão visual
   docker/         # documentação de Docker, pipelines, assinatura, SBOM e proveniência de imagens
   nginx/          # estudo de NGINX Gateway Fabric e Gateway API
   seguranca/      # guias de segurança (detecção de segredos com Gitleaks)
