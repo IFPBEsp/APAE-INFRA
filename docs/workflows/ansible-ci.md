@@ -24,15 +24,17 @@ Permissões declaradas: somente `contents: read`. Actions externas são referenc
 | --- | --- | --- |
 | Chaves privadas | `validate.sh secrets` | Nenhuma chave privada versionada em `ansible/`; todo arquivo `*vault*.yml` está cifrado com `ansible-vault` |
 | Collections | `validate.sh collections` | Todas as collections de `requirements.yml` com versão exata `X.Y.Z`; instalação das versões fixadas |
-| YAML | `validate.sh yaml` | `yamllint --strict` com [`ansible/.yamllint`](../../ansible/.yamllint) (ignora `.collections/`, `.cache/` e arquivos `*vault*.yml`) |
+| YAML | `validate.sh yaml` | `yamllint --strict` com [`ansible/.yamllint`](../../ansible/.yamllint) (ignora `.collections/` e `.cache/`; arquivos cifrados com `ansible-vault` são tratados como descrito abaixo) |
 | Lint | `validate.sh lint` | `ansible-lint` perfil `production` com [`ansible/.ansible-lint`](../../ansible/.ansible-lint), quando houver conteúdo Ansible em `playbooks/`, `roles/`, `inventories/` ou `collections/` |
 | Sintaxe | `validate.sh syntax` | `ansible-inventory --list` para cada `ansible/inventories/<ambiente>/hosts.yml`, independentemente de playbooks; com playbooks, também executa `ansible-playbook --syntax-check` contra cada inventário; inventário ilegível faz a etapa falhar |
 
 Sem playbooks em `ansible/playbooks/` (estrutura da #90), o lint ainda valida roles, inventários e collections próprios existentes, e a etapa de sintaxe valida os inventários encontrados; apenas o `ansible-playbook --syntax-check` é ignorado. O lint só é ignorado quando não há conteúdo Ansible aplicável. Havendo playbooks sem inventário, a etapa de sintaxe falha.
 
+O `ansible-playbook --syntax-check` é executado nos playbooks diretamente em `ansible/playbooks/` (`*.yml` e `*.yaml`), que é a estrutura prevista na #90. Arquivos em subdiretórios de `playbooks/` continuam cobertos pelo `ansible-lint`, que também executa o syntax-check, mas não são alvo direto desta etapa.
+
 ### Arquivos cifrados (`ansible-vault`)
 
-O CI não recebe a senha do vault e não decifra nada. Para o `ansible-lint` e o `ansible-playbook --syntax-check`, o `validate.sh` trabalha em uma cópia temporária de `ansible/` em que cada arquivo cifrado (primeira linha `$ANSIBLE_VAULT;`) é substituído por um stub vazio (`{}`); a cópia é apagada ao final e o arquivo versionado não é alterado. Como o `yamllint` ignora arquivos `*vault*.yml`, a etapa `secrets` falha se algum deles estiver em texto puro.
+O CI não recebe a senha do vault e não decifra nada. Para o `yamllint`, o `ansible-lint` e o `ansible-playbook --syntax-check`, o `validate.sh` trabalha em uma cópia temporária de `ansible/` em que cada arquivo `.yml`/`.yaml` cifrado (identificado pelo conteúdo, linha `$ANSIBLE_VAULT;`, e não pelo nome) é substituído por um stub vazio (`{}`); a cópia é apagada ao final e o arquivo versionado não é alterado. A etapa `secrets` falha se algum arquivo com `vault` no nome estiver em texto puro.
 
 ## 4. Versões fixadas
 
@@ -44,10 +46,10 @@ Atualize versões em PR dedicado.
 
 ## 5. Validação local
 
-Pré-requisito: Python 3.12 ou superior.
+Pré-requisito: Python 3.12, a mesma versão do CI. O `ansible-core` fixado em `requirements.txt` não é compatível com todas as versões mais novas: com Python 3.15, por exemplo, o `ansible-galaxy` falha ao iniciar com `AttributeError: module 'dataclasses' has no attribute '_is_type'`. Se o `python3` do sistema for outro, crie o ambiente com `python3.12` (ou com `uv venv --python 3.12`).
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r ansible/requirements.txt
 
@@ -62,20 +64,11 @@ ansible/scripts/validate.sh lint
 ansible/scripts/validate.sh syntax
 ```
 
-Comandos equivalentes, executados dentro de `ansible/` (o `validate.sh` continua sendo a fonte de verdade e aplica essas variáveis automaticamente):
+Use sempre o `validate.sh`: ele é o comando local equivalente ao CI, porque cada etapa do workflow chama exatamente a mesma etapa dele. Executar `yamllint`, `ansible-lint`, `ansible-inventory` ou `ansible-playbook` diretamente **não** reproduz o CI, pelos motivos abaixo:
 
-```bash
-export ANSIBLE_COLLECTIONS_PATH="$PWD/.collections"
-export ANSIBLE_HOST_KEY_CHECKING="False"
-export ANSIBLE_RETRY_FILES_ENABLED="False"
-export ANSIBLE_INVENTORY_ANY_UNPARSED_IS_FAILED="True"
-export ANSIBLE_NOCOLOR="1"
-
-yamllint --strict -c .yamllint .
-ansible-lint --config-file .ansible-lint
-ansible-inventory -i inventories/<ambiente>/hosts.yml --list > /dev/null
-ansible-playbook -i inventories/<ambiente>/hosts.yml --syntax-check playbooks/<playbook>.yml
-```
+- **Arquivos cifrados:** o script trabalha em uma cópia temporária com stubs no lugar dos arquivos `ansible-vault` (ver [Arquivos cifrados](#arquivos-cifrados-ansible-vault)). Um `ansible-playbook --syntax-check` direto, sem senha de vault, tenta decifrá-los e falha com `Attempting to decrypt but no vault secrets found`, enquanto o script retorna sucesso.
+- **Variáveis de ambiente:** o script exporta `ANSIBLE_COLLECTIONS_PATH`, `ANSIBLE_INVENTORY_ANY_UNPARSED_IS_FAILED=True` e outras. Sem a segunda, um inventário ilegível gera apenas aviso e retorna sucesso.
+- **Escopo do lint:** o `ansible-lint` recebe apenas `playbooks/`, `roles/`, `inventories/` e `collections/`. Sem esses caminhos, ele analisa o diretório inteiro e acusa arquivos que não são conteúdo Ansible.
 
 ## 6. Validação remota
 
