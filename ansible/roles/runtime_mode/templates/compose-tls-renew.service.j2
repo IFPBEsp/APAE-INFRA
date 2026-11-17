@@ -1,0 +1,20 @@
+[Unit]
+Description=APAE - Renovar TLS do ambiente Compose com exclusao mutua
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart={{ runtime_mode_tls_wrapper_script }} --timer
+TimeoutStartSec=10min
+TimeoutStopSec=60s
+KillMode=control-group
+PrivateTmp=true
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
