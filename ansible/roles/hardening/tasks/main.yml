@@ -1,0 +1,11 @@
+---
+- name: Instalar configuração segura do SSH
+  ansible.builtin.template:
+    src: 00-apae-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-apae-hardening.conf
+    owner: root
+    group: root
+    mode: "0600"
+    backup: true
+    validate: "/usr/sbin/sshd -t -f %s"
+  notify: Aplicar configuração SSH

@@ -16,7 +16,9 @@ corretas.
    `attestations: write`.
 3. O workflow aceita somente eventos `push` ou `workflow_dispatch` na `main`.
    Confere o HEAD do produto antes do build e novamente antes da promoção das
-   tags, após scan, assinatura e verificação de proveniência.
+   tags, após scan, atestação e verificação de proveniência e SBOM e
+   assinatura. Detalhes em
+   [SBOM e atestação de proveniência](../docker/sbom-proveniencia-imagens.md).
 4. Uma publicação aprovada expõe imagem, digest, tag por commit, repositório,
    commit e referência Git de origem. `latest` serve apenas para conveniência;
    a tag `dev` deixa de ser publicada pelo workflow.

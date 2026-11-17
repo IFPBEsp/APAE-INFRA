@@ -1,0 +1,11 @@
+---
+- name: Instalar e configurar ArgoCD no cluster k3s
+  hosts: production
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../vars/argocd-vault.yml
+
+  roles:
+    - argocd_bootstrap

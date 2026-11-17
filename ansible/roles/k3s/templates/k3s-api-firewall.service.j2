@@ -1,0 +1,17 @@
+[Unit]
+Description=APAE - Proteger portas administrativas do Kubernetes
+After=network-online.target
+Before=k3s.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+{% for item in k3s_protected_ports %}
+{% set rule = '-p ' ~ item.protocol ~ ' --dport ' ~ item.port %}
+    ExecStart=/bin/sh -c '/usr/sbin/iptables -C INPUT -i {{ k3s_public_interface }} {{ rule }} -j DROP 2>/dev/null || /usr/sbin/iptables -I INPUT -i {{ k3s_public_interface }} {{ rule }} -j DROP'
+    ExecStart=/bin/sh -c '/usr/sbin/ip6tables -C INPUT -i {{ k3s_public_interface }} {{ rule }} -j DROP 2>/dev/null || /usr/sbin/ip6tables -I INPUT -i {{ k3s_public_interface }} {{ rule }} -j DROP'
+{% endfor %}
+
+[Install]
+WantedBy=multi-user.target
