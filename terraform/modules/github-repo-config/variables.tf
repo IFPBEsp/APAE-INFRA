@@ -9,6 +9,15 @@ variable "protected_branches" {
   default     = ["main", "dev"]
 }
 
+variable "branch_status_checks" {
+  description = "Mapa de configurações de required_status_checks indexado pelo nome/padrão da branch"
+  type = map(object({
+    strict   = optional(bool, false)
+    contexts = optional(list(string), [])
+  }))
+  default = {}
+}
+
 variable "required_approving_review_count" {
   description = "Número mínimo de revisões necessárias para aprovar um PR"
   type        = number

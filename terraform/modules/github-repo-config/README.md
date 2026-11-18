@@ -11,6 +11,7 @@ Módulo reutilizável para padronização e governança de configurações em re
 2. **Branch Protection (`github_branch_protection`):**
    - Aplicado por padrão nas branches `main` e `dev`.
    - Exige revisão de Pull Request com pelo menos 1 aprovação (`dismiss_stale_reviews = true`).
+   - Suporte a status checks obrigatórios parametrizáveis por branch via `branch_status_checks`.
    - Impede force push (`allows_force_pushes = false`) e exclusão de branch (`allows_deletions = false`).
 3. **Environments (`github_repository_environment`):**
    - Cria os ambientes `development`, `staging` e `production` para pipelines de CI/CD.

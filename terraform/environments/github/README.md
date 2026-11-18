@@ -33,23 +33,47 @@ As seguintes variáveis são exigidas para executar o Terraform:
 | --- | --- |
 | `github_app_id` | ID numérico da GitHub App (obtido na página *General* da App). |
 | `github_app_installation_id` | ID da instalação da App na organização `IFPBEsp`. |
-| `github_app_pem_file` | Conteúdo da chave privada `.pem` gerada para a App. |
+| `github_app_pem_file` | Conteúdo da chave privada `.pem` gerada para a App (em caso de arquivo local, passe com `file(...)`). |
 
-Essas variáveis são passadas localmente via `terraform.tfvars` (ou variáveis de ambiente `TF_VAR_*`) e no HCP Terraform / CI como secrets sensíveis.
+Essas variáveis devem ser configuradas como **Terraform Variables** (marcadas como sensíveis, especialmente `github_app_pem_file`) na aba **Variables** do workspace no **HCP Terraform**. Em execuções locais de teste, podem ser passadas via `terraform.tfvars` (ignorado pelo git, utilizando heredoc para o conteúdo do PEM) ou via variáveis de ambiente `TF_VAR_*`.
+
+---
+
+## Configuração do HCP Terraform (Pré-requisitos)
+
+O estado e a execução deste ambiente utilizam o **HCP Terraform** (antigo Terraform Cloud) através do bloco `cloud` em `backend.tf`:
+
+- **Organização:** `ifpb-esp-apae`
+- **Workspace:** `apae-infra-github`
+- **Versão do Terraform:** `1.17.2` (ou `>= 1.5.0` conforme `providers.tf`).
+
+### Configurações do Workspace
+
+Para que a execução remota localize corretamente os módulos compartilhados referenciados relativamente (como `../../modules/github-repo-config`), o workspace está configurado com:
+
+1. **Execution Mode:** `Project default` (definido como **Remote**, onde os planos e aplicações rodam na infraestrutura do HCP Terraform).
+2. **Terraform Version:** `1.17.2`
+3. **Terraform Working Directory:** `terraform/environments/github`
+   - *Importante:* O HCP Terraform executa a partir da raiz do repositório e altera o diretório de trabalho para `terraform/environments/github` antes de rodar os comandos, permitindo que módulos fora do diretório (como `../../modules/github-repo-config`) sejam empacotados e referenciados sem erros.
+4. **Variables:**
+   - Cadastradas no workspace em **Variables** as variáveis do tipo Terraform `github_app_id`, `github_app_installation_id` e `github_app_pem_file` (marcada como **Sensitive**).
 
 ---
 
 ## Execução e Importação de Repositórios
 
-O ambiente utiliza o arquivo `imports.tf` com blocos `import` declarativos (Terraform >= 1.5) para importar as labels e proteções de branch já configuradas na interface web:
+Após configurar o workspace no HCP Terraform e autenticar o CLI (`terraform login`), o ambiente utiliza o arquivo `imports.tf` com blocos `import` declarativos (Terraform >= 1.5) para importar as labels e proteções de branch já existentes:
 
 ```bash
-# 1. Inicializar providers e backend
+# 1. Navegar até o diretório do ambiente
+cd terraform/environments/github
+
+# 2. Inicializar providers e backend remoto
 terraform init
 
-# 2. Executar o plano de execução (verificar se as importações são reconhecidas)
+# 3. Executar o plano de execução (verificar se as importações são reconhecidas remotamente)
 terraform plan
 
-# 3. Aplicar as configurações
+# 4. Aplicar as configurações
 terraform apply
 ```

@@ -55,6 +55,14 @@ resource "github_branch_protection" "protection" {
     require_code_owner_reviews      = false
   }
 
+  dynamic "required_status_checks" {
+    for_each = contains(keys(var.branch_status_checks), each.key) ? [var.branch_status_checks[each.key]] : []
+    content {
+      strict   = required_status_checks.value.strict
+      contexts = required_status_checks.value.contexts
+    }
+  }
+
   allows_deletions    = false
   allows_force_pushes = false
 }

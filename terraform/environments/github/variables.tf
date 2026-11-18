@@ -9,7 +9,7 @@ variable "github_app_installation_id" {
 }
 
 variable "github_app_pem_file" {
-  description = "Conteúdo ou caminho da chave privada (.pem) da GitHub App"
+  description = "Conteúdo da chave privada (.pem) da GitHub App. Para carregar a partir de um arquivo local, utilize a função file(\"caminho/para/chave.pem\")"
   type        = string
   sensitive   = true
 }
