@@ -99,12 +99,23 @@ parte dessa transição. A raiz deve reconciliar as filhas para as revisões
 declaradas nos arquivos versionados. Conferir também a permanência do patch
 `Recreate` antes de sincronizar o chart.
 
+O [PR #133](https://github.com/IFPBEsp/APAE-INFRA/pull/133), que remove o sync
+automático da raiz, deve ser integrado antes deste PR. Após essa integração,
+atualizar a branch da #111 e resolver eventual conflito em
+`.github/workflows/k8s-lint.yml`, preservando os quatro overlays de produção
+adicionados pelo #133 e o caminho `kubernetes/infra` adicionado pela #111,
+além das bases e dos overlays de desenvolvimento já presentes.
+
 Checklist da adoção, para executar somente depois da promoção:
 
 1. Confirmar que a revisão de `main` contém as três Applications, o AppProject
-   ampliado e os diretórios de manifests, incluindo a correção `Recreate`.
+   ampliado e os diretórios de manifests, incluindo a correção `Recreate` e a
+   remoção do sync automático da raiz pelo #133. Conferir também que o Ansible
+   aplicou essa configuração à raiz efetiva antes de prosseguir.
 2. Conferir a revisão e os recursos gerenciados pela raiz. Atualizar sua
-   comparação se necessário, preservando o filtro `apps/*/*.yaml`.
+   comparação se necessário, preservando o filtro `apps/*/*.yaml`. Revisar o
+   conjunto de filhas e o diff, então sincronizar manualmente somente a raiz,
+   sem sync recursivo das filhas e sem prune para excluir recursos existentes.
 3. Confirmar que as três Applications existentes foram incorporadas à árvore
    da raiz: `gateway-api-crds` e `nginx-gateway` devem passar a acompanhar
    `main`; o chart deve manter o commit NGINX fixado.
@@ -115,10 +126,11 @@ Checklist da adoção, para executar somente depois da promoção:
    Registrar as revisões reconciliadas, a saúde do Gateway e a permanência
    do estado limpo, sem recursos de smoke test.
 
-A raiz tem sync automático com `selfHeal` e `prune`; as três filhas têm sync
-manual. Publicar os manifests em `main` pode registrar as filhas automaticamente,
-mas não autoriza sincronizar seus workloads. Conferir o conjunto de filhas e o
-diff da raiz antes da promoção; excluir uma filha do Git pode acionar o prune.
+Após aplicar a configuração do #133, a raiz e as três filhas têm sync manual.
+Publicar os manifests em `main` não registra as filhas: é preciso sincronizar
+a raiz, o que ainda não autoriza sincronizar seus workloads. Conferir o conjunto
+de filhas e o diff da raiz antes da promoção; excluir uma filha do Git pode
+acionar o prune se essa opção for selecionada no sync manual.
 
 ## Permissões e aplicação do AppProject
 
