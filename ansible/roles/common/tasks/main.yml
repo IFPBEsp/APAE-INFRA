@@ -1,0 +1,28 @@
+---
+- name: Validar sistema operacional
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_major_version'] == '22'
+      - ansible_facts['architecture'] == 'x86_64'
+    fail_msg: "Esta configuração foi preparada para Ubuntu 22.04 x86_64."
+
+- name: Garantir resolução local do hostname
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    line: "127.0.1.1 {{ ansible_facts['fqdn'] }} {{ ansible_facts['hostname'] }}"
+    state: present
+    backup: true
+  when: common_manage_hosts | bool
+
+- name: Atualizar cache de pacotes
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Instalar pacotes essenciais
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+    install_recommends: false

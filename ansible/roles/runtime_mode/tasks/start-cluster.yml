@@ -1,0 +1,82 @@
+---
+- name: Ativar proteção das portas administrativas do cluster
+  ansible.builtin.systemd_service:
+    name: "{{ runtime_mode_k3s_firewall_service }}"
+    state: started
+    enabled: true
+
+- name: Confirmar regras de proteção IPv4 e IPv6
+  ansible.builtin.command:
+    argv:
+      - "{{ item.0 }}"
+      - -C
+      - INPUT
+      - -i
+      - "{{ k3s_public_interface }}"
+      - -p
+      - "{{ item.1.protocol }}"
+      - --dport
+      - "{{ item.1.port }}"
+      - -j
+      - DROP
+  loop: "{{ ['iptables', 'ip6tables'] | product(k3s_protected_ports) | list }}"
+  loop_control:
+    label: "{{ item.0 }} {{ item.1.protocol }}/{{ item.1.port }}"
+  changed_when: false
+
+- name: Iniciar K3s e habilitar sua retomada após reboot
+  ansible.builtin.systemd_service:
+    name: "{{ runtime_mode_k3s_service }}"
+    state: started
+    enabled: true
+
+- name: Aguardar porta da API Kubernetes local
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 6443
+    state: started
+    timeout: "{{ runtime_mode_cluster_start_timeout_seconds }}"
+
+- name: Aguardar disponibilidade da API Kubernetes
+  ansible.builtin.command:
+    argv:
+      - "{{ runtime_mode_k3s_binary }}"
+      - kubectl
+      - get
+      - --raw=/readyz
+      - --request-timeout=10s
+  changed_when: false
+  register: runtime_mode_kubernetes_ready
+  until:
+    - runtime_mode_kubernetes_ready.rc == 0
+    - runtime_mode_kubernetes_ready.stdout | trim == 'ok'
+  retries: 30
+  delay: 3
+
+- name: Aguardar nó Kubernetes ficar Ready
+  ansible.builtin.command:
+    argv:
+      - "{{ runtime_mode_k3s_binary }}"
+      - kubectl
+      - wait
+      - --for=condition=Ready
+      - nodes
+      - --all
+      - "--timeout={{ runtime_mode_cluster_start_timeout_seconds }}s"
+  changed_when: false
+
+- name: Aguardar disponibilidade dos componentes obrigatórios
+  ansible.builtin.command:
+    argv:
+      - "{{ runtime_mode_k3s_binary }}"
+      - kubectl
+      - --namespace
+      - "{{ item.namespace }}"
+      - rollout
+      - status
+      - "{{ item.resource }}"
+      - "--timeout={{ runtime_mode_cluster_start_timeout_seconds }}s"
+  changed_when: false
+  loop: "{{ runtime_mode_cluster_workloads }}"
+  loop_control:
+    label: "{{ item.namespace }}/{{ item.resource }}"

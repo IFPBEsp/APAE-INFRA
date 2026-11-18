@@ -1,0 +1,8 @@
+---
+- name: Aplicar hardening do SSH na VPS de produção
+  hosts: production
+  become: true
+  gather_facts: true
+
+  roles:
+    - hardening

@@ -2,13 +2,20 @@
 
 ## Guias e estudos
 
+- [Estratégia de backup e recuperação da VPS e aplicações](backup/README.md)
 - [Estudo de Ansible para gerenciamento da VPS](ansible/README.md)
+- [Alternância operacional entre Compose e K3s](../ansible/docs/runtime-mode.md)
+- [Evidências de validação da alternância](../ansible/docs/runtime-mode-evidence.md)
+- [Renovação automática do TLS no modo Compose](../ansible/docs/runtime-tls.md)
 - [Estudo de NGINX e Gateway API](nginx/README.md)
 - [Estudo de Terraform e GitOps](terraform/README.md)
 - [Fluxo do ArgoCD e GitOps](argocd/fluxo-argocd.md)
 - [Fluxo de comunicação entre repositórios](fluxo-comunicacao-repositorios.md)
 - [Boas práticas do repositório](boas-praticas/README.md)
 - [Workflows reutilizáveis de validação Kubernetes](workflows/reusable-k8s-lint.md)
+- [Workflow de validação Ansible](workflows/ansible-ci.md)
+- [Workflow reutilizável de SAST com Semgrep](workflows/reusable-sast-semgrep.md)
+- [Workflow reutilizável de lint e auditoria de segurança do GitHub Actions](workflows/reusable-workflow-lint.md)
 - [ADRs](adr/)
   - [ADR 001 — Remoção de HEALTHCHECK das imagens Distroless](adr/001-remocao-healthchecks.md)
   - [ADR 002 — Estratégia GitOps para Terraform e ArgoCD](adr/002-estrategia-gitops-terraform.md)
