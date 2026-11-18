@@ -13,20 +13,20 @@ data "github_repository" "repo" {
 
 locals {
   default_labels = {
-    "1"  = { color = "0E8A16", description = "1 Story Point - Esforço mínimo" }
-    "2"  = { color = "1D76DB", description = "2 Story Points - Esforço pequeno" }
-    "3"  = { color = "5319E7", description = "3 Story Points - Esforço médio-baixo" }
-    "5"  = { color = "FBCA04", description = "5 Story Points - Esforço médio" }
-    "8"  = { color = "D93F0B", description = "8 Story Points - Esforço grande" }
-    "13" = { color = "B60205", description = "13 Story Points - Esforço muito grande" }
+    "1"  = { color = "1b9e4b", description = "Fibonacci: trivial, mudança pontual sem investigação" }
+    "2"  = { color = "55b95c", description = "Fibonacci: pequeno, escopo claro e baixo risco" }
+    "3"  = { color = "9ecb5d", description = "Fibonacci: moderado, mais de uma etapa sem incerteza" }
+    "5"  = { color = "d9cb5a", description = "Fibonacci: considerável, múltiplas etapas ou dependência externa" }
+    "8"  = { color = "e8a33d", description = "Fibonacci: grande, escopo amplo ou parcialmente indefinido" }
+    "13" = { color = "e2683d", description = "Fibonacci: muito grande, alta incerteza, candidata a divisão" }
 
-    "feature"     = { color = "0E8A16", description = "Nova funcionalidade" }
-    "bug"         = { color = "D73A4A", description = "Algo não está funcionando corretamente" }
-    "infra"       = { color = "5319E7", description = "Tarefas relacionadas à infraestrutura" }
-    "terraform"   = { color = "844FBA", description = "Configurações e recursos Terraform" }
-    "docs"        = { color = "0075CA", description = "Melhorias ou adições à documentação" }
-    "ci"          = { color = "FEF2C0", description = "Workflows e automações de CI/CD" }
-    "blocked"     = { color = "000000", description = "Impedido por dependência externa" }
+    "feature"   = { color = "61f378", description = "Nova capacidade ou funcionalidade para infraestrutura ou plataforma." }
+    "bug"       = { color = "d73a4a", description = "Correção de comportamento incorreto ou inesperado." }
+    "infra"     = { color = "bfd4f2", description = "Tarefas relacionadas à infraestrutura" }
+    "terraform" = { color = "862078", description = "Infraestrutura como código, módulos e configurações Terraform." }
+    "ci"        = { color = "5c90b2", description = "Pipelines de build, testes e integração contínua." }
+    "docs"      = { color = "0075CA", description = "Melhorias ou adições à documentação" }
+    "blocked"   = { color = "000000", description = "Impedido por dependência externa" }
   }
 
   all_labels = merge(local.default_labels, var.custom_labels)
