@@ -20,7 +20,7 @@ O workflow não escreve nada no repositório e usa apenas as permissões `conten
 - Valida só os commits do PR, do commit base até o head. Commits de merge são ignorados.
 - A configuração padrão do commitlint é o [`commitlint.config.js`](../../commitlint.config.js) da raiz do APAE-INFRA. O workflow baixa esse arquivo na mesma versão do próprio workflow, então fixar o SHA do workflow também fixa a configuração.
 - O Node.js é configurado com `actions/setup-node` em versão fixa (22), para que a instalação não dependa da versão que vem no `ubuntu-latest`.
-- O commitlint é instalado com versão fixa (`@commitlint/cli` e `@commitlint/config-conventional`).
+- O commitlint e suas dependências transitivas são fixados em `.github/tools/commitlint/package-lock.json` e instalados por `npm ci --ignore-scripts`. O manifesto e o lockfile vêm do mesmo checkout confiável do workflow, inclusive quando o caller fornece uma configuração própria.
 - Se os commits falharem, o título ainda é validado, para que os dois problemas apareçam na mesma execução.
 - PRs abertos por bots (como o Renovate) não são validados.
 - As actions usadas são fixadas por SHA.
@@ -95,7 +95,7 @@ with:
 
 ## Uso no APAE-INFRA
 
-O workflow `.github/workflows/commitlint.yml` chama o reutilizável do próprio repositório (`./.github/workflows/commitlint-reusable.yml`) com os valores padrão.
+O workflow `.github/workflows/commitlint.yml` chama o reutilizável do próprio repositório (`$/.github/workflows/commitlint-reusable.yml`) com os valores padrão.
 
 ---
 

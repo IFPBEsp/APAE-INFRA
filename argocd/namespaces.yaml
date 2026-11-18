@@ -3,3 +3,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: apae-dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apae-prod

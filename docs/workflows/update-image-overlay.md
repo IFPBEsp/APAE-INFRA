@@ -2,41 +2,25 @@
 
 ## Arquitetura e decisões
 
-A integração recomendada da issue #82 é `repository_dispatch`. Depois de um
-publish bem-sucedido, o produto envia `gitops-image-published` ao APAE-INFRA.
-O dispatcher valida o payload e chama internamente
-`update-image-overlay-reusable.yml`, que valida as combinações autorizadas,
-consulta o GHCR e propõe um PR para `main`.
+Após publicar imagens a partir da `main`, o produto envia um
+`repository_dispatch` ao APAE-INFRA. O Site envia `gitops-image-published`
+com uma imagem. Geral, Atendimento e Gestão Escolar enviam
+`gitops-release-published` com o frontend e o backend da mesma execução.
+O dispatcher chama `update-image-overlay-reusable.yml`, que valida os digests
+e propõe um PR para `main` com o overlay de homologação e o registro candidato.
 
-O reutilizável exige execução no próprio `IFPBEsp/APAE-INFRA`: chamadas vindas
-de outro repositório são rejeitadas. A chave privada do App de PRs fica
-**exclusivamente no environment `gitops-image-updater` do APAE-INFRA**,
-restrito à branch `dev`, sem distribuição aos produtos ou acesso por PRs.
-Não há ArgoCD Image Updater instalado no cluster.
-
-Apenas overlays de `dev` (homologação) são atualizados, sempre por digest
-`image@sha256:<digest>`. O ambiente `dev` não determina a branch Git: a base dos
-PRs continua sendo `main`. Tag `sha-*`, commit, produto e run são registrados
-no PR, seguindo a [política de imagens](../boas-praticas/16-politica-tags-imagens-docker.md).
-Não há auto-merge nem promoção para `hml` ou `prod`. Revisão humana é obrigatória;
-após o merge, o sync no ArgoCD continua manual.
-
-O PR #97 implementa somente o receptor GitOps. A #106 implementará a integração
-dos produtos após publicação na `main` e a
-promoção da combinação de digests validada de `dev` para `prod`, sem novo build.
-O receptor atual rejeita `hml` e `prod`; não será criado um ambiente `hml`.
-
-**Dependência de sincronização:** o PR #120 declara `automated`, `prune` e
-`selfHeal` nas Applications `dev`. Isso diverge do sync manual requerido para
-homologação neste fluxo. A política deve ser alinhada com #92/#106 antes da
-ativação operacional; este PR não modifica as Applications ou o bootstrap.
+O reutilizável só executa no próprio `IFPBEsp/APAE-INFRA`, na branch padrão
+(`dev` atualmente). A chave do App de PRs fica no environment
+`gitops-image-updater`, com acesso limitado à branch `dev`. O ArgoCD acompanha
+os manifests da `main` e o sync é manual. O [fluxo de releases](releases-gitops.md)
+descreve a aprovação e a promoção dos mesmos digests para produção.
 
 ## Validações antes da escrita
 
-1. O dispatcher exige um objeto JSON com os campos obrigatórios, todos strings
-   não vazias de até 255 caracteres e sem quebras de linha. Campos desconhecidos
-   são rejeitados. `environment` assume `dev` **somente quando ausente**; valores
-   como `null`, `false`, `0`, vazio, `hml` e `prod` são rejeitados.
+1. O dispatcher valida o formato de cada evento e rejeita campos extras.
+   No evento do Site, `environment` assume `dev` somente quando ausente;
+   valores como `null`, `false`, `0`, vazio, `hml` e `prod` são rejeitados.
+   No evento combinado, os dois componentes são obrigatórios.
 2. O reutilizável verifica ambiente, formatos, allowlist exata de repositório,
    aplicação e imagem, e se a tag é um prefixo do SHA completo informado.
    Inputs são tratados como dados, via variáveis de ambiente, sem interpolação
@@ -45,8 +29,10 @@ ativação operacional; este PR não modifica as Applications ou o bootstrap.
 3. Confere se o commit informado é o HEAD atual da `main` do produto.
 4. Consulta o GHCR para verificar existência da tag e correspondência do digest
    e autentica a proveniência com GitHub Attestations para o repositório,
-   workflow de publicação, ref `refs/heads/main` e commit declarados. Uma falha
-   impede até a geração do token de escrita do App.
+   workflow de publicação, ref `refs/heads/main` e commit declarados. Também
+   verifica a assinatura Cosign. Para uma release combinada, os dois digests
+   devem pertencer à mesma execução autenticada. Uma falha impede a geração
+   do token de escrita do App.
 5. Após checkout de `main`, exige o overlay existente e renderizável. Só então
    edita seu `kustomization.yaml`, renderiza novamente e verifica o resultado.
 6. Antes de abrir ou atualizar o PR, confere novamente o HEAD da `main` do
@@ -59,24 +45,18 @@ obtida em `infra/`, com o token do App e também sem persistir credenciais.
 A action local do Kustomize é carregada da raiz; ela não precisa existir na `main`.
 Resolução e edição dos overlays usam `working-directory: infra`. A criação do PR
 usa `path: infra`, com `add-paths` relativo a esse checkout e limitado ao
-`kustomization.yaml` autorizado. Os caminhos lógicos da tabela abaixo não mudam.
+overlay autorizado e ao registro candidato correspondente.
 
 A edição usa PyYAML 6.0.3 como equivalente a `kustomize edit set image`: altera
 somente a lista `images`, remove `newTag`, grava `digest` e preserva `newName`
 quando houver alias. A operação falha se a imagem não existir nos workloads,
 se houver regras ambíguas ou se outras imagens forem alteradas. A formatação
 YAML pode ser normalizada e comentários podem ser removidos; demais propriedades
-são preservadas. Somente o arquivo do overlay entra no commit.
+são preservadas. O commit inclui o overlay e o registro do candidato.
 
-A branch é estável por aplicação, ambiente e imagem, por exemplo:
-`gitops/apae-geral/dev/apae-geral-backend`. Novas notificações da mesma imagem
-atualizam o mesmo PR aberto. Backend e frontend usam branches separadas.
-Se o digest já estiver em `main`, não é necessário novo PR.
-
-A concorrência serializa execuções da mesma imagem, sem cancelar o job em
-andamento. As verificações do HEAD da `main` rejeitam eventos atrasados;
-o workflow não ordena commits cronologicamente. PRs de imagens diferentes podem alterar o mesmo arquivo;
-resolva conflitos e reexecute checks antes do merge.
+Cada aplicação tem uma branch estável para o PR de homologação. A concorrência
+serializa as execuções para a mesma aplicação sem cancelar a que está em
+andamento. A validação do HEAD da `main` do produto rejeita eventos atrasados.
 
 ## Conferência do GHCR e imagens privadas
 
@@ -137,55 +117,25 @@ o checksum nessa action e passar novamente pela suíte e revisão do PR.
 
 ## Inputs e outputs
 
-Todos os inputs do reutilizável são strings. No dispatch, os nomes separados
-por hífen são enviados com underscore, conforme o exemplo de integração.
+Todos os inputs do reutilizável são strings. Veja os payloads e exemplos de
+integração em [Publicação pela main dos produtos](publicacao-main-produtos.md).
 
-| Input | Obrigatório | Padrão | Descrição |
-| --- | --- | --- | --- |
-| `image` | Sim | — | Nome GHCR completo, sem tag/digest, presente na allowlist. |
-| `image-tag` | Sim | — | `sha-` e 7 a 40 caracteres hexadecimais, prefixo de `source-commit`. |
-| `image-digest` | Sim | — | Digest final: `sha256:` e 64 caracteres hexadecimais. |
-| `application` | Sim | — | Identificador da aplicação da tabela abaixo. |
-| `environment` | Não | `dev` | Somente `dev` é aceito. |
-| `source-repository` | Sim | — | Repositório declarado no formato `IFPBEsp/nome`. |
-| `source-commit` | Sim | — | SHA completo de 40 caracteres do build declarado. |
-
-| Output | Descrição |
+| Input | Descrição |
 | --- | --- |
-| `pull-request-url` | URL do PR criado/atualizado; pode ser vazio quando não há diferença. |
+| `application`, `source-repository`, `source-commit` | Identificam a aplicação, o repositório e o SHA completo de origem. |
+| `environment` | Opcional, com padrão `dev`. Somente `dev` é aceito. |
+| `image`, `image-tag`, `image-digest` | Obrigatórios no evento de imagem única do Site. |
+| `release-json` | Obrigatório para Geral, Atendimento e Gestão Escolar. Contém frontend e backend e exclui os inputs de imagem única. |
 
-## Aplicações e dependência da #92
+O output `pull-request-url` contém a URL do PR criado ou atualizado. Fica vazio
+quando não há diferença.
 
-Todas as imagens abaixo têm prefixo `ghcr.io/ifpbesp/`.
-
-| Repositório declarado | `application` | Imagens autorizadas | Overlay |
-| --- | --- | --- | --- |
-| `IFPBEsp/APAE` | `apae-geral` | `apae-geral-backend`, `apae-geral-frontend` | `kubernetes/apae-geral/overlays/dev` |
-| `IFPBEsp/APAE-atendimento` | `apae-atendimento` | `apae-atendimento-backend`, `apae-atendimento-frontend` | `kubernetes/apae-atendimento/overlays/dev` |
-| `IFPBEsp/APAE-gestao-escolar` | `apae-gestao-escolar` | `apae-gestao-escolar-backend`, `apae-gestao-escolar-frontend` | `Pendente de #38/#92; sem caminho definido` |
-| `IFPBEsp/apae-site-comemorativo` | `site-comemorativo` | `apae-site-comemorativo` | `kubernetes/site-comemorativo/overlays/dev` |
-
-Os três caminhos implementados foram conferidos no [PR #120](https://github.com/IFPBEsp/APAE-INFRA/pull/120)
-(commit `0de829b6f8e11cfe391a077cfc7f30126311e953`). Gestão Escolar ainda não
-possui base/overlay definido nesse PR e depende da #38 e da #92. Suas imagens
-continuam na allowlist do contrato, mas a resolução do overlay falha
-explicitamente até que o caminho seja definido e revisado; não há fallback.
-
-Os nomes de Gestão Escolar foram confirmados no
-[workflow do produto](https://github.com/IFPBEsp/APAE-gestao-escolar/blob/dev/.github/workflows/docker-publish.yml)
-(blob `5c4f627d797d60083bfa971fc6813f8a270bbd4f`, consultado em 02/11/2026).
-O produto já publica backend e frontend pelo `docker-build-publish-image.yml`
-da #35, com tags `sha-*` e digest final. Falta adicionar a notificação ao
-APAE-INFRA nos produtos, integração já contemplada na
-[#106](https://github.com/IFPBEsp/APAE-INFRA/issues/106). A #44 foi encerrada e
-não cobre essa integração.
-`latest` continua proibida como input deste fluxo.
-
-Overlays e Applications dependem da #92 e precisam existir em `main`. Esta issue
-não cria overlays definitivos, não altera bases e não acessa o cluster. Os
-caminhos seguem o [contrato do ArgoCD](../argocd/fluxo-argocd.md).
-`management-app:unpublished` permanece fora da allowlist enquanto não houver
-contrato de publicação definido.
+| Aplicação | Overlay de homologação |
+| --- | --- |
+| `apae-geral` | `kubernetes/apae-geral/overlays/dev` |
+| `apae-atendimento` | `kubernetes/apae-atendimento/overlays/dev` |
+| `apae-gestao-escolar` | `kubernetes/gestao-escolar/overlays/dev` |
+| `site-comemorativo` | `kubernetes/site-comemorativo/overlays/dev` |
 
 ## Digest e proveniência
 
@@ -247,12 +197,9 @@ O App não precisa de administração, Actions, packages ou acesso ao cluster.
 A permissão `packages: read` do job pertence ao `GITHUB_TOKEN`, para consulta
 privada ao GHCR, e não amplia o App.
 
-Nos produtos, mantenha `UPDATER_IMAGE_DISPATCH_TOKEN` separado das credenciais
-acima. O endpoint de dispatch exige `Contents: write` no APAE-INFRA: um
-fine-grained PAT deve selecionar **somente o APAE-INFRA**, ter expiração curta,
-rotação e um proprietário com o menor acesso necessário. Não conceda `Pull
-requests: write`. Alternativamente, use token temporário de um App remetente
-separado e restrito ao mesmo repositório, com `Contents: write`.
+Nos produtos, use o App de dispatch separado no environment `gitops-dispatch`.
+O App emite tokens temporários com `Contents: write` somente no APAE-INFRA.
+Veja os nomes das variáveis e dos secrets no [guia de publicação](publicacao-main-produtos.md).
 
 **Risco do token de dispatch:** `Contents: write` também permite escrever
 conteúdo no repositório; não existe uma permissão isolada de “apenas enviar
@@ -269,70 +216,13 @@ allowlist nem `github.event.sender` comprovam o repositório que produziu a
 imagem. Somente pipelines confiáveis devem possuir a credencial de dispatch.
 O workflow não habilita auto-merge e não faz push na branch de destino.
 
-## Integração recomendada após o publish
+## Integração após a publicação
 
-Nos produtos, a adoção do dispatch deve ser acompanhada pela
-[#106](https://github.com/IFPBEsp/APAE-INFRA/issues/106); use os outputs do
-workflow da #35. O exemplo completo abaixo
-é para o backend do APAE; adapte aplicação, contexto e Dockerfile para o serviço.
-Substitua `<commit-sha>` pelo SHA completo aprovado no APAE-INFRA. O dispatcher
-deve estar na branch padrão para receber eventos. O código e a action local
-precisam existir na revisão executada pelo dispatcher; somente os manifests
-precisam estar em `main`, destino dos PRs.
-
-```yaml
-name: Publish backend and notify GitOps
-
-on:
-  push:
-    branches: [main]
-
-permissions:
-  contents: read
-  packages: write
-
-jobs:
-  publish:
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@<commit-sha>
-    with:
-      context: .
-      dockerfile: Dockerfile
-      image-name: apae-geral-backend
-
-  notify-infra:
-    needs: publish
-    runs-on: ubuntu-24.04
-    permissions: {}
-    steps:
-      - name: Notify APAE-INFRA
-        env:
-          GH_TOKEN: ${{ secrets.UPDATER_IMAGE_DISPATCH_TOKEN }}
-          IMAGE: ${{ needs.publish.outputs.image }}
-          IMAGE_TAG: ${{ needs.publish.outputs.sha-tag }}
-          IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
-          SOURCE_REPOSITORY: ${{ github.repository }}
-          SOURCE_COMMIT: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          jq -n \
-            --arg image "$IMAGE" \
-            --arg tag "$IMAGE_TAG" \
-            --arg digest "$IMAGE_DIGEST" \
-            --arg repository "$SOURCE_REPOSITORY" \
-            --arg commit "$SOURCE_COMMIT" \
-            '{event_type: "gitops-image-published", client_payload: {
-              application: "apae-geral", environment: "dev", image: $image,
-              image_tag: $tag, image_digest: $digest,
-              source_repository: $repository, source_commit: $commit
-            }}' > "$RUNNER_TEMP/gitops-dispatch.json"
-          gh api --method POST repos/IFPBEsp/APAE-INFRA/dispatches \
-            --input "$RUNNER_TEMP/gitops-dispatch.json"
-```
-
-`needs: publish` impede notificações se a publicação falhar ou for ignorada.
-Para cada imagem, encaminhe os outputs do respectivo job; não reconstrua digest
-ou tag. A API aceitar o evento não comprova sucesso da atualização: acompanhe
-o run do APAE-INFRA e o PR resultante.
+Os callers dos produtos estão no [Site #72](https://github.com/IFPBEsp/apae-site-comemorativo/pull/72),
+[Geral #1097](https://github.com/IFPBEsp/APAE/pull/1097),
+[Atendimento #488](https://github.com/IFPBEsp/APAE-atendimento/pull/488) e
+[Gestão Escolar #496](https://github.com/IFPBEsp/APAE-gestao-escolar/pull/496).
+Para ativar o fluxo, o receptor deve estar em `dev` e os overlays em `main`.
 
 ## Testes e aceite operacional
 
@@ -354,8 +244,7 @@ sem credenciais reais, acesso ao registro ou criação de PRs. Casos cobertos:
   bloqueio de redirects e ausência de credenciais nos logs.
 - Payloads inválidos, valores falsos de ambiente, campos extras e quebras de linha.
 - Allowlist incluindo Gestão Escolar, rejeição de `hml`/`prod` e caminhos arbitrários.
-- Resolução dos três caminhos definidos no PR #120 e falha explícita para
-  Gestão Escolar enquanto seu overlay não estiver definido (#38/#92).
+- Resolução dos quatro caminhos autorizados e rejeição de overlays ausentes.
 - Token do App restrito ao APAE-INFRA, com escrita apenas em contents e PRs,
   gerado depois da consulta ao GHCR.
 - Overlay inexistente, erro de renderização, alias, idempotência e preservação
@@ -376,9 +265,7 @@ Para testar ausência de overlay ao vivo, forneça uma tag e digest reais válid
 
 A #82 permanece aberta até concluir os testes operacionais com imagens reais.
 Ainda dependem da integração completa: leitura de packages privados com as
-permissões reais, overlays da #92/PR #120 em `main`, base/overlay de Gestão Escolar (#38),
-alinhamento da política de sync manual e integração dos produtos pela #106,
-geração de PR após publicação real,
+permissões reais, integração dos produtos pela #106, geração de PR após publicação real,
 repetição da notificação para atualizar o mesmo PR e repetição após merge sem
 novo PR. Registre os links do run de publicação, run GitOps e PR na #82. Mantenha
 a issue aberta até concluir o aceite com imagem real; autenticação isolada e

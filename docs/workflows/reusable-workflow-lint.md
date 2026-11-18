@@ -154,3 +154,16 @@ permissions:
 ```
 
 O workflow reutilizável declara `permissions: {}` no nível superior e concede a cada job apenas o que ele usa: o job `actionlint` recebe somente `contents: read`.
+
+## Referências ao próprio repositório
+
+Os callers internos usam `uses: $/.github/...`, resolvido pelo GitHub a partir
+do repositório e revisão do workflow, sem depender de arquivos presentes no
+workspace, conforme a [sintaxe documentada pelo GitHub](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/). Chamadas de outros repositórios continuam usando a referência
+completa com SHA.
+
+O actionlint 1.7.12 ainda não reconhece essa sintaxe. A configuração possui
+duas exceções restritas aos nomes de workflows e à action Kustomize usados no
+repositório. Os testes de tooling conferem a existência dos destinos e os
+inputs dos callers. Remover essas exceções quando houver suporte nativo no
+actionlint; os demais diagnósticos e o ShellCheck continuam ativos.

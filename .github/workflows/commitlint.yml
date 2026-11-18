@@ -11,4 +11,4 @@ permissions:
 jobs:
   commitlint:
     name: Commitlint
-    uses: ./.github/workflows/commitlint-reusable.yml
+    uses: $/.github/workflows/commitlint-reusable.yml

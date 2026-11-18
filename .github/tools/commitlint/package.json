@@ -1,0 +1,10 @@
+{
+  "name": "apae-infra-commitlint",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Locked dependencies for the reusable commitlint workflow",
+  "dependencies": {
+    "@commitlint/cli": "19.8.1",
+    "@commitlint/config-conventional": "19.8.1"
+  }
+}
