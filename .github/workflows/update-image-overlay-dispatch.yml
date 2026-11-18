@@ -141,7 +141,7 @@ jobs:
   update-overlay:
     name: Update single image overlay
     needs: validate-payload
-    uses: ./.github/workflows/update-image-overlay-reusable.yml
+    uses: $/.github/workflows/update-image-overlay-reusable.yml
 
     with:
       application: ${{ needs.validate-payload.outputs.application }}
@@ -344,7 +344,7 @@ jobs:
   update-release-overlay:
     name: Verify release and create one homologation PR
     needs: validate-release
-    uses: ./.github/workflows/update-image-overlay-reusable.yml
+    uses: $/.github/workflows/update-image-overlay-reusable.yml
 
     with:
       application: ${{ needs.validate-release.outputs.application }}

@@ -5,3 +5,9 @@ paths:
       # (usados para fazer checkout do próprio repositório do workflow reutilizável), mas
       # ainda não são reconhecidos pelo actionlint 1.7.12. Remover quando houver suporte.
       - 'property "workflow_(repository|sha)" is not defined in object type'
+      # actionlint 1.7.12 ainda nao reconhece a sintaxe self-repository ($/),
+      # suportada pelo GitHub. Ignorar apenas as referencias existentes abaixo;
+      # tests/test_workflow_tooling.py confere os caminhos e contratos dos callers.
+      # Remover quando o actionlint suportar $/ nativamente.
+      - '^reusable workflow call "\$/\.github/workflows/(commitlint-reusable|reusable-gitleaks|k8s-lint-reusable|update-image-overlay-reusable|workflow-lint-reusable)\.yml" at "uses" is not following the format '
+      - '^specifying action "\$/\.github/actions/setup-kustomize" in invalid format because ref is missing\.'

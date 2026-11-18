@@ -651,7 +651,7 @@ class OverlayTest(unittest.TestCase):
         self.assertEqual(first, self.kustomization.read_bytes())
         self.assertIn("gitops/site-comemorativo/dev/apae-site-comemorativo", self.output.read_text())
 
-    def test_separate_checkouts_preserve_local_action_and_scope_updates(self):
+    def test_separate_checkouts_use_self_repository_action_and_scope_updates(self):
         self.assertEqual(AUTOMATION["with"].get("path", "."), ".")
         self.assertEqual(AUTOMATION["with"]["ref"], "${{ github.sha }}")
         self.assertEqual(AUTOMATION["with"]["token"], "${{ github.token }}")
@@ -661,8 +661,8 @@ class OverlayTest(unittest.TestCase):
         self.assertEqual(MANIFESTS["with"]["path"], "infra")
         self.assertEqual(MANIFESTS["with"]["token"], "${{ steps.app-token.outputs.token }}")
         self.assertFalse(MANIFESTS["with"]["persist-credentials"])
-        local_step = next(step for step in STEPS if step.get("uses") == "./.github/actions/setup-kustomize")
-        self.assertTrue((self.workspace / local_step["uses"] / "action.yml").is_file())
+        local_step = next(step for step in STEPS if step.get("uses") == "$/.github/actions/setup-kustomize")
+        self.assertTrue(local_step["uses"].startswith("$/"))
         self.assertFalse((self.manifests / ".github/actions/setup-kustomize").exists())
         self.assertLess(STEPS.index(AUTOMATION), STEPS.index(MANIFESTS))
         self.assertLess(STEPS.index(MANIFESTS), STEPS.index(local_step))

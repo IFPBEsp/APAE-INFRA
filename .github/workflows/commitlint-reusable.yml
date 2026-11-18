@@ -39,14 +39,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Checkout shared commitlint config
-        if: inputs.config-file == ''
+      - name: Checkout shared commitlint tooling
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           path: .apae-infra
-          sparse-checkout: commitlint.config.js
+          sparse-checkout: |
+            commitlint.config.js
+            .github/tools/commitlint
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
@@ -61,7 +62,6 @@ jobs:
         id: commitlint
         shell: bash
         env:
-          COMMITLINT_VERSION: "19.8.1"
           CONFIG_FILE: ${{ inputs.config-file }}
         run: |
           set -euo pipefail
@@ -80,13 +80,14 @@ jobs:
           tools="$RUNNER_TEMP/commitlint"
           mkdir -p "$tools"
 
-          npm install \
+          cp "$GITHUB_WORKSPACE/.apae-infra/.github/tools/commitlint/package.json" "$tools/"
+          cp "$GITHUB_WORKSPACE/.apae-infra/.github/tools/commitlint/package-lock.json" "$tools/"
+
+          npm ci \
             --prefix "$tools" \
             --no-audit \
             --no-fund \
-            --ignore-scripts \
-            "@commitlint/cli@${COMMITLINT_VERSION}" \
-            "@commitlint/config-conventional@${COMMITLINT_VERSION}"
+            --ignore-scripts
 
           # A configuração fica ao lado de node_modules para que o "extends" seja resolvido.
           config="$tools/$(basename "$source_config")"

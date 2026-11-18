@@ -6,6 +6,13 @@ on:
       - '.github/workflows/update-image-overlay-*.yml'
       - '.github/workflows/docker-build-publish-image.yml'
       - 'tests/test_main_image_policy.py'
+      - 'tests/test_workflow_tooling.py'
+      - '.github/actionlint.yaml'
+      - '.github/tools/commitlint/**'
+      - '.github/workflows/commitlint*.yml'
+      - '.github/workflows/gitleaks.yml'
+      - '.github/workflows/k8s-lint.yml'
+      - '.github/workflows/workflow-lint.yml'
       - '.github/workflows/gitops-workflows-test.yml'
       - 'tests/test_update_image_overlay.py'
       - 'tests/test_release_environments.py'
@@ -32,7 +39,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up approved Kustomize
-        uses: ./.github/actions/setup-kustomize
+        uses: $/.github/actions/setup-kustomize
       - name: Test GitOps validation and runtime TLS
         shell: bash
         run: |

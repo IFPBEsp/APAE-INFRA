@@ -333,7 +333,7 @@ jobs:
           echo "Overlay autorizado: $overlay"
 
       - name: Set up approved Kustomize
-        uses: ./.github/actions/setup-kustomize
+        uses: $/.github/actions/setup-kustomize
 
       - name: Install YAML editor
         shell: bash
@@ -672,9 +672,10 @@ jobs:
         run: |
           set -euo pipefail
           for component in backend frontend; do
-            export IMAGE="$(jq -er --arg component "$component" '.images[$component].image' "$RUNNER_TEMP/verified-release-input.json")"
-            export IMAGE_TAG="$(jq -er --arg component "$component" '.images[$component].tag' "$RUNNER_TEMP/verified-release-input.json")"
-            export IMAGE_DIGEST="$(jq -er --arg component "$component" '.images[$component].digest' "$RUNNER_TEMP/verified-release-input.json")"
+            IMAGE="$(jq -er --arg component "$component" '.images[$component].image' "$RUNNER_TEMP/verified-release-input.json")"
+            IMAGE_TAG="$(jq -er --arg component "$component" '.images[$component].tag' "$RUNNER_TEMP/verified-release-input.json")"
+            IMAGE_DIGEST="$(jq -er --arg component "$component" '.images[$component].digest' "$RUNNER_TEMP/verified-release-input.json")"
+            export IMAGE IMAGE_TAG IMAGE_DIGEST
             python3 scripts/ci/verify_ghcr_image.py
           done
 
@@ -761,7 +762,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up approved Kustomize
-        uses: ./.github/actions/setup-kustomize
+        uses: $/.github/actions/setup-kustomize
 
       - name: Install YAML editor
         shell: bash
