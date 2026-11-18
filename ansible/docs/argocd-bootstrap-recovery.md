@@ -136,7 +136,7 @@ Se ocorrer falha:
 
 ### 8.2 Recuperação dos objetos de bootstrap
 
-Os arquivos `project.yaml`, `project-infra.yaml` e `app-of-apps.yaml` são administrados pelo Ansible.
+Os arquivos `project.yaml`, `project-infra.yaml`, `project-gateway.yaml` e `app-of-apps.yaml` são administrados pelo Ansible.
 
 Se esses recursos forem removidos ou alterados indevidamente, a recuperação deverá ser realizada pela reexecução controlada do playbook.
 

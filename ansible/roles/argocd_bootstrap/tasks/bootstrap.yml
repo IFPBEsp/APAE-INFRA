@@ -20,6 +20,7 @@
     - namespaces.yaml
     - project.yaml
     - project-infra.yaml
+    - project-gateway.yaml
     - app-of-apps.yaml
   register: argocd_bootstrap_apply
   changed_when: >-

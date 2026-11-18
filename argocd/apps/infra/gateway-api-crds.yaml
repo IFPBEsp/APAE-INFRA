@@ -5,7 +5,7 @@ metadata:
   name: gateway-api-crds
   namespace: argocd
 spec:
-  project: apae-infra
+  project: apae-gateway
 
   source:
     repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
@@ -14,7 +14,7 @@ spec:
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: nginx-gateway
 
   syncPolicy:
     syncOptions:

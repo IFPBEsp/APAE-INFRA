@@ -5,7 +5,7 @@ metadata:
   name: nginx-gateway-fabric
   namespace: argocd
 spec:
-  project: apae-infra
+  project: apae-gateway
 
   source:
     repoURL: https://github.com/nginx/nginx-gateway-fabric.git

@@ -108,8 +108,8 @@ além das bases e dos overlays de desenvolvimento já presentes.
 
 Checklist da adoção, para executar somente depois da promoção:
 
-1. Confirmar que a revisão de `main` contém as três Applications, o AppProject
-   ampliado e os diretórios de manifests, incluindo a correção `Recreate` e a
+1. Confirmar que a revisão de `main` contém as três Applications, os AppProjects
+   separados e os diretórios de manifests, incluindo a correção `Recreate` e a
    remoção do sync automático da raiz pelo #133. Conferir também que o Ansible
    aplicou essa configuração à raiz efetiva antes de prosseguir.
 2. Conferir a revisão e os recursos gerenciados pela raiz. Atualizar sua
@@ -132,20 +132,25 @@ a raiz, o que ainda não autoriza sincronizar seus workloads. Conferir o conjunt
 de filhas e o diff da raiz antes da promoção; excluir uma filha do Git pode
 acionar o prune se essa opção for selecionada no sync manual.
 
-## Permissões e aplicação do AppProject
+## Permissões e aplicação dos AppProjects
 
-`argocd/project-infra.yaml` deve permitir explicitamente:
+`argocd/project-infra.yaml` mantém `apae-infra` como projeto da raiz:
+origem somente no APAE-INFRA, destino somente em `argocd`, nenhuma permissão
+para recursos de cluster e apenas `Application` na whitelist de namespace.
+As permissões de workloads e RBAC do Gateway não se aplicam a `argocd`.
+
+As três Applications do Gateway usam `apae-gateway`, definido em
+`argocd/project-gateway.yaml`, com as permissões abaixo:
 
 | Escopo | Grupo | Recursos |
 | --- | --- | --- |
 | Origem | Git | `https://github.com/IFPBEsp/APAE-INFRA.git` e `https://github.com/nginx/nginx-gateway-fabric.git` |
-| Destino | Cluster local (`https://kubernetes.default.svc`) | Namespaces `argocd` e `nginx-gateway` |
+| Destino | Cluster local (`https://kubernetes.default.svc`) | Somente namespace `nginx-gateway` |
 | Cluster | Grupo core (`""`) | `Namespace` |
 | Cluster | `apiextensions.k8s.io` | `CustomResourceDefinition` |
 | Cluster | `admissionregistration.k8s.io` | `ValidatingAdmissionPolicy`, `ValidatingAdmissionPolicyBinding` |
 | Cluster | `rbac.authorization.k8s.io` | `ClusterRole`, `ClusterRoleBinding` |
 | Cluster | `gateway.networking.k8s.io` | `GatewayClass` |
-| Namespace | `argoproj.io` | `Application` |
 | Namespace | Grupo core (`""`) | `ServiceAccount`, `Service` |
 | Namespace | `apps` | `Deployment` |
 | Namespace | `batch` | `Job` |
@@ -163,7 +168,7 @@ atual: o Job cria seus Secrets pelo RBAC Kubernetes, e o smoke test é uma
 operação administrativa temporária. O AppProject não restringe as operações
 executadas pelo controller ou pelo Job por meio de suas ServiceAccounts.
 
-O **Ansible**, não o ArgoCD, administra os AppProjects e a raiz. A ampliação
+O **Ansible**, não o ArgoCD, administra os AppProjects e a raiz. A separação
 versionada deve ser aplicada pelo procedimento de bootstrap descrito em
 [argocd-bootstrap-recovery.md](../../ansible/docs/argocd-bootstrap-recovery.md),
 usando `ansible/playbooks/argocd.yml` a partir da revisão aprovada. A role também
@@ -172,11 +177,24 @@ execução desse playbook como uma aplicação isolada do AppProject.
 Conferir o diff e os efeitos previstos antes de executar na janela autorizada.
 Não usar um patch avulso no cluster como substituto da configuração versionada.
 
-Após a aplicação pelo Ansible, ler o AppProject efetivo e conferir as origens,
-destinos e whitelists antes de qualquer sync das filhas.
+Após a aplicação pelo Ansible, ler os dois AppProjects efetivos e conferir
+origens, destinos e whitelists antes de qualquer sync das filhas. O bootstrap
+aplica `project-gateway.yaml` antes de `app-of-apps.yaml`.
+
+Na adoção das Applications existentes, confirmar primeiro a criação de
+`apae-gateway`. Sincronizar somente a raiz para atualizar `spec.project` das
+três filhas e o destino de `gateway-api-crds` para `nginx-gateway`, sem recriar
+Applications ou CRDs. Conferir que nenhuma filha continua em `apae-infra`, que
+a raiz permanece nesse projeto e que os dois projetos efetivos têm somente as
+permissões descritas acima. Revisar os diffs antes de sincronizar workloads.
+
+A validação operacional anterior utilizou o projeto único `apae-infra`.
+Ela não comprova a adoção da separação atual, que ainda deve ser conferida
+no cluster pelo procedimento acima.
 
 Na validação, foi usado o módulo `ansible.builtin.command` com
-`k3s kubectl apply -f -`, recebendo somente o manifesto local de `apae-infra`+pelo stdin. Isso atualizou o projeto sem executar instalação, upgrade ou
+`k3s kubectl apply -f -`, recebendo somente o manifesto local de `apae-infra`
+pelo stdin. Isso atualizou o projeto sem executar instalação, upgrade ou
 segurança do ArgoCD e sem alterar o AppProject `apae` dos produtos.
 
 ## Pré-implantação na janela de migração
@@ -193,7 +211,7 @@ sudo /usr/local/bin/k3s kubectl get nodes -o wide
 sudo /usr/local/bin/k3s kubectl get pods -A -o wide
 sudo /usr/local/bin/k3s kubectl -n argocd get applications
 sudo /usr/local/bin/k3s kubectl -n argocd get application apae-root -o yaml
-sudo /usr/local/bin/k3s kubectl -n argocd get appproject apae-infra -o yaml
+sudo /usr/local/bin/k3s kubectl -n argocd get appproject apae-infra apae-gateway -o yaml
 sudo /usr/local/bin/k3s kubectl get crd
 sudo /usr/local/bin/k3s kubectl -n kube-system get helmcharts,deployments,daemonsets
 sudo ss -ltnp '( sport = :80 or sport = :443 )'
@@ -225,7 +243,7 @@ procedimento de contingência aprovado; não manter os dois disputando as portas
 
 ## Ordem de sincronização
 
-1. Confirmar as permissões do AppProject `apae-infra` e verificar se já existem
+1. Confirmar as permissões do AppProject `apae-gateway` e verificar se já existem
    CRDs da Gateway API na VPS. Se existirem, identificar a versão e quem os
    gerencia antes de sincronizar.
 2. Sincronizar `gateway-api-crds` e aguardar os CRDs ficarem `Established` e o
@@ -411,9 +429,9 @@ redirecionamentos e sem desabilitar a verificação TLS. Em todas as fases,
 
 | Fase | HTTP | HTTPS | Verificação TLS |
 | --- | --- | --- | --- |
-| Inicial, 09/11/2026 às 23:59:14 / 23:59:34 | HTTP/1.1 `302` | HTTP/2 `302` | `tls_verify=0` |
-| Após reinício do k3s, 10/11/2026 às 00:02:43 / 00:02:51 | HTTP/1.1 `302` | HTTP/2 `302` | `tls_verify=0` |
-| Após reboot da VPS, 10/11/2026 às 00:06:19 / 00:06:24 | HTTP/1.1 `302` | HTTP/2 `302` | `tls_verify=0` |
+| Inicial, 09/11/2026 às 23:59:14 / 23:59:34 | HTTP/1.1 `302` | HTTP/2 `302` | Certificado validado |
+| Após reinício do k3s, 10/11/2026 às 00:02:43 / 00:02:51 | HTTP/1.1 `302` | HTTP/2 `302` | Certificado validado |
+| Após reboot da VPS, 10/11/2026 às 00:06:19 / 00:06:24 | HTTP/1.1 `302` | HTTP/2 `302` | Certificado validado |
 
 O reinício do serviço k3s foi iniciado às 00:00:31 de 10/11/2026; depois,
 `/readyz` retornou `ok`, o nó ficou `Ready` e os rollouts concluíram. Os
@@ -459,14 +477,34 @@ do firewall, cuja proteção permanece sob responsabilidade da #90.
   Kustomize `v5.8.1`, instalado temporariamente e verificado pelo checksum
   fixado na action do repositório. O binário global não foi alterado.
 
+### Revisão local dos comentários em 18/11/2026
+
+- Projetos separados: `apae-infra` somente para Applications em `argocd`;
+  `apae-gateway` para os workloads em `nginx-gateway`, sem permitir Applications.
+- As permissões de `apae-gateway` cobrem os 54 recursos renderizados do chart,
+  Gateway API e Gateway. Os quatro testes novos incluem rejeição de workloads
+  e RBAC em `argocd`, vínculo das filhas e ordem de bootstrap.
+- Kubeconform aprovou 71 recursos dos caminhos do CI e de `argocd/`, sem erros
+  ou schemas ignorados, usando a origem adicional fixada em `K8S_SCHEMA_REVISION`.
+- Os 44 testes GitOps passaram com Kustomize `v5.8.1`, cujo checksum foi
+  conferido contra a action do repositório. YAML, Markdown, actionlint e sintaxe
+  das tarefas de bootstrap alteradas também passaram.
+- A verificação de sintaxe do playbook completo não foi concluída: seu Vault
+  cifrado exige credenciais não fornecidas. As tarefas de bootstrap foram
+  verificadas isoladamente, sem execução no cluster nem alteração do Vault.
+- Esta revisão é local; a separação dos projetos ainda precisa da adoção e
+  verificação operacional descritas acima.
+
 ### Limites e acompanhamento
 
 Os testes cobrem a entrada do Gateway e sua persistência; não comprovam
 TLS/DNS definitivos (#112), conexão de produtos aos dados ou funcionalidades
 dos produtos. Não foi executada nesta sessão uma nova alternância completa
-cluster → Compose → cluster depois de instalar o Gateway. A #140 deve incorporar
-os Deployments `ngf-nginx-gateway-fabric` e `apae-gateway-nginx` às verificações
-obrigatórias de disponibilidade do cluster quando essa integração for realizada.
+cluster → Compose → cluster depois de instalar o Gateway. A pendência de incluir
+os Deployments `ngf-nginx-gateway-fabric` e `apae-gateway-nginx` nas verificações
+obrigatórias de disponibilidade da alternância está registrada na [#159](https://github.com/IFPBEsp/APAE-INFRA/issues/159).
+A #140 já foi encerrada; essa integração e seu ensaio serão acompanhados pela
+nova issue.
 
 Ainda é necessário conferir a integração definitiva da #111 na raiz após a
 promoção dos manifests. Não interpretar os resultados de teste como evidência
