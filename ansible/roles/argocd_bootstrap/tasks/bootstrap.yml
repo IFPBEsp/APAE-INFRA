@@ -21,6 +21,7 @@
     - project.yaml
     - project-infra.yaml
     - app-of-apps.yaml
+    - infra/sealed-secrets.yaml
   register: argocd_bootstrap_apply
   changed_when: >-
     'created' in argocd_bootstrap_apply.stdout
