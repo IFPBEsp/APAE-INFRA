@@ -1,2 +1,6 @@
 # Exceções do Trivy (modo config) para o código em terraform/.
 
+# GIT-0004: Assinatura de commits com GPG não é obrigatória para branches neste estágio do projeto.
+AVD-GIT-0004
+
+
