@@ -1,0 +1,21 @@
+---
+- name: Validar configuração do Nginx do Compose
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ runtime_mode_compose_proxy_container }}"
+      - nginx
+      - -t
+  changed_when: false
+
+- name: Recarregar destinos do Nginx do Compose
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ runtime_mode_compose_proxy_container }}"
+      - nginx
+      - -s
+      - reload
+  changed_when: true

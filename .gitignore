@@ -16,3 +16,7 @@
 crash.log
 crash.*.log
 .idea/
+
+# Ansible
+ansible/.collections/
+ansible/.cache/

@@ -1,0 +1,42 @@
+---
+- name: Consultar serviços selecionados em execução
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['docker', 'compose']
+        + (['-f'] | product(runtime_mode_project.files) | list | flatten)
+        + ['ps', '--status', 'running', '--quiet']
+        + runtime_mode_project.services
+      }}
+    chdir: "{{ runtime_mode_project.directory }}"
+  changed_when: false
+  register: runtime_mode_project_running
+
+- name: Parar serviços selecionados
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['docker', 'compose']
+        + (['-f'] | product(runtime_mode_project.files) | list | flatten)
+        + ['stop', '--timeout', '30']
+        + runtime_mode_project.services
+      }}
+    chdir: "{{ runtime_mode_project.directory }}"
+  when: runtime_mode_project_running.stdout_lines | length > 0
+  changed_when: true
+
+- name: Confirmar parada dos serviços selecionados
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['docker', 'compose']
+        + (['-f'] | product(runtime_mode_project.files) | list | flatten)
+        + ['ps', '--status', 'running', '--quiet']
+        + runtime_mode_project.services
+      }}
+    chdir: "{{ runtime_mode_project.directory }}"
+  changed_when: false
+  register: runtime_mode_project_remaining
+  until: runtime_mode_project_remaining.stdout_lines | length == 0
+  retries: 3
+  delay: 2

@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -553,10 +554,41 @@ class PublisherSecurityTest(unittest.TestCase):
         self.assertLess(verify, promote)
 
         script = publish_steps[verify]["run"]
+        env = publish_steps[verify].get("env", {})
+        self.assertNotIn("github.workflow_ref", json.dumps(env))
+
+        identity = re.search(r"--certificate-identity='([^']+)'", script)
+        self.assertIsNotNone(identity)
+        expected_identity = identity.group(1)
+        signer = (
+            "https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/"
+            "docker-build-publish-image.yml"
+        )
+
+        for accepted in (
+                f"{signer}@refs/heads/main",
+        ):
+            with self.subTest(accepted=accepted):
+                self.assertEqual(accepted, expected_identity)
+
+        for rejected in (
+                f"{signer}@refs/heads/dev",
+                f"{signer}@refs/heads/main-evil",
+                f"{signer}@{'a' * 39}",
+                f"{signer}@{'a' * 40}",
+                "https://github.com/IFPBEsp/APAE/.github/workflows/"
+                "docker-build-publish-image.yml@refs/heads/main",
+                "https://github.com/evil/APAE-INFRA/.github/workflows/"
+                "docker-build-publish-image.yml@refs/heads/main",
+                "https://github.com/Denis166dev/apae-sbom-teste/.github/"
+                "workflows/publish.yml@refs/heads/main",
+        ):
+            with self.subTest(rejected=rejected):
+                self.assertNotEqual(rejected, expected_identity)
 
         for required in (
                 "cosign verify",
-                "--certificate-identity-regexp=",
+                "--certificate-identity=",
                 "--certificate-oidc-issuer=",
                 "--certificate-github-workflow-repository=",
                 "--certificate-github-workflow-ref=",
@@ -865,7 +897,7 @@ class CompleteReleaseTest(unittest.TestCase):
                          "PATH": str(self.root) + ":" + os.environ["PATH"], "COSIGN_EXIT": str(exit_code)},
                     text=True, capture_output=True)
                 self.assertEqual(result.returncode == 0, exit_code == 0, result.stderr)
-            for flag in ("--certificate-identity-regexp", "--certificate-oidc-issuer", "--certificate-github-workflow-sha"):
+            for flag in ("--certificate-identity", "--certificate-oidc-issuer", "--certificate-github-workflow-sha"):
                 self.assertIn(flag, verifier["run"])
 
     def test_verified_attestations_must_match_run_and_attempt(self):

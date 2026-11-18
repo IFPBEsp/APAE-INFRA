@@ -1,0 +1,32 @@
+name: GitHub Actions Workflow Lint
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/actionlint.yaml"
+      - ".github/zizmor.yml"
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/actionlint.yaml"
+      - ".github/zizmor.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-lint:
+    name: Workflow Lint
+    uses: ./.github/workflows/workflow-lint-reusable.yml
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    with:
+      zizmor-min-severity: "medium"

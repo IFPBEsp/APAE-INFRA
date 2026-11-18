@@ -144,19 +144,20 @@ jobs:
         shell: bash
         env:
           TRIVY_OUTCOME: ${{ steps.trivy-scan.outcome }}
+          SCAN_PATH: ${{ inputs.scan-path }}
         run: |
           if [[ -s "trivy-results.txt" ]]; then
             {
-              echo '## SCA — Trivy Dependency Scan (`${{ inputs.scan-path }}`)'
+              echo "## SCA — Trivy Dependency Scan (\`${SCAN_PATH}\`)"
               echo ''
               echo '```'
               cat trivy-results.txt
               echo '```'
-            } >> $GITHUB_STEP_SUMMARY
+            } >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$TRIVY_OUTCOME" == "success" ]]; then
-            echo '## SCA — Nenhuma vulnerabilidade encontrada (`${{ inputs.scan-path }}`)' >> $GITHUB_STEP_SUMMARY
+            echo "## SCA — Nenhuma vulnerabilidade encontrada (\`${SCAN_PATH}\`)" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo '## SCA — Análise não concluída ou relatório indisponível (`${{ inputs.scan-path }}`)' >> $GITHUB_STEP_SUMMARY
+            echo "## SCA — Análise não concluída ou relatório indisponível (\`${SCAN_PATH}\`)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Scan dependencies (SARIF report)

@@ -1,0 +1,16 @@
+name: Gitleaks
+
+on:
+  pull_request:
+    branches: [ "main", "dev" ]
+
+permissions: {}
+
+jobs:
+  call-gitleaks:
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: ./.github/workflows/reusable-gitleaks.yml
+    secrets:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

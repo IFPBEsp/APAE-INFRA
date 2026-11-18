@@ -98,3 +98,32 @@ resolver conflitos nas Applications, namespaces, lint e documentacao.
 A revisao confirmou que `repository_dispatch` executa na branch padrao `dev`.
 A condicao anterior, restrita a `main`, foi corrigida para acompanhar a branch
 padrao. Os manifests e registros continuam sendo lidos e atualizados na `main`.
+
+## Revisao dos comentarios do PR em 18/11/2026
+
+A branch foi atualizada localmente com a `dev` em
+`6da801c71a234963f716692f452aaa6b051b0906`. Os conflitos do publisher, do workflow
+de testes e de `test_update_image_overlay.py` foram resolvidos preservando o
+bloco completo de SBOM da base e a uniao dos filtros de testes. Esta revisao
+nao representa commit ou push do merge nem execucao real no GitHub Actions.
+
+- Publisher e dois receptores exigem a identidade Cosign exata do reutilizavel
+  em `refs/heads/main`; identidades por SHA ou outras branches sao rejeitadas.
+  As verificacoes de repositorio, ref e commit do produto foram preservadas.
+- Os oito overlays foram normalizados no formato `yaml.safe_dump`, sem mudar
+  seu conteudo YAML. As instrucoes de bootstrap ficam em `releases-gitops.md`.
+- A aprovacao exporta o commit validado e usa esse output e `approved_path` nos
+  campos do PR, evitando falhas quando o input contem espacos nas extremidades.
+- Suite integrada: 83 testes aprovados com Kustomize v5.8.1. Inclui diff textual
+  restrito a imagens em homologacao, promocao e rollback dos quatro produtos,
+  rejeicao de identidades Cosign por SHA e aprovacao com commit cercado de espacos.
+- Kubeconform: 57 recursos validos, sem erros ou schemas ignorados; KubeLinter
+  dos oito overlays sem erros. actionlint, yamllint e markdownlint dos arquivos
+  revisados passaram.
+- O diff da branch contra `origin/dev` passou em `git diff --check`. A base
+  recebida possui avisos de whitespace em arquivos fora do escopo desta correcao.
+
+A issue #106 permanece aberta: callers na `main` dos produtos, environments,
+configuracao de frontend e validacao com imagens reais, homologacao, promocao e
+rollback continuam dependentes das evidencias listadas acima. O PR esta aberto
+para revisao, sem depender do estado Draft para representar essas pendencias.

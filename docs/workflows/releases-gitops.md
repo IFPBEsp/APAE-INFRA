@@ -63,8 +63,7 @@ O job de publicação do produto concede `contents: read`, `packages: write`,
 1. As validações do produto devem passar antes da publicação. Ao compor os
    callers, ligar os jobs de publicação às validações com `needs`; apenas ter
    um workflow de testes separado não cria essa dependência.
-2. Publicar a partir da `main`, chamando o reutilizável em `@main` ou em um
-   commit completo já revisado. Remover referências à branch de desenvolvimento
+2. Publicar a partir da `main`, chamando o reutilizável em `@main`. Remover referências à branch de desenvolvimento
    da #106. Conciliar os PRs antigos que apenas trocam `@dev` por `@main`.
 3. Build e Trivy precisam terminar antes das tags finais. A assinatura Cosign
    e a proveniência SLSA são verificadas antes da promoção das tags.
@@ -72,8 +71,8 @@ O job de publicação do produto concede `contents: read`, `packages: write`,
    Frontend e backend devem usar o mesmo commit, execução e tentativa.
 5. O receptor confere tag/digest no GHCR, proveniência SLSA autenticada,
    repositório, commit da `main`, workflow autorizado e assinatura Cosign.
-   A identidade Cosign é a do reutilizável da INFRA, com ref `main` ou SHA
-   completo; o repositório, ref e commit do produto também são obrigatórios.
+   A identidade Cosign é a do reutilizável da INFRA, exclusivamente em
+   `refs/heads/main`; o repositório, ref e commit do produto também são obrigatórios.
 6. O PR inclui o overlay de homologação e
    `releases/candidates/<produto>/<commit completo>.json`. Conferir os digests,
    a origem, os checks e a revisão humana antes do merge.
@@ -133,6 +132,13 @@ O registro aprovado inclui o hash SHA-256 dos bytes do candidato, os digests e
 a evidência de homologação. A aprovação torna-se efetiva após revisão e merge
 desse PR. Se uma nova candidata já substituiu os digests no overlay, a aprovação
 da candidata anterior é recusada: homologar a versão selecionada novamente.
+
+## Formato dos overlays
+
+Os oito arquivos `kustomization.yaml` de `dev` e `prod` ficam versionados no
+formato gerado por `yaml.safe_dump`, sem comentários ou linhas em branco e com
+listas sem indentação extra. Assim, as atualizações automáticas alteram somente
+as referências de imagem, preservando um diff restrito para revisão humana.
 
 ## Promoção, bootstrap de produção e rollback
 

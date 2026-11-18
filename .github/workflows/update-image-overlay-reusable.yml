@@ -261,7 +261,7 @@ jobs:
         run: |
           set -euo pipefail
           cosign verify "${IMAGE}@${IMAGE_DIGEST}" \
-            --certificate-identity-regexp='^https://github[.]com/IFPBEsp/APAE-INFRA/[.]github/workflows/docker-build-publish-image[.]yml@(refs/heads/main|[0-9a-f]{40})$' \
+            --certificate-identity='https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main' \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
             --certificate-github-workflow-ref="refs/heads/main" \
@@ -733,7 +733,7 @@ jobs:
             image="$(jq -er --arg component "$component" '.images[$component].image' "$RUNNER_TEMP/verified-release-input.json")"
             digest="$(jq -er --arg component "$component" '.images[$component].digest' "$RUNNER_TEMP/verified-release-input.json")"
             cosign verify "${image}@${digest}" \
-              --certificate-identity-regexp='^https://github[.]com/IFPBEsp/APAE-INFRA/[.]github/workflows/docker-build-publish-image[.]yml@(refs/heads/main|[0-9a-f]{40})$' \
+              --certificate-identity='https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@refs/heads/main' \
               --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
               --certificate-github-workflow-repository="$SOURCE_REPOSITORY" \
               --certificate-github-workflow-ref="refs/heads/main" \

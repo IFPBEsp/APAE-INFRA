@@ -227,6 +227,7 @@ jobs:
           approval_path.write_text(json.dumps(approval, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"approved_path={approval_path.as_posix()}\n")
+              output.write(f"commit={sha}\n")
           print("Release candidata coincide com os digests do overlay dev; aprovacao preparada para revisao.")
           PYTHON
 
@@ -248,15 +249,15 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           path: infra
           base: main
-          branch: release-approval/${{ inputs.application }}/${{ inputs.candidate_commit }}
-          add-paths: releases/approved/${{ inputs.application }}/${{ inputs.candidate_commit }}.json
-          commit-message: "chore(release): request approval for ${{ inputs.application }} ${{ inputs.candidate_commit }}"
-          title: "chore(release): approve ${{ inputs.application }} ${{ inputs.candidate_commit }}"
+          branch: release-approval/${{ inputs.application }}/${{ steps.validation.outputs.commit }}
+          add-paths: ${{ steps.validation.outputs.approved_path }}
+          commit-message: "chore(release): request approval for ${{ inputs.application }} ${{ steps.validation.outputs.commit }}"
+          title: "chore(release): approve ${{ inputs.application }} ${{ steps.validation.outputs.commit }}"
           body: |
             Solicita aprovacao explicita de uma versao homologada no overlay `dev`, com registros na `main`.
 
             - Aplicacao: `${{ inputs.application }}`
-            - Commit candidato: `${{ inputs.candidate_commit }}`
+            - Commit candidato: `${{ steps.validation.outputs.commit }}`
             - Registro de aprovacao: `${{ steps.validation.outputs.approved_path }}`
             - Evidencia: ${{ inputs.evidence_url }}
             - Solicitante: `${{ github.actor }}`

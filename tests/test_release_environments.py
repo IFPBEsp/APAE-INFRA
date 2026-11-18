@@ -1,5 +1,6 @@
 """Run release scripts with the repository's actual manifests in disposable copies."""
 
+import difflib
 import json
 import os
 from pathlib import Path
@@ -46,6 +47,15 @@ class WorkflowRoutingTest(unittest.TestCase):
                     bases = [s["with"]["base"] for s in job["steps"] if "base" in s.get("with", {})]
                     self.assertEqual(bases, ["main"])
 
+    def test_approval_pr_uses_validated_commit_and_path(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/approve-release.yml').read_text())
+        steps = next(iter(workflow['jobs'].values()))['steps']
+        pr = next(step for step in steps if step.get('id') == 'approval-pr')['with']
+        self.assertEqual(pr['add-paths'], '${{ steps.validation.outputs.approved_path }}')
+        for field in ('branch', 'commit-message', 'title', 'body'):
+            self.assertIn('${{ steps.validation.outputs.commit }}', pr[field])
+            self.assertNotIn('${{ inputs.candidate_commit }}', pr[field])
+
 
 class RealEnvironmentTest(unittest.TestCase):
     def setUp(self):
@@ -85,11 +95,22 @@ class RealEnvironmentTest(unittest.TestCase):
     def assert_success(self, result):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def assert_only_image_lines_changed(self, before, after):
+        changes = [line for line in difflib.ndiff(before.splitlines(), after.splitlines())
+                   if line.startswith(('- ', '+ '))]
+        self.assertTrue(changes, 'The image update should produce a diff')
+        for line in changes:
+            self.assertRegex(line[2:], r'^  (newTag|digest): ')
+
     def test_receive_approve_promote_and_rollback_with_real_overlays_for_all_products(self):
         for application, (repository, directory) in PRODUCTS.items():
             with self.subTest(application=application):
                 hml = self.main / "kubernetes" / directory / "overlays/dev"
                 prod = self.production / "kubernetes" / directory / "overlays/prod"
+                hml_path = hml / "kustomization.yaml"
+                hml_before = hml_path.read_text()
+                prod_path = prod / "kustomization.yaml"
+                prod_before = prod_path.read_text()
                 if application == "site-comemorativo":
                     self.assert_success(self.execute(EDITOR, self.main, application,
                         OVERLAY=str(hml), VERIFICATION_RUN="https://github.com/IFPBEsp/APAE-INFRA/actions/runs/99"))
@@ -105,13 +126,22 @@ class RealEnvironmentTest(unittest.TestCase):
                     self.assert_success(self.execute(embedded_python(update), self.main, application))
                     targets = {item["image"]: item["digest"] for item in release["images"].values()}
 
+                self.assert_only_image_lines_changed(hml_before, hml_path.read_text())
+                self.output.unlink(missing_ok=True)
                 self.assert_success(self.execute(self.code("approve", "Validate candidate, deployed overlay intent and evidence"),
-                                                 self.main, application))
+                                                 self.main, application,
+                                                 CANDIDATE_COMMIT=' ' + ENV['SOURCE_COMMIT'] + ' '))
+                outputs = dict(line.split('=', 1) for line in self.output.read_text().splitlines())
+                self.assertEqual(outputs['commit'], ENV['SOURCE_COMMIT'])
+                approval_path = f"releases/approved/{application}/{ENV['SOURCE_COMMIT']}.json"
+                self.assertEqual(outputs['approved_path'], approval_path)
+                self.assertTrue((self.main / outputs['approved_path']).is_file())
                 self.assert_success(self.execute(self.code("promote", "Validate merged approval and candidate integrity"),
                                                  self.root, application))
                 initial = self.render(prod)
                 self.assert_success(self.execute(self.code("promote", "Apply only approved digests and validate Kustomize"),
                                                  self.production, application))
+                self.assert_only_image_lines_changed(prod_before, prod_path.read_text())
                 promoted = self.render(prod)
                 for doc in promoted:
                     self.assertEqual(doc["metadata"]["namespace"], "apae-prod")
@@ -138,7 +168,8 @@ class RealEnvironmentTest(unittest.TestCase):
                 data = yaml.safe_load(path.read_text())
                 for item in data["images"]:
                     item["digest"] = "sha256:" + "f" * 64
-                path.write_text(yaml.safe_dump(data))
+                path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+                rollback_before = path.read_text()
                 fake_git = self.root / "git"
                 fake_git.write_text("#!/usr/bin/env python3\nimport os, pathlib, sys\n"
                     "if sys.argv[1] == 'log': print('d' * 40)\n"
@@ -147,6 +178,7 @@ class RealEnvironmentTest(unittest.TestCase):
                 fake_git.chmod(0o755)
                 self.assert_success(self.execute(self.code("rollback", "Confirm historical production deployment and prepare rollback"),
                                                  self.production, application))
+                self.assert_only_image_lines_changed(rollback_before, path.read_text())
                 self.assertEqual(self.render(prod), promoted)
                 self.assertIn(f"overlay_path=kubernetes/{directory}/overlays/prod/kustomization.yaml", self.output.read_text())
 
@@ -179,12 +211,33 @@ class SignatureIdentityTest(unittest.TestCase):
                  next(s for s in RELEASE_STEPS if s.get("name") == "Verify both Cosign signatures")]
         prefix = "https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@"
         for step in steps:
-            pattern = re.search(r"--certificate-identity-regexp='([^']+)'", step["run"]).group(1)
-            for identity, accepted in [(prefix + "refs/heads/main", True), (prefix + "a" * 40, True),
-                                       (prefix + "refs/heads/dev", False), (prefix + "refs/heads/feature", False),
-                                       ("https://github.com/IFPBEsp/APAE/.github/workflows/build.yml@refs/heads/main", False),
-                                       (prefix.replace("IFPBEsp", "other") + "refs/heads/main", False)]:
-                self.assertEqual(re.fullmatch(pattern, identity) is not None, accepted)
+            identity = re.search(r"--certificate-identity='([^']+)'", step["run"]).group(1)
+            self.assertEqual(identity, prefix + "refs/heads/main")
+            self.assertNotIn('--certificate-identity-regexp', step['run'])
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'verified-release-input.json').write_text(json.dumps(
+                    fixtures.ReleaseDispatchTest().valid_release()))
+                fake = root / 'cosign'
+                fake.write_text(
+                    '#!/usr/bin/env python3\nimport os, sys\n'
+                    'expected = [arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--certificate-identity=")]\n'
+                    'raise SystemExit(0 if expected == [os.environ["TEST_CERT_IDENTITY"]] else 1)\n')
+                fake.chmod(0o755)
+                for cert, accepted in [
+                    (prefix + 'refs/heads/main', True),
+                    (prefix + 'a' * 40, False),
+                    (prefix + 'refs/heads/dev', False),
+                    (prefix + 'refs/heads/feature', False),
+                    (prefix + 'refs/heads/main-evil', False),
+                    (prefix.replace('IFPBEsp', 'other') + 'refs/heads/main', False),
+                ]:
+                    with self.subTest(step=step['name'], certificate=cert):
+                        result = subprocess.run(['bash', '-c', step['run']], capture_output=True, text=True,
+                            env={**os.environ, **ENV, 'RUNNER_TEMP': directory,
+                                 'PATH': directory + ':' + os.environ['PATH'], 'TEST_CERT_IDENTITY': cert,
+                                 'SOURCE_REF': 'refs/heads/main', 'DIGEST': DIGEST})
+                        self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
             for flag in ("--certificate-oidc-issuer", "--certificate-github-workflow-repository",
                          "--certificate-github-workflow-ref", "--certificate-github-workflow-sha"):
                 self.assertIn(flag, step["run"])

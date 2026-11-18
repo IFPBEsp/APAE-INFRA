@@ -109,12 +109,16 @@ Create candidate manifest
   ↓
 Verify candidate image
   ↓
+Attest and verify build provenance and SBOM
+  ↓
 Sign candidate image with Cosign
   ↓
 Verify Cosign signature
   ↓
 Promote verified image to final tags
 ```
+
+A proveniência e o SBOM do mesmo digest estão documentados em [SBOM e atestação de proveniência das imagens Docker](./sbom-proveniencia-imagens.md).
 
 ## Permissões necessárias
 
@@ -187,9 +191,8 @@ https://token.actions.githubusercontent.com
 
 Essa identidade corresponde ao workflow reutilizável responsável pela assinatura.
 
-A publicação e o receptor também aceitam a identidade desse mesmo workflow
-fixado por um SHA completo revisado. A expressão permite somente `refs/heads/main`
-ou 40 caracteres hexadecimais, nunca `dev` ou uma feature branch.
+A publicação e os receptores exigem a identidade exata desse workflow em
+`refs/heads/main`. Identidades por SHA, `dev` ou feature branch são rejeitadas.
 `github.workflow_ref` identifica o caller e não deve ser usado como identidade
 do reutilizável que assina. Além da identidade e do issuer, as verificações
 exigem o repositório, `refs/heads/main` e o commit de origem do produto.
@@ -206,6 +209,8 @@ cosign verify "${IMAGE}@${DIGEST}" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
   --certificate-github-workflow-repository="${{ github.repository }}"
 ```
+
+Dentro do pipeline, a verificação usa `--certificate-identity` com a identidade exata do workflow reutilizável do `APAE-INFRA` em `@refs/heads/main`. O contexto `github.workflow_ref` de um workflow reutilizável identifica o workflow do caller, e não o workflow que assinou. A verificação manual exige a mesma identidade exata.
 
 O consumidor deve chamar `IFPBEsp/APAE-INFRA/.github/workflows/docker-build-publish-image.yml@main` para corresponder à identidade exigida. Essa referência identifica o workflow reutilizável; a branch ou tag que dispara o consumidor pode ser diferente.
 
