@@ -30,6 +30,8 @@ spec:
       kind: PersistentVolumeClaim
     - group: ""
       kind: Secret
+    - group: bitnami.com
+      kind: SealedSecret
     - group: apps
       kind: Deployment
     - group: apps
