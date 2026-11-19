@@ -5,6 +5,9 @@ on:
     paths:
       - '.github/workflows/update-image-overlay-*.yml'
       - '.github/workflows/docker-build-publish-image.yml'
+      - 'argocd/**'
+      - 'ansible/roles/argocd_bootstrap/tasks/bootstrap.yml'
+      - 'tests/test_gateway_projects.py'
       - 'tests/test_main_image_policy.py'
       - '.github/workflows/gitops-workflows-test.yml'
       - 'tests/test_update_image_overlay.py'
