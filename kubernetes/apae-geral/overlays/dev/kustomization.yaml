@@ -5,6 +5,7 @@ namespace: apae-dev
 
 resources:
   - ../../base
+  - api-sealedsecret.yaml
 
 replicas:
   - name: apae

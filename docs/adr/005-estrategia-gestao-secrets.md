@@ -65,10 +65,11 @@ Adotar o **Sealed Secrets (Bitnami)** como ferramenta padrão de gestão e entre
 ## Governança, Rotação e Backup de Chaves
 
 1. **Backup da Chave Mestra**:
-   - O par de chaves mestras do controller reside em um `Secret` no namespace `kube-system` com o label `sealedsecrets.bitnami.com/sealed-secret-key=active`.
+   - O par de chaves mestras do controller reside em um `Secret` no namespace `kube-system` com o label `sealedsecrets.bitnami.com/sealed-secrets-key=active`.
    - Um backup criptografado desse `Secret` deve ser mantido de forma segura e offline pelos mantenedores da infraestrutura (fora do Git público), garantindo recuperação em caso de reinstalação total do cluster (Disaster Recovery).
 2. **Rotação de Chaves**:
    - O Sealed Secrets Controller suporta rotação automática e periódica de certificados de criptografia.
    - Chaves privadas antigas são mantidas no cluster para leitura e descriptografia contínua de segredos antigos, enquanto a nova chave passa a ser a ativa para novas cifragens.
-3. **Escopo Obrigatório**:
+3. **Escopo Obrigatório e Overlays por Ambiente**:
    - Todos os manifestos devem utilizar o escopo `strict` (padrão) para evitar que segredos sejam reaproveitados indevidamente entre serviços ou namespaces.
+   - Devido ao escopo `strict` amarrar o segredo ao nome e namespace exatos, e para manter o isolamento entre ambientes (`dev`, `homolog`, `prod`), os manifestos `SealedSecret` devem residir exclusivamente nos **overlays de ambiente** (`kubernetes/<servico>/overlays/<ambiente>/`), nunca na pasta `base`.

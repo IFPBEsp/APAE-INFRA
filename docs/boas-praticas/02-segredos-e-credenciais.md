@@ -109,29 +109,31 @@ Alternativamente, a chave pública pode ser compartilhada no repositório de doc
 
 ### Criação e Cifragem de um Secret
 
+Devido ao uso do escopo `strict`, os `SealedSecret` são criptografados vinculados ao **nome do recurso** e ao **namespace de destino final**. Além disso, credenciais são específicas por ambiente (`dev`, `homolog`, `prod`). Portanto, os `SealedSecrets` devem residir exclusivamente nos **overlays de ambiente** (ex.: `kubernetes/apae-geral/overlays/dev/api-sealedsecret.yaml`), nunca na pasta `base`.
+
 * Crie o manifesto `Secret` tradicionalmente (apenas na sua estação local, **nunca faça commit deste arquivo**):
 
 ```bash
 kubectl create secret generic api-secrets \
-  --namespace=apae \
+  --namespace=apae-dev \
   --from-literal=SPRING_DATASOURCE_PASSWORD='senha_super_secreta' \
   --from-literal=JWT_SECRET='chave_jwt_super_longa_e_segura_32_bytes' \
   --dry-run=client -o yaml > /tmp/temp-secret.yaml
 ```
 
-* Criptografe o manifesto gerando o `SealedSecret`:
+* Criptografe o manifesto gerando o `SealedSecret` direcionado ao overlay do ambiente:
 
 ```bash
 kubeseal --format=yaml \
   --cert=pub-sealed-secrets.pem \
   --scope=strict \
-  < /tmp/temp-secret.yaml > kubernetes/apae-geral/base/api/sealedsecret.yaml
+  < /tmp/temp-secret.yaml > kubernetes/apae-geral/overlays/dev/api-sealedsecret.yaml
 
 # Remova imediatamente o arquivo com segredos em texto puro da estação local
 rm -f /tmp/temp-secret.yaml
 ```
 
-* Inclua o `sealedsecret.yaml` no `kustomization.yaml` do componente e realize o commit no Git.
+* Inclua o `api-sealedsecret.yaml` na lista `resources` do `kustomization.yaml` do overlay correspondente e realize o commit no Git.
 
 ---
 
@@ -139,7 +141,7 @@ rm -f /tmp/temp-secret.yaml
 
 O `kubeseal` suporta três escopos de criptografia. No APAE-INFRA, a regra mandatória é o escopo **strict**:
 
-* **`strict` (Obrigatório)**: O segredo é cifrado com base no **nome do Secret** e no **Namespace**. Ele não pode ser descriptografado se for renomeado ou movido para outro namespace, prevenindo reaproveitamento inadvertido ou ataques de privilege escalation entre aplicações.
+* **`strict` (Obrigatório)**: O segredo é cifrado com base no **nome do Secret** e no **Namespace**. Ele não pode ser descriptografado se for renomeado ou movido para outro namespace, prevenindo reaproveitamento inadvertido ou ataques de privilege escalation entre aplicações. Como o Kustomize altera o namespace nos overlays (ex.: de `apae` para `apae-dev`), o segredo deve ser cifrado com o namespace final do overlay (`apae-dev`).
 * `namespace-wide` *(não recomendado)*: Pode ser descriptografado por qualquer Secret no mesmo namespace.
 * `cluster-wide` *(proibido)*: Pode ser descriptografado com qualquer nome em qualquer namespace.
 
@@ -149,11 +151,18 @@ O `kubeseal` suporta três escopos de criptografia. No APAE-INFRA, a regra manda
 
 ### Backup da Chave Mestra (Disaster Recovery)
 
-A chave mestra privada que descriptografa todos os segredos gerados pelo controller reside no namespace `kube-system`:
+A chave mestra privada que descriptografa todos os segredos gerados pelo controller reside no namespace `kube-system` com o label oficial `sealedsecrets.bitnami.com/sealed-secrets-key`:
 
 ```bash
 # Exportar par de chaves mestras ativas
-kubectl get secret -n kube-system -l sealedsecrets.bitnami.com/sealed-secret-key -o yaml > master-sealed-secrets-backup.yaml
+kubectl get secret -n kube-system -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > master-sealed-secrets-backup.yaml
+
+# Validar se o arquivo realmente contém as chaves privadas e não está vazio
+if grep -q "tls.key:" master-sealed-secrets-backup.yaml; then
+  echo "Backup gerado com sucesso contendo chaves privadas."
+else
+  echo "ERRO: O backup não contém chaves válidas. Verifique o label e os segredos no namespace kube-system."
+fi
 ```
 
 > [!CAUTION]
@@ -164,6 +173,7 @@ kubectl get secret -n kube-system -l sealedsecrets.bitnami.com/sealed-secret-key
 ```bash
 kubectl apply -f master-sealed-secrets-backup.yaml
 kubectl rollout restart deployment sealed-secrets-controller -n kube-system
+kubectl rollout status deployment sealed-secrets-controller -n kube-system
 ```
 
 ### Rotação de Chaves
