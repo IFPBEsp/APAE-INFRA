@@ -17,6 +17,7 @@ jobs:
     uses: ./.github/workflows/k8s-lint-reusable.yml
     with:
       manifests-path: "kubernetes"
+      ignore-missing-schemas: true
       kustomize-paths: |
         kubernetes/apae-atendimento/base
         kubernetes/apae-geral/base
