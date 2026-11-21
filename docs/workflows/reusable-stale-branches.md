@@ -22,7 +22,7 @@ branch não são considerados.
 
 |Input|Tipo|Padrão|Descrição|
 |---|---|---|---|
-|`days-before-delete`|number|60|Dias sem commits para considerar a branch abandonada|
+|`days-before-delete`|number|90|Dias sem commits para considerar a branch abandonada|
 |`protected-branches`|string|`main,dev`|Branches que nunca são removidas|
 |`dry-run`|boolean|true|Apenas lista o que seria removido, sem remover|
 
