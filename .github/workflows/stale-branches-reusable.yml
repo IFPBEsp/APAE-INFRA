@@ -87,9 +87,11 @@ jobs:
             IFS=',' read -ra patterns <<< "$PROTECTED"
             for pattern in "${patterns[@]}"; do
               pattern=$(echo "$pattern" | xargs)
-              if [[ -n "$pattern" && "$branch" == $pattern ]]; then
-                return 0
-              fi
+              [ -z "$pattern" ] && continue
+              # shellcheck disable=SC2254
+              case "$branch" in
+                $pattern) return 0 ;;
+              esac
             done
             return 1
           }
