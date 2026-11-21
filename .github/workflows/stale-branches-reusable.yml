@@ -6,7 +6,7 @@ on:
       days-before-delete:
         description: "Dias sem commits para considerar a branch abandonada"
         type: number
-        default: 60
+        default: 90
       protected-branches:
         description: "Branches que nunca são removidas (além da padrão e protegidas no GitHub)"
         type: string
@@ -151,11 +151,24 @@ jobs:
               continue
             fi
 
-            # 3) Revalida SHA e PRs abertos imediatamente antes de excluir.
-            if ! CURRENT_SHA=$(gh api "repos/$REPO/branches/$BRANCH" --jq '.commit.sha') \
+            # 3) Revalida SHA, protecao e PRs abertos imediatamente antes de excluir.
+            if ! REVALIDATE=$(gh api "repos/$REPO/branches/$BRANCH" --jq '[.commit.sha, .protected] | @tsv') \
               || ! OPEN_NOW=$(count_open_prs "$BRANCH"); then
               fail_branch "$BRANCH" "Falha na revalidação antes da exclusão" "$SHA"
               continue
+            fi
+
+            CURRENT_SHA=$(cut -f1 <<< "$REVALIDATE")
+            CURRENT_PROTECTED=$(cut -f2 <<< "$REVALIDATE")
+
+            if [ "$CURRENT_PROTECTED" = "true" ]; then
+              echo "Branch '$BRANCH' está protegida no GitHub; mantida."
+              add_row "$BRANCH" "$REASON" "$PR_REF" "$SHA" "preservada após revalidação"
+              continue
+            fi
+
+            if [ "$CURRENT_SHA" != "$SHA" ]; then
+              echo "Branch '$BRANCH' mudou de SHA ($SHA -> $CURRENT_SHA); preservada."
             fi
 
             if [ "$CURRENT_SHA" != "$SHA" ] || [ "$OPEN_NOW" -gt 0 ]; then
