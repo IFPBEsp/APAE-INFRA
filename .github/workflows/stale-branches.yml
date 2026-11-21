@@ -15,7 +15,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
-    uses: IFPBEsp/APAE-INFRA/.github/workflows/stale-branches-reusable.yml@dev
+    uses: ./.github/workflows/stale-branches-reusable.yml
     with:
       protected-branches: "main,dev"
       dry-run: ${{ github.event_name != 'workflow_dispatch' || inputs.dry-run }}
