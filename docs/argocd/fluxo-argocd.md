@@ -18,7 +18,7 @@ As alterações persistentes nos workloads são propostas e revisadas no APAE-IN
 | --- | --- | --- |
 | Terraform | Infraestrutura fundacional e recursos de VPS definidos para IaC | Instalação/objetos internos do ArgoCD |
 | Ansible | Instalação do k3s (issue #90); instalação, bootstrap, atualização e recuperação dos objetos de bootstrap do ArgoCD (issue #91) | Deployments, Services e Applications filhas atribuídos ao ArgoCD |
-| ArgoCD | Descoberta e reconciliação das Applications filhas; recursos Kubernetes declarados por elas | Release Helm do próprio ArgoCD, `project.yaml`, `project-infra.yaml` e `app-of-apps.yaml` |
+| ArgoCD | Descoberta e reconciliação das Applications filhas; recursos Kubernetes declarados por elas | Release Helm do próprio ArgoCD, `project.yaml`, `project-infra.yaml`, `project-gateway.yaml` e `app-of-apps.yaml` |
 | GitHub Actions | CI dos produtos, publicação no GHCR e automações de PRs GitOps | Aplicação direta de manifests no cluster |
 
 Nenhum recurso deve ter dois controladores concorrentes. Alterações em componentes administrados pelo Ansible exigem execução controlada do playbook; alterações em workloads administrados pelo ArgoCD devem passar pelo fluxo GitOps.
@@ -54,7 +54,8 @@ A #92 contempla inicialmente os overlays `dev`; `hml` e `prod` e seu fluxo de pr
 O bootstrap da #91 aplica dois projetos Kubernetes no namespace `argocd`:
 
 - **`apae`** (`argocd/project.yaml`): projeto das Applications dos produtos. Restringe os repositórios à origem APAE-INFRA e os destinos aos namespaces `apae-*`. As permissões definitivas dos produtos serão alinhadas à #92.
-- **`apae-infra`** (`argocd/project-infra.yaml`): projeto de infraestrutura ao qual pertence a Application raiz `apae-root`, inicialmente restrito à origem APAE-INFRA, ao namespace `argocd` e ao recurso `Application`. As respectivas issues devem ampliar suas permissões **explicitamente** para cada novo componente; não se deve conceder acesso global indiscriminado.
+- **`apae-infra`** (`argocd/project-infra.yaml`): projeto de infraestrutura ao qual pertence a Application raiz `apae-root`, restrito à origem APAE-INFRA, ao namespace `argocd` e ao recurso `Application`. Workloads de infraestrutura usam projetos separados para que suas permissões não se estendam ao namespace do ArgoCD.
+- **`apae-gateway`** (`argocd/project-gateway.yaml`): projeto das três Applications do Gateway, com as origens APAE-INFRA e NGINX, destino somente em `nginx-gateway` e tipos explícitos de recursos. Não permite `Application`.
 
 Os `AppProject`s limitam o que o ArgoCD pode reconciliar, mas **não substituem** o RBAC nativo do Kubernetes, as permissões de serviço ou os controles de acesso administrativo.
 
@@ -79,7 +80,7 @@ spec:
     warn: true
 ```
 
-A configuração concreta do projeto de infraestrutura encontra-se em `argocd/project-infra.yaml`. Qualquer ampliação deverá ser revisada e aplicada pelo Ansible.
+A configuração da raiz encontra-se em `argocd/project-infra.yaml`; a do Gateway, em `argocd/project-gateway.yaml`. Alterações de permissões devem ser revisadas e aplicadas pelo Ansible.
 
 ## Padrão adotado: App of Apps
 
@@ -98,7 +99,8 @@ Alterar a imagem ou o digest em um overlay, sem mudar as definições das filhas
 argocd/
 ├── app-of-apps.yaml       # Application raiz, gerenciada pelo Ansible
 ├── project.yaml           # AppProject dos produtos, gerenciado pelo Ansible
-├── project-infra.yaml     # AppProject de infraestrutura, gerenciado pelo Ansible
+├── project-infra.yaml     # AppProject da raiz, gerenciado pelo Ansible
+├── project-gateway.yaml   # AppProject do Gateway, gerenciado pelo Ansible
 ├── README.md
 └── apps/
     ├── dev/              # Applications de desenvolvimento, escopo da #92
@@ -145,7 +147,7 @@ spec:
       - CreateNamespace=false
 ```
 
-O filtro `include: 'apps/*/*.yaml'` permite descobrir as Applications de todos os ambientes sob `argocd/apps/`, incluindo `dev` da #92 e os futuros `hml` e `prod`. Os objetos de bootstrap administrados pelo Ansible (`app-of-apps.yaml`, `project.yaml` e `project-infra.yaml`) ficam na raiz de `argocd/` e não correspondem ao filtro. Os manifests de instalação Helm do próprio ArgoCD também devem permanecer **fora de qualquer Application** reconciliada pelo ArgoCD.
+O filtro `include: 'apps/*/*.yaml'` permite descobrir as Applications de todos os ambientes sob `argocd/apps/`, incluindo `dev` da #92 e os futuros `hml` e `prod`. Os objetos de bootstrap administrados pelo Ansible (`app-of-apps.yaml`, `project.yaml`, `project-infra.yaml` e `project-gateway.yaml`) ficam na raiz de `argocd/` e não correspondem ao filtro. Os manifests de instalação Helm do próprio ArgoCD também devem permanecer **fora de qualquer Application** reconciliada pelo ArgoCD.
 
 A raiz mantém as Applications filhas registradas, enquanto cada filha define seu namespace, revisão Git, overlay e política de sincronização: automática em `dev` e manual nos demais ambientes. As definições das filhas precisam estar na `main`, acompanhada pela raiz, mesmo quando seus workloads acompanham outra revisão. Enquanto não houver arquivos correspondentes ao filtro nessa revisão, a raiz não terá filhas a descobrir. A separação lógica por namespace não substitui RBAC e políticas de rede.
 
