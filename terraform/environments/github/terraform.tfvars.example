@@ -1,0 +1,7 @@
+github_app_id              = "123456"
+github_app_installation_id = "7891011"
+github_app_pem_file        = <<-EOT
+-----BEGIN RSA PRIVATE KEY-----
+...
+-----END RSA PRIVATE KEY-----
+EOT

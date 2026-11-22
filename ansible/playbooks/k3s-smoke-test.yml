@@ -9,7 +9,7 @@
       block:
         - name: Copiar manifesto de teste
           ansible.builtin.copy:
-            src: ../files/k3s-smoke-test.yml
+            src: "{{ playbook_dir | dirname }}/files/k3s-smoke-test.yml"
             dest: /tmp/apae-k3s-smoke-test.yml
             owner: root
             group: root

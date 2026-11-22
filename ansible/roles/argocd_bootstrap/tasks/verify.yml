@@ -5,17 +5,17 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - rollout
       - status
       - "deployment/{{ item }}"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - --timeout=180s
   loop:
-    - "{{ argocd_release_name }}-server"
-    - "{{ argocd_release_name }}-repo-server"
-    - "{{ argocd_release_name }}-redis"
+    - "{{ argocd_bootstrap_release_name }}-server"
+    - "{{ argocd_bootstrap_release_name }}-repo-server"
+    - "{{ argocd_bootstrap_release_name }}-redis"
   changed_when: false
 
 - name: Verificar readiness do Application Controller
@@ -24,12 +24,12 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - rollout
       - status
-      - "statefulset/{{ argocd_release_name }}-application-controller"
+      - "statefulset/{{ argocd_bootstrap_release_name }}-application-controller"
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - --timeout=180s
   changed_when: false
 
@@ -39,7 +39,7 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - wait
       - --for=condition=Established
       - "crd/{{ item }}"
@@ -56,16 +56,16 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - get
       - pods
       - -n
-      - "{{ argocd_namespace }}"
+      - "{{ argocd_bootstrap_namespace }}"
       - -o
       - wide
-  register: argocd_pods_result
+  register: argocd_bootstrap_pods_result
   changed_when: false
 
 - name: Exibir estado dos pods
   ansible.builtin.debug:
-    msg: "{{ argocd_pods_result.stdout_lines }}"
+    msg: "{{ argocd_bootstrap_pods_result.stdout_lines }}"

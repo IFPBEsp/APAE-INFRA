@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -408,10 +409,41 @@ class PublisherSecurityTest(unittest.TestCase):
         self.assertLess(verify, promote)
 
         script = publish_steps[verify]["run"]
+        env = publish_steps[verify].get("env", {})
+        self.assertNotIn("github.workflow_ref", json.dumps(env))
+        self.assertNotIn("--certificate-identity=", script)
+
+        identity = re.search(r"--certificate-identity-regexp='([^']+)'", script)
+        self.assertIsNotNone(identity)
+        pattern = re.compile(identity.group(1))
+        signer = (
+            "https://github.com/IFPBEsp/APAE-INFRA/.github/workflows/"
+            "docker-build-publish-image.yml"
+        )
+
+        for accepted in (
+                f"{signer}@refs/heads/main",
+                f"{signer}@{'a' * 40}",
+        ):
+            with self.subTest(accepted=accepted):
+                self.assertRegex(accepted, pattern)
+
+        for rejected in (
+                f"{signer}@refs/heads/dev",
+                f"{signer}@refs/heads/main-evil",
+                f"{signer}@{'a' * 39}",
+                "https://github.com/IFPBEsp/APAE/.github/workflows/"
+                "docker-build-publish-image.yml@refs/heads/main",
+                "https://github.com/evil/APAE-INFRA/.github/workflows/"
+                "docker-build-publish-image.yml@refs/heads/main",
+                "https://github.com/Denis166dev/apae-sbom-teste/.github/"
+                "workflows/publish.yml@refs/heads/main",
+        ):
+            with self.subTest(rejected=rejected):
+                self.assertNotRegex(rejected, pattern)
 
         for required in (
                 "cosign verify",
-                "--certificate-identity=",
                 "--certificate-oidc-issuer=",
                 "--certificate-github-workflow-repository=",
                 "--certificate-github-workflow-ref=",

@@ -1,0 +1,24 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gateway-smoke
+  namespace: nginx-gateway
+spec:
+  parentRefs:
+    - name: apae-gateway
+      sectionName: http
+    - name: apae-gateway
+      sectionName: https-smoke
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /__gateway-check
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /
+            statusCode: 302

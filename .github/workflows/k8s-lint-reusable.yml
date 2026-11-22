@@ -38,6 +38,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Discover Kubernetes manifests
         id: manifests
@@ -46,25 +48,25 @@ jobs:
           MANIFESTS_PATH: ${{ inputs.manifests-path }}
         run: |
           set -euo pipefail
-          
+
           if [[ ! -d "$MANIFESTS_PATH" ]]; then
             echo "::error::Diretório de manifests não encontrado: $MANIFESTS_PATH"
             exit 1
           fi
-          
+
           manifest_list="$RUNNER_TEMP/k8s-manifests.list"
-          
+
           find "$MANIFESTS_PATH" \
             -type f \
             \( -name '*.yaml' -o -name '*.yml' \) \
             -print0 > "$manifest_list"
-          
+
           if [[ ! -s "$manifest_list" ]]; then
             echo "found=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Nenhum manifesto YAML encontrado em $MANIFESTS_PATH"
             exit 0
           fi
-          
+
           echo "found=true" >> "$GITHUB_OUTPUT"
 
       - name: Install yamllint
@@ -101,7 +103,7 @@ jobs:
           yamllint \
             -c "$RUNNER_TEMP/.yamllint.yml" \
             "${files[@]}"
-          
+
       - name: Render Kustomize manifests
         if: steps.manifests.outputs.found == 'true' && inputs.kustomize-paths != ''
         shell: bash
@@ -160,6 +162,7 @@ jobs:
           KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
           IGNORE_MISSING_SCHEMAS: ${{ inputs.ignore-missing-schemas }}
           KUSTOMIZE_PATHS: ${{ inputs.kustomize-paths }}
+          K8S_SCHEMA_REVISION: "11639286f15b208b6c7f1f93bc2c1a70f42cfbcb"
           CRD_CATALOG_REVISION: "866b2653a5334db9aed20ad74701e20fd464471b"
         run: |
           set -euo pipefail
@@ -172,6 +175,7 @@ jobs:
             -output text
             -schema-location default
             -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRD_CATALOG_REVISION}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+            -schema-location "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/${K8S_SCHEMA_REVISION}/{{.NormalizedKubernetesVersion}}/{{.ResourceKind}}{{.KindSuffix}}.json"
           )
 
           if [[ -n "$KUBERNETES_VERSION" ]]; then

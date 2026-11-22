@@ -1,0 +1,46 @@
+---
+- name: Consultar containers Docker que publicam as portas do cluster
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - --filter
+      - "publish={{ item }}/tcp"
+      - --format
+      - "{{ '{{.Names}}' }}"
+  changed_when: false
+  loop: "{{ runtime_mode_cluster_public_ports }}"
+  register: runtime_mode_cluster_port_owners
+
+- name: Confirmar ausência de publicações Docker nas portas do cluster
+  ansible.builtin.assert:
+    that:
+      - item.stdout_lines | length == 0
+    fail_msg: >-
+      A porta {{ item.item }}/tcp continua publicada no Docker:
+      {{ item.stdout_lines }}.
+  loop: "{{ runtime_mode_cluster_port_owners.results }}"
+  loop_control:
+    label: "{{ item.item }}/tcp"
+
+- name: Consultar estado do K3s antes de conferir listeners
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - --property=ActiveState
+      - --value
+      - "{{ runtime_mode_k3s_service }}.service"
+  changed_when: false
+  register: runtime_mode_cluster_port_check_state
+
+- name: Confirmar portas locais livres antes de iniciar o cluster
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ item }}"
+    state: stopped
+    timeout: 10
+  when: runtime_mode_cluster_port_check_state.stdout | trim == 'inactive'
+  loop: "{{ runtime_mode_cluster_public_ports }}"
+  loop_control:
+    label: "{{ item }}/tcp"

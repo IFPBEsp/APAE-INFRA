@@ -1,0 +1,7 @@
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      # Os contextos job.workflow_repository e job.workflow_sha existem no GitHub Actions
+      # (usados para fazer checkout do próprio repositório do workflow reutilizável), mas
+      # ainda não são reconhecidos pelo actionlint 1.7.12. Remover quando houver suporte.
+      - 'property "workflow_(repository|sha)" is not defined in object type'

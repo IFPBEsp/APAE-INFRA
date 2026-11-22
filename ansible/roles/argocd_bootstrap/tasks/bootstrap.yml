@@ -5,7 +5,7 @@
       - /usr/local/bin/k3s
       - kubectl
       - --kubeconfig
-      - "{{ argocd_kubeconfig }}"
+      - "{{ argocd_bootstrap_kubeconfig }}"
       - apply
       - -f
       - "-"
@@ -20,6 +20,7 @@
     - namespaces.yaml
     - project.yaml
     - project-infra.yaml
+    - project-gateway.yaml
     - app-of-apps.yaml
   register: argocd_bootstrap_apply
   changed_when: >-
