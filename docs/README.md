@@ -3,6 +3,8 @@
 ## Guias e estudos
 
 - [Estratégia de backup e recuperação da VPS e aplicações](backup/README.md)
+- [Validação de capacidade e orçamento da VPS](capacidade/01-orcamento-e-capacidade-vps.md)
+- [Relatório de cenários e limitações de capacidade da VPS](capacidade/02-relatorio-cenarios-e-recomendacoes.md)
 - [Estudo de Ansible para gerenciamento da VPS](ansible/README.md)
 - [Alternância operacional entre Compose e K3s](../ansible/docs/runtime-mode.md)
 - [Evidências de validação da alternância](../ansible/docs/runtime-mode-evidence.md)
