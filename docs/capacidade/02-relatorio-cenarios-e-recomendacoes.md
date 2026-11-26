@@ -28,6 +28,7 @@ Este relatório consolida os cenários de teste, resultados observados, limitaç
 Para validar a capacidade sem colocar em risco os bancos de dados compartilhados (`apae-postgres` e `apae-minio-shared`), foram estruturados quatro cenários controlados:
 
 ### Cenário 1: Baseline e Modo Compose Ativo
+
 * **Objetivo:** Medir o consumo do host executando os serviços de dados permanentes e a stack legada Compose (`/opt/apae/*`).
 * **Condições:** K3s parado via `activate-compose.yml`. Containers do Docker em execução.
 * **Métricas Esperadas:**
@@ -36,6 +37,7 @@ Para validar a capacidade sem colocar em risco os bancos de dados compartilhados
   * OOMKill / Saturação: Ausente.
 
 ### Cenário 2: Modo Cluster Base (Plataforma sem Produtos)
+
 * **Objetivo:** Medir o custo inegociável da infraestrutura K3s + ArgoCD + NGINX Gateway Fabric.
 * **Condições:** `activate-cluster.yml` aplicado. Produtos com `replicas: 0`.
 * **Métricas Reais Obtidas na VPS (26/11/2026 03:04 UTC):**
@@ -54,6 +56,7 @@ Para validar a capacidade sem colocar em risco os bancos de dados compartilhados
   * **OOM-Killer:** Zero ocorrências registradas no kernel (`dmesg`).
 
 ### Cenário 3: Ativação Escalonada dos Produtos (Cenário Representativo)
+
 * **Objetivo:** Ativar os produtos gradualmente para comprovar o consumo real de cada camada e evitar colapso de memória.
 * **Fase A (Aplicações Web Leves):** Ativar `site-comemorativo` e frontends do `apae-geral` (`apae` e `management-app`).
   * Consumo incremental observado/esperado: ~180 MiB a ~250 MiB.
@@ -62,6 +65,7 @@ Para validar a capacidade sem colocar em risco os bancos de dados compartilhados
   * Consumo estabilizado: ~600 MiB a ~900 MiB.
 
 ### Cenário 4: Pico Operacional Concorrente (Rollout + Backup)
+
 * **Objetivo:** Estressar a VPS durante o momento mais crítico da operação.
 * **Condições:**
   * Disparo de sincronização/rollout no ArgoCD para um dos produtos.
@@ -77,7 +81,8 @@ Para validar a capacidade sem colocar em risco os bancos de dados compartilhados
 
 Para registrar os logs e evidências sem depender da stack pesada de observabilidade (#116), a coleta pode ser executada diretamente no host via script temporário ou comandos nativos (`free -m`, `vmstat 1 5`, `dmesg`, `docker stats` e `kubectl top`).
 
-### Comandos de diagnóstico executados na VPS:
+### Comandos de diagnóstico executados na VPS
+
 ```bash
 # 1. Host e memória
 free -m && free -h && df -hT /
@@ -95,6 +100,7 @@ docker stats --no-stream
 sudo kubectl top nodes
 sudo kubectl top pods -A --sort-by=memory
 ```
+
 Os resultados são consolidados neste relatório para fins de auditoria e dimensionamento.
 
 ---

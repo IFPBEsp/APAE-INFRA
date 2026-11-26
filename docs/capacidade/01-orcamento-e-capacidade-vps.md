@@ -58,7 +58,7 @@ flowchart TD
 | **CoreDNS, metrics-server** | Pods `kube-system` | Não | Sim | Efêmero |
 | **ArgoCD (4 workloads)** | Pods `argocd` | Não | Sim | Redis ephem / repo-server cache |
 | **NGINX Gateway Fabric** | Pods `nginx-gateway` | Não | Sim | Efêmero |
-| **Workloads Produtos (8 pods)**| Pods `kubernetes/` | Não | Sim | Stateless (consumo via Postgres/MinIO) |
+| **Workloads Produtos (8 pods)** | Pods `kubernetes/` | Não | Sim | Stateless (consumo via Postgres/MinIO) |
 | **Aplicações legadas Compose** | Docker Compose | Sim | Não | Volumes Compose |
 
 ---
@@ -76,6 +76,7 @@ Conforme implementado no template Ansible `ansible/roles/k3s/templates/config.ya
 | **Subtotal Reservas** | **500m** | **1.024 MiB** | **Reserva obrigatória do nó** |
 
 > **Capacidade Efetiva Alocável para Pods (Node Allocatable):**
+>
 > * **CPU Alocável:** $2.000\text{m} - 500\text{m} = \mathbf{1.500\text{m}}$
 > * **Memória Alocável:** $3.725\text{ MiB} - 1.024\text{ MiB} - \text{Eviction Threshold (100 MiB)} \approx \mathbf{2.600\text{ MiB}}$
 
@@ -90,7 +91,7 @@ Comparativo entre os valores declarados nos manifests e o **consumo real medido*
 | `kube-system` | `coredns` | 100m | 70 MiB | **2m** | **22 MiB** | 200m | 170 MiB |
 | `kube-system` | `metrics-server` | 100m | 100 MiB | **3m** | **33 MiB** | 200m | 200 MiB |
 | `kube-system` | `local-path-provisioner` | 50m | 50 MiB | **1m** | **13 MiB** | 100m | 100 MiB |
-| `kube-system` | `sealed-secrets-controller`| **50m** | **64 MiB** | **1m** | **8 MiB** | **200m** | **128 MiB** |
+| `kube-system` | `sealed-secrets-controller` | **50m** | **64 MiB** | **1m** | **8 MiB** | **200m** | **128 MiB** |
 | `argocd` | `argocd-application-controller` | 100m | 256 MiB | **2m** | **243 MiB** | 500m | 768 MiB |
 | `argocd` | `argocd-server` | 50m | 128 MiB | **1m** | **39 MiB** | 300m | 384 MiB |
 | `argocd` | `argocd-repo-server` | 100m | 128 MiB | **1m** | **45 MiB** | 500m | 512 MiB |
@@ -116,7 +117,7 @@ Valores declarados nos manifests em `kubernetes/*/base/`:
 | **Gestão Escolar** | `frontend` | Next.js / Node | 100m | 128 MiB | 500m | 256 MiB |
 | **Atendimento** | `atendimento` | Backend | 100m | 256 MiB | 500m | 512 MiB |
 | **Atendimento** | `atendimento-app` | Frontend Next.js | 100m | 128 MiB | 500m | 256 MiB |
-| **Site Comemorativo**| `site-comemorativo`| Next.js / Node | 100m | 128 MiB | 500m | 256 MiB |
+| **Site Comemorativo** | `site-comemorativo` | Next.js / Node | 100m | 128 MiB | 500m | 256 MiB |
 | **Subtotal Produtos** | *(8 pods)* | | **950m** | **1.408 MiB** | **4.500m** | **2.816 MiB** |
 
 ---
@@ -135,6 +136,7 @@ Comparativo entre a capacidade alocável do nó e a demanda consolidada:
 | **Soma Total dos Limits** | **7.500m** *(375%)* | **5.654 MiB** *(152%)* | Risco severo de OOMKill sob estresse |
 
 > **Alerta de Saturação Teórica:**
+>
 > 1. A soma dos **CPU Requests** (1.675m) ultrapassa a capacidade alocável de CPU (1.500m) em **175m**. O Kubelet rejeitará o agendamento de pelo menos um pod se todos forem ativados com esses requests.
 > 2. A margem de **Memória RAM** restante é de apenas **140 MiB (~5%)**. Qualquer oscilação ou pico de inicialização provocará eviction ou OOMKill.
 
@@ -143,7 +145,9 @@ Comparativo entre a capacidade alocável do nó e a demanda consolidada:
 ## 5. Análise de Picos Operacionais e Riscos
 
 ### 5.1. Risco no `system-reserved` (512 MiB)
+
 O `system-reserved` reserva apenas 512 MiB para o sistema host. Nele rodam:
+
 * PostgreSQL (`apae-postgres`)
 * MinIO (`apae-minio-shared`)
 * Docker Daemon e SSH
@@ -151,10 +155,13 @@ O `system-reserved` reserva apenas 512 MiB para o sistema host. Nele rodam:
 Se o PostgreSQL executar queries complexas ou o MinIO realizar uploads concorrentes (teto técnico de 50 MB por upload), o consumo excederá 512 MiB, competindo com a memória do nó e podendo induzir o Linux OOM-Killer a encerrar containers vitais.
 
 ### 5.2. Picos de Rollout / Deploy Concorrente
+
 O Kubernetes por padrão utiliza estratégia `RollingUpdate` em Deployments (criando novos pods antes de destruir os antigos). Como a margem de memória é de apenas 140 MiB, **qualquer rollout de produto falhará por falta de memória para agendar a nova réplica**.
+
 * **Mitigação Obrigatória:** Adotar `strategy.type: Recreate` nos manifests dos produtos.
 
 ### 5.3. Pico de Backup (#108)
+
 A execução de dumps (`pg_dump`) combinada com a compressão e criptografia do `restic` causa picos temporários de CPU (podendo saturar 1 vCPU inteira) e alocação de buffers em disco e RAM.
 
 ---
