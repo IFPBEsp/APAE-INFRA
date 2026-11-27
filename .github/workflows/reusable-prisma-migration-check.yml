@@ -152,7 +152,6 @@ jobs:
 
           git diff \
             --name-status \
-            --no-renames \
             "origin/${BASE_REF}...HEAD" \
             -- "$MIGRATIONS_PATH" \
             > "$diff_file"
@@ -160,11 +159,12 @@ jobs:
           echo "Alterações detectadas em ${MIGRATIONS_PATH}:"
           cat "$diff_file" || true
 
-          if awk -F '\t' '
-            $1 == "M" || $1 == "D" {print; found=1}
-            END {exit !found}
-          ' "$diff_file"; then
-            echo "::error::Migrations existentes não podem ser modificadas ou removidas."
+          INVALID_CHANGES=$(grep -vE '^A[[:space:]]' "$diff_file" || true)
+
+          if [[ -n "$INVALID_CHANGES" ]]; then
+            echo "::error::Detectadas alterações não permitidas em migrations existentes:"
+            echo "$INVALID_CHANGES"
+            echo "Apenas novas adições (status A) são permitidas em ${MIGRATIONS_PATH}."
             exit 1
           fi
 
