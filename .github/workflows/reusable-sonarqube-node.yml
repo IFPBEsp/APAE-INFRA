@@ -1,0 +1,391 @@
+name: Reusable SonarQube / SonarCloud Analysis - Node
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: "Chave única do projeto no SonarCloud / SonarQube"
+        required: true
+        type: string
+
+      organization:
+        description: "Chave da organização no SonarCloud"
+        required: false
+        type: string
+        default: ""
+
+      working-directory:
+        description: "Diretório raiz do projeto Node, relativo à raiz do repositório"
+        required: false
+        type: string
+        default: "."
+
+      node-version:
+        description: "Versão do Node.js"
+        required: false
+        type: string
+        default: "22"
+
+      sonar-host-url:
+        description: "URL do servidor SonarCloud / SonarQube"
+        required: false
+        type: string
+        default: "https://sonarcloud.io"
+
+      exclusions:
+        description: "Padrões glob de exclusão de análise separados por vírgula (sonar.exclusions)"
+        required: false
+        type: string
+        default: ""
+
+      coverage-exclusions:
+        description: "Padrões glob de exclusão de cobertura separados por vírgula (sonar.coverage.exclusions)"
+        required: false
+        type: string
+        default: ""
+
+      coverage-report-path:
+        description: "Caminho do relatório LCOV de cobertura, relativo ao working-directory"
+        required: false
+        type: string
+        default: "coverage/lcov.info"
+
+      run-tests:
+        description: "Executar suíte de testes com cobertura antes do scan"
+        required: false
+        type: boolean
+        default: true
+
+      test-command:
+        description: "Comando customizado para execução dos testes com cobertura (opcional)"
+        required: false
+        type: string
+        default: ""
+
+      quality-gate-timeout:
+        description: "Tempo máximo em segundos aguardando o resultado da Quality Gate"
+        required: false
+        type: number
+        default: 300
+
+    secrets:
+      SONAR_TOKEN:
+        description: "Token de autenticação no SonarCloud / SonarQube"
+        required: false
+
+      SONAR_HOST_URL:
+        description: "URL alternativa do servidor Sonar via secret (sobrescreve o input quando definida)"
+        required: false
+
+permissions: {}
+
+jobs:
+  sonar-node:
+    name: Sonar Analysis (Node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate inputs and project layout
+        id: validate
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          PROJECT_KEY: ${{ inputs.project-key }}
+          ORGANIZATION: ${{ inputs.organization }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          SONAR_HOST_URL_INPUT: ${{ inputs.sonar-host-url }}
+          SONAR_HOST_URL_SECRET: ${{ secrets.SONAR_HOST_URL }}
+          EXCLUSIONS: ${{ inputs.exclusions }}
+          COVERAGE_EXCLUSIONS: ${{ inputs.coverage-exclusions }}
+          COVERAGE_REPORT_PATH: ${{ inputs.coverage-report-path }}
+          TEST_COMMAND: ${{ inputs.test-command }}
+          QUALITY_GATE_TIMEOUT: ${{ inputs.quality-gate-timeout }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${PROJECT_KEY//[[:space:]]/}" || "$PROJECT_KEY" =~ [[:space:]] ]]; then
+            echo "::error::O input project-key é obrigatório e não pode conter espaços ou quebras de linha."
+            exit 1
+          fi
+
+          if [[ -z "${WORKING_DIRECTORY//[[:space:]]/}" ]]; then
+            echo "::error::O input working-directory não pode ser vazio."
+            exit 1
+          fi
+
+          if [[ "$WORKING_DIRECTORY" = /* || "$WORKING_DIRECTORY" == *".."* ]]; then
+            echo "::error::working-directory deve ser relativo à raiz do repositório e não pode conter '..'."
+            exit 1
+          fi
+
+          project_dir="$GITHUB_WORKSPACE/$WORKING_DIRECTORY"
+          if [[ ! -d "$project_dir" ]]; then
+            echo "::error::Diretório do projeto não encontrado: $WORKING_DIRECTORY"
+            exit 1
+          fi
+
+          if [[ ! -f "$project_dir/package.json" ]]; then
+            echo "::error::package.json não encontrado em $WORKING_DIRECTORY."
+            exit 1
+          fi
+
+          if [[ -n "${COVERAGE_REPORT_PATH//[[:space:]]/}" ]]; then
+            if [[ "$COVERAGE_REPORT_PATH" = /* || "$COVERAGE_REPORT_PATH" == *".."* ]]; then
+              echo "::error::coverage-report-path deve ser relativo ao working-directory e não pode conter '..'."
+              exit 1
+            fi
+          fi
+
+          if [[ -n "${TEST_COMMAND//[[:space:]]/}" ]] && [[ "$TEST_COMMAND" == *$'\n'* || "$TEST_COMMAND" == *$'\r'* ]]; then
+            echo "::error::test-command não pode conter quebras de linha."
+            exit 1
+          fi
+
+          if ! [[ "$QUALITY_GATE_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::quality-gate-timeout deve ser um número inteiro positivo: '$QUALITY_GATE_TIMEOUT'."
+            exit 1
+          fi
+
+          if [[ "$ORGANIZATION" == *$'\n'* || "$ORGANIZATION" == *$'\r'* ]]; then
+            echo "::error::organization não pode conter quebras de linha."
+            exit 1
+          fi
+
+          if [[ "$EXCLUSIONS" == *$'\n'* || "$EXCLUSIONS" == *$'\r'* || "$COVERAGE_EXCLUSIONS" == *$'\n'* || "$COVERAGE_EXCLUSIONS" == *$'\r'* ]]; then
+            echo "::error::exclusions e coverage-exclusions não podem conter quebras de linha."
+            exit 1
+          fi
+
+          if [[ "$PROJECT_KEY" == *'"'* || "$ORGANIZATION" == *'"'* || "$EXCLUSIONS" == *'"'* || "$COVERAGE_EXCLUSIONS" == *'"'* ]]; then
+            echo "::error::project-key, organization, exclusions e coverage-exclusions não podem conter aspas duplas (\")."
+            exit 1
+          fi
+
+          effective_host_url="${SONAR_HOST_URL_SECRET:-$SONAR_HOST_URL_INPUT}"
+          effective_host_url="${effective_host_url%/}"
+
+          if [[ -z "$effective_host_url" || "$effective_host_url" =~ [[:space:]] ]]; then
+            echo "::error::sonar-host-url é obrigatório e não pode conter espaços."
+            exit 1
+          fi
+
+          if [[ "$effective_host_url" != https://* && "$effective_host_url" != http://* ]]; then
+            echo "::error::sonar-host-url deve iniciar com https:// ou http://."
+            exit 1
+          fi
+
+          echo "sonar-host-url=$effective_host_url" >> "$GITHUB_OUTPUT"
+
+          pkg_manager="npm"
+          install_dir="$WORKING_DIRECTORY"
+          if [[ -f "$project_dir/pnpm-lock.yaml" ]]; then
+            pkg_manager="pnpm"
+            install_dir="$WORKING_DIRECTORY"
+          elif [[ -f "$GITHUB_WORKSPACE/pnpm-lock.yaml" ]]; then
+            pkg_manager="pnpm"
+            install_dir="."
+          fi
+          echo "pkg-manager=$pkg_manager" >> "$GITHUB_OUTPUT"
+          echo "install-dir=$install_dir" >> "$GITHUB_OUTPUT"
+
+          root_pkg_mgr="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("package.json")
+          if p.is_file():
+              try:
+                  data = json.loads(p.read_text(encoding="utf-8"))
+                  print(str(data.get("packageManager", "")))
+              except Exception:
+                  pass
+          PY
+          )"
+
+          if [[ "$root_pkg_mgr" == pnpm@* ]]; then
+            echo "root-has-pnpm-package-manager=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "root-has-pnpm-package-manager=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ -n "${SONAR_TOKEN:-}" ]]; then
+            echo "run-sonar=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$IS_FORK" == "true" ]]; then
+            echo "run-sonar=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR oriundo de fork sem acesso ao secret SONAR_TOKEN. Testes serão executados; o envio ao Sonar será ignorado."
+            if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+              {
+                echo "## Análise Sonar (Node) — \`${PROJECT_KEY}\`"
+                echo ""
+                echo "- **Status:** Análise Sonar ignorada (Pull Request oriundo de fork sem \`SONAR_TOKEN\` disponível)."
+                echo "- **Testes:** Executados normalmente para validação."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "::error::Secret SONAR_TOKEN não configurado. Cadastre SONAR_TOKEN nos secrets do repositório ou da organização."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install pnpm (packageManager defined at root)
+        if: steps.validate.outputs.pkg-manager == 'pnpm' && steps.validate.outputs.root-has-pnpm-package-manager == 'true'
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
+
+      - name: Install pnpm (latest)
+        if: steps.validate.outputs.pkg-manager == 'pnpm' && steps.validate.outputs.root-has-pnpm-package-manager != 'true'
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
+        with:
+          version: latest
+
+      - name: Install dependencies (pnpm)
+        if: steps.validate.outputs.pkg-manager == 'pnpm'
+        shell: bash
+        working-directory: ${{ steps.validate.outputs.install-dir }}
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --dangerously-allow-all-builds
+
+      - name: Install dependencies (npm)
+        if: steps.validate.outputs.pkg-manager != 'pnpm'
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          if [[ -f "package-lock.json" || -f "npm-shrinkwrap.json" ]]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run tests with coverage
+        if: inputs.run-tests
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PKG_MANAGER: ${{ steps.validate.outputs.pkg-manager }}
+          TEST_COMMAND: ${{ inputs.test-command }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${TEST_COMMAND//[[:space:]]/}" ]]; then
+            read -r -a custom_cmd <<< "$TEST_COMMAND"
+            "${custom_cmd[@]}"
+            exit 0
+          fi
+
+          selected_script="$(node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const scripts = pkg.scripts || {};
+            if (scripts["test:coverage"]) {
+              console.log("test:coverage");
+            } else if (
+              scripts.test &&
+              !String(scripts.test).includes("Error: no test specified")
+            ) {
+              console.log("test");
+            }
+          ')"
+
+          if [[ -z "$selected_script" ]]; then
+            echo "::notice::Nenhum script de teste configurado em package.json. Etapa de cobertura ignorada."
+            exit 0
+          fi
+
+          if [[ "$selected_script" == "test:coverage" ]]; then
+            if [[ "$PKG_MANAGER" == "pnpm" ]]; then
+              pnpm run test:coverage
+            else
+              npm run test:coverage
+            fi
+          else
+            if [[ "$PKG_MANAGER" == "pnpm" ]]; then
+              pnpm run test --coverage
+            else
+              npm run test -- --coverage
+            fi
+          fi
+
+      - name: Prepare Sonar scanner arguments
+        id: sonar-args
+        if: steps.validate.outputs.run-sonar == 'true'
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PROJECT_KEY: ${{ inputs.project-key }}
+          ORGANIZATION: ${{ inputs.organization }}
+          SONAR_HOST_URL: ${{ steps.validate.outputs.sonar-host-url }}
+          EXCLUSIONS: ${{ inputs.exclusions }}
+          COVERAGE_EXCLUSIONS: ${{ inputs.coverage-exclusions }}
+          COVERAGE_REPORT_PATH: ${{ inputs.coverage-report-path }}
+          QUALITY_GATE_TIMEOUT: ${{ inputs.quality-gate-timeout }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          def quote_arg(flag: str) -> str:
+              if any(ch.isspace() for ch in flag):
+                  return f'"{flag}"'
+              return flag
+
+          args = [
+              f"-Dsonar.projectKey={os.environ['PROJECT_KEY'].strip()}",
+              f"-Dsonar.host.url={os.environ['SONAR_HOST_URL'].strip()}",
+              "-Dsonar.qualitygate.wait=true",
+              f"-Dsonar.qualitygate.timeout={os.environ['QUALITY_GATE_TIMEOUT'].strip()}",
+          ]
+
+          org = os.environ.get("ORGANIZATION", "").strip()
+          if org:
+              args.append(f"-Dsonar.organization={org}")
+
+          exclusions = os.environ.get("EXCLUSIONS", "").strip()
+          if exclusions:
+              args.append(f"-Dsonar.exclusions={exclusions}")
+
+          cov_exclusions = os.environ.get("COVERAGE_EXCLUSIONS", "").strip()
+          if cov_exclusions:
+              args.append(f"-Dsonar.coverage.exclusions={cov_exclusions}")
+
+          cov_path = os.environ.get("COVERAGE_REPORT_PATH", "").strip()
+          if cov_path:
+              if Path(cov_path).is_file():
+                  args.append(f"-Dsonar.javascript.lcov.reportPaths={cov_path}")
+              else:
+                  print(
+                      f"::warning::Relatório LCOV não encontrado em {cov_path}. "
+                      "A análise seguirá sem envio de cobertura."
+                  )
+
+          encoded = " ".join(quote_arg(a) for a in args)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"args={encoded}\n")
+          PY
+
+      - name: SonarQube / SonarCloud Scan
+        if: steps.validate.outputs.run-sonar == 'true'
+        uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9 # v7.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ steps.validate.outputs.sonar-host-url }}
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+          args: ${{ steps.sonar-args.outputs.args }}

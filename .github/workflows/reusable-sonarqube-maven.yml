@@ -1,0 +1,311 @@
+name: Reusable SonarQube / SonarCloud Analysis - Maven
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: "Chave única do projeto no SonarCloud / SonarQube"
+        required: true
+        type: string
+
+      organization:
+        description: "Chave da organização no SonarCloud (deixar vazio no SonarQube self-hosted)"
+        required: false
+        type: string
+        default: ""
+
+      working-directory:
+        description: "Diretório raiz do projeto Maven, relativo à raiz do repositório"
+        required: false
+        type: string
+        default: "."
+
+      java-version:
+        description: "Versão do JDK Temurin"
+        required: false
+        type: string
+        default: "21"
+
+      sonar-host-url:
+        description: "URL do servidor SonarCloud / SonarQube"
+        required: false
+        type: string
+        default: "https://sonarcloud.io"
+
+      exclusions:
+        description: "Padrões glob de exclusão de análise separados por vírgula (sonar.exclusions)"
+        required: false
+        type: string
+        default: ""
+
+      coverage-exclusions:
+        description: "Padrões glob de exclusão de cobertura separados por vírgula (sonar.coverage.exclusions)"
+        required: false
+        type: string
+        default: ""
+
+      coverage-report-path:
+        description: "Caminho do relatório XML do JaCoCo, relativo ao working-directory"
+        required: false
+        type: string
+        default: "target/site/jacoco/jacoco.xml"
+
+      maven-args:
+        description: "Metas e flags do Maven executadas antes da análise do Sonar"
+        required: false
+        type: string
+        default: "clean verify"
+
+      quality-gate-timeout:
+        description: "Tempo máximo em segundos aguardando o resultado da Quality Gate"
+        required: false
+        type: number
+        default: 300
+
+    secrets:
+      SONAR_TOKEN:
+        description: "Token de autenticação no SonarCloud / SonarQube"
+        required: false
+
+      SONAR_HOST_URL:
+        description: "URL alternativa do servidor Sonar via secret (sobrescreve o input quando definida)"
+        required: false
+
+permissions: {}
+
+jobs:
+  sonar-maven:
+    name: Sonar Analysis (Maven)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate inputs and project layout
+        id: validate
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          PROJECT_KEY: ${{ inputs.project-key }}
+          ORGANIZATION: ${{ inputs.organization }}
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+          SONAR_HOST_URL_INPUT: ${{ inputs.sonar-host-url }}
+          SONAR_HOST_URL_SECRET: ${{ secrets.SONAR_HOST_URL }}
+          EXCLUSIONS: ${{ inputs.exclusions }}
+          COVERAGE_EXCLUSIONS: ${{ inputs.coverage-exclusions }}
+          COVERAGE_REPORT_PATH: ${{ inputs.coverage-report-path }}
+          MAVEN_ARGS_INPUT: ${{ inputs.maven-args }}
+          QUALITY_GATE_TIMEOUT: ${{ inputs.quality-gate-timeout }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${PROJECT_KEY//[[:space:]]/}" || "$PROJECT_KEY" =~ [[:space:]] ]]; then
+            echo "::error::O input project-key é obrigatório e não pode conter espaços ou quebras de linha."
+            exit 1
+          fi
+
+          if [[ -z "${WORKING_DIRECTORY//[[:space:]]/}" ]]; then
+            echo "::error::O input working-directory não pode ser vazio."
+            exit 1
+          fi
+
+          if [[ "$WORKING_DIRECTORY" = /* || "$WORKING_DIRECTORY" == *".."* ]]; then
+            echo "::error::working-directory deve ser relativo à raiz do repositório e não pode conter '..'."
+            exit 1
+          fi
+
+          project_dir="$GITHUB_WORKSPACE/$WORKING_DIRECTORY"
+          if [[ ! -d "$project_dir" ]]; then
+            echo "::error::Diretório do projeto não encontrado: $WORKING_DIRECTORY"
+            exit 1
+          fi
+
+          if [[ ! -f "$project_dir/pom.xml" ]]; then
+            echo "::error::pom.xml não encontrado em $WORKING_DIRECTORY."
+            exit 1
+          fi
+
+          if [[ -f "$project_dir/mvnw" ]]; then
+            if [[ ! -x "$project_dir/mvnw" ]]; then
+              chmod +x "$project_dir/mvnw"
+            fi
+            echo "use-mvnw=true" >> "$GITHUB_OUTPUT"
+          elif command -v mvn >/dev/null 2>&1; then
+            echo "use-mvnw=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Nem mvnw nem mvn foram encontrados para o build em $WORKING_DIRECTORY."
+            exit 1
+          fi
+
+          if [[ -n "${COVERAGE_REPORT_PATH//[[:space:]]/}" ]]; then
+            if [[ "$COVERAGE_REPORT_PATH" = /* || "$COVERAGE_REPORT_PATH" == *".."* ]]; then
+              echo "::error::coverage-report-path deve ser relativo ao working-directory e não pode conter '..'."
+              exit 1
+            fi
+          fi
+
+          if [[ -z "${MAVEN_ARGS_INPUT//[[:space:]]/}" ]]; then
+            echo "::error::O input maven-args não pode ser vazio."
+            exit 1
+          fi
+
+          if ! [[ "$QUALITY_GATE_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::quality-gate-timeout deve ser um número inteiro positivo: '$QUALITY_GATE_TIMEOUT'."
+            exit 1
+          fi
+
+          if [[ "$ORGANIZATION" == *$'\n'* || "$ORGANIZATION" == *$'\r'* ]]; then
+            echo "::error::organization não pode conter quebras de linha."
+            exit 1
+          fi
+
+          if [[ "$EXCLUSIONS" == *$'\n'* || "$EXCLUSIONS" == *$'\r'* || "$COVERAGE_EXCLUSIONS" == *$'\n'* || "$COVERAGE_EXCLUSIONS" == *$'\r'* ]]; then
+            echo "::error::exclusions e coverage-exclusions não podem conter quebras de linha."
+            exit 1
+          fi
+
+          effective_host_url="${SONAR_HOST_URL_SECRET:-$SONAR_HOST_URL_INPUT}"
+          effective_host_url="${effective_host_url%/}"
+
+          if [[ -z "$effective_host_url" || "$effective_host_url" =~ [[:space:]] ]]; then
+            echo "::error::sonar-host-url é obrigatório e não pode conter espaços."
+            exit 1
+          fi
+
+          if [[ "$effective_host_url" != https://* && "$effective_host_url" != http://* ]]; then
+            echo "::error::sonar-host-url deve iniciar com https:// ou http://."
+            exit 1
+          fi
+
+          echo "sonar-host-url=$effective_host_url" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "${SONAR_TOKEN:-}" ]]; then
+            echo "run-sonar=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$IS_FORK" == "true" ]]; then
+            echo "run-sonar=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR oriundo de fork sem acesso ao secret SONAR_TOKEN. Build e testes serão executados; o envio ao Sonar será ignorado."
+            if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+              {
+                echo "## Análise Sonar (Maven) — \`${PROJECT_KEY}\`"
+                echo ""
+                echo "- **Status:** Análise Sonar ignorada (Pull Request oriundo de fork sem \`SONAR_TOKEN\` disponível)."
+                echo "- **Build e testes:** Executados normalmente para validação."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "::error::Secret SONAR_TOKEN não configurado. Cadastre SONAR_TOKEN nos secrets do repositório ou da organização."
+            exit 1
+          fi
+
+      - name: Set up JDK Temurin
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+          cache: maven
+          cache-dependency-path: |
+            ${{ inputs.working-directory }}/pom.xml
+            ${{ inputs.working-directory }}/**/pom.xml
+
+      - name: Cache Sonar packages
+        if: steps.validate.outputs.run-sonar == 'true'
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar-${{ hashFiles(format('{0}/pom.xml', inputs.working-directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-sonar-
+
+      - name: Build and test with Maven
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          USE_MVNW: ${{ steps.validate.outputs.use-mvnw }}
+          MAVEN_ARGS_INPUT: ${{ inputs.maven-args }}
+        run: |
+          set -euo pipefail
+
+          mvn_cmd="mvn"
+          if [[ "$USE_MVNW" == "true" ]]; then
+            mvn_cmd="./mvnw"
+          fi
+
+          maven_args=()
+          while IFS= read -r line; do
+            if [[ -z "${line//[[:space:]]/}" ]]; then
+              continue
+            fi
+            read -r -a line_args <<< "$line"
+            maven_args+=("${line_args[@]}")
+          done <<< "$MAVEN_ARGS_INPUT"
+
+          "$mvn_cmd" -B "${maven_args[@]}"
+
+      - name: Analyze with SonarQube / SonarCloud
+        if: steps.validate.outputs.run-sonar == 'true'
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          USE_MVNW: ${{ steps.validate.outputs.use-mvnw }}
+          PROJECT_KEY: ${{ inputs.project-key }}
+          ORGANIZATION: ${{ inputs.organization }}
+          SONAR_HOST_URL: ${{ steps.validate.outputs.sonar-host-url }}
+          EXCLUSIONS: ${{ inputs.exclusions }}
+          COVERAGE_EXCLUSIONS: ${{ inputs.coverage-exclusions }}
+          COVERAGE_REPORT_PATH: ${{ inputs.coverage-report-path }}
+          QUALITY_GATE_TIMEOUT: ${{ inputs.quality-gate-timeout }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mvn_cmd="mvn"
+          if [[ "$USE_MVNW" == "true" ]]; then
+            mvn_cmd="./mvnw"
+          fi
+
+          sonar_args=(
+            "-B"
+            "org.sonarsource.scanner.maven:sonar-maven-plugin:sonar"
+            "-Dsonar.projectKey=${PROJECT_KEY}"
+            "-Dsonar.host.url=${SONAR_HOST_URL}"
+            "-Dsonar.qualitygate.wait=true"
+            "-Dsonar.qualitygate.timeout=${QUALITY_GATE_TIMEOUT}"
+          )
+
+          if [[ -n "${ORGANIZATION//[[:space:]]/}" ]]; then
+            sonar_args+=("-Dsonar.organization=${ORGANIZATION}")
+          fi
+
+          if [[ -n "${EXCLUSIONS//[[:space:]]/}" ]]; then
+            sonar_args+=("-Dsonar.exclusions=${EXCLUSIONS}")
+          fi
+
+          if [[ -n "${COVERAGE_EXCLUSIONS//[[:space:]]/}" ]]; then
+            sonar_args+=("-Dsonar.coverage.exclusions=${COVERAGE_EXCLUSIONS}")
+          fi
+
+          if [[ -n "${COVERAGE_REPORT_PATH//[[:space:]]/}" ]]; then
+            if [[ ! -f "$COVERAGE_REPORT_PATH" ]]; then
+              echo "::notice::Relatório JaCoCo não encontrado em $COVERAGE_REPORT_PATH; tentando gerar com jacoco:report."
+              "$mvn_cmd" -B jacoco:report || true
+            fi
+
+            if [[ -f "$COVERAGE_REPORT_PATH" ]]; then
+              resolved_report_path="$(pwd)/${COVERAGE_REPORT_PATH}"
+              sonar_args+=("-Dsonar.coverage.jacoco.xmlReportPaths=${resolved_report_path}")
+            else
+              echo "::warning::Relatório JaCoCo não encontrado em $COVERAGE_REPORT_PATH. A análise seguirá sem relatório de cobertura."
+            fi
+          fi
+
+          "$mvn_cmd" "${sonar_args[@]}"
