@@ -81,7 +81,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    environment: terraform-drift
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
 
     strategy:
       fail-fast: false
@@ -105,15 +106,12 @@ jobs:
 
       - name: Terraform Init
         id: init
-        env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
         run: terraform init -input=false
 
       - name: Detect drift
         id: drift
         shell: bash
         env:
-          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
           ENV_NAME: ${{ matrix.environment }}
         run: |
           set -uo pipefail
