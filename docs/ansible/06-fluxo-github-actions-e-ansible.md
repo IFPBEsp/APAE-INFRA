@@ -75,6 +75,8 @@ Definir `concurrency` por ambiente/host para serializar execuções e não cance
 
 ### Exemplo de gatilhos para o futuro `ansible-apply.yml`
 
+> A implementação efetiva está em [`.github/workflows/ansible-apply.yml`](../../.github/workflows/ansible-apply.yml), com o guia operacional em [docs/workflows/ansible-apply.md](../workflows/ansible-apply.md).
+
 ```yaml
 name: Ansible Apply
 

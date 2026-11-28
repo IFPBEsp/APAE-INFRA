@@ -15,6 +15,19 @@ Módulo reutilizável para padronização e governança de configurações em re
    - Impede force push (`allows_force_pushes = false`) e exclusão de branch (`allows_deletions = false`).
 3. **Environments (`github_repository_environment`):**
    - Cria os ambientes `development`, `staging` e `production` para pipelines de CI/CD.
+   - Opcionalmente aplica proteções por ambiente via `environment_protection`: revisores obrigatórios (por login, de 1 a 6), `prevent_self_review`, bloqueio de bypass por administradores e restrição das branches que podem fazer deploy (`github_repository_environment_deployment_policy`).
+   - Ambientes sem entrada em `environment_protection` são criados sem regras.
+   - Secrets e variáveis dos ambientes não são gerenciados aqui, para não gravar valores sensíveis no state.
+
+## Testes
+
+```bash
+cd terraform/modules/github-repo-config
+terraform init -backend=false
+terraform test
+```
+
+Os testes em `tests/` usam provider mockado e não acessam o GitHub.
 
 ## Como Utilizar
 
@@ -22,5 +35,15 @@ Módulo reutilizável para padronização e governança de configurações em re
 module "meu_repositorio" {
   source          = "../../modules/github-repo-config"
   repository_name = "NOME-DO-REPOSITORIO"
+
+  # Opcional: proteger um ambiente de deploy.
+  environment_protection = {
+    production = {
+      reviewer_users      = ["login-do-revisor"]
+      prevent_self_review = true
+      can_admins_bypass   = false
+      deployment_branches = ["main"]
+    }
+  }
 }
 ```

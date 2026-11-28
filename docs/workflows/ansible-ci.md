@@ -11,10 +11,12 @@ Validar automaticamente playbooks, roles, inventários e dependências Ansible e
 
 ## 2. Quando executa
 
-Em `pull_request` com destino `dev` ou `main`, quando houver alteração em:
+Em todo `pull_request` com destino `dev` ou `main`. O job `Detect Ansible Changes` compara a base e a head do PR e só executa o `Validate Ansible` quando houver alteração em:
 
-- `ansible/**` (playbooks, roles, inventários, variáveis, dependências e configurações de lint);
-- `.github/workflows/ansible-ci.yml`.
+- `ansible/**` (playbooks, roles, inventários, variáveis, dependências, scripts e configurações de lint);
+- `.github/workflows/ansible-ci.yml` ou `.github/workflows/ansible-apply.yml`.
+
+Nos demais PRs, o `Validate Ansible` aparece como pulado, o que o GitHub conta como sucesso. Por isso ele pode ser exigido como status check sem travar PRs que não mexem em Ansible. O gatilho não usa `paths` de propósito: com o filtro, o workflow nem seria criado nesses PRs e o check obrigatório ficaria pendente. Se o `Detect Ansible Changes` falhar, a validação roda mesmo assim.
 
 Permissões declaradas: somente `contents: read`. Actions externas são referenciadas por SHA completo.
 

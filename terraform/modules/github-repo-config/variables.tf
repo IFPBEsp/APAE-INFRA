@@ -30,6 +30,36 @@ variable "environments" {
   default     = ["development", "staging", "production"]
 }
 
+variable "environment_protection" {
+  description = <<-EOT
+    Regras de proteção por environment, indexadas pelo nome (que precisa constar em `environments`).
+    - reviewer_users: logins que podem aprovar o deployment (máximo de 6).
+    - prevent_self_review: impede que quem disparou a execução a aprove.
+    - can_admins_bypass: permite que administradores ignorem as regras.
+    - deployment_branches: padrões de branch autorizados a fazer deploy; vazio mantém qualquer branch.
+  EOT
+  type = map(object({
+    reviewer_users      = optional(list(string), [])
+    prevent_self_review = optional(bool, true)
+    can_admins_bypass   = optional(bool, false)
+    deployment_branches = optional(list(string), [])
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for name in keys(var.environment_protection) : contains(var.environments, name)])
+    error_message = "Toda chave de environment_protection precisa constar em environments."
+  }
+
+  validation {
+    condition = alltrue([
+      for settings in values(var.environment_protection) :
+      length(settings.reviewer_users) >= 1 && length(settings.reviewer_users) <= 6
+    ])
+    error_message = "Cada environment protegido precisa de 1 a 6 revisores em reviewer_users."
+  }
+}
+
 variable "custom_labels" {
   description = "Labels adicionais específicas que queira passar além das padrão"
   type = map(object({

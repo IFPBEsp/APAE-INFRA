@@ -14,6 +14,8 @@ on:
       - 'tests/test_runtime_tls.py'
       - 'ansible/roles/runtime_mode/templates/**'
       - 'ansible/inventories/production/group_vars/production.yml'
+      - 'tests/test_ansible_apply_plan.py'
+      - 'ansible/scripts/apply-plan.sh'
       - '.github/actions/setup-kustomize/**'
 
 permissions:

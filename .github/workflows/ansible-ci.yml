@@ -1,13 +1,15 @@
 name: Ansible CI
 
+# Não use `paths` neste gatilho. Com o filtro, o workflow nem é criado nos PRs
+# que não mexem em Ansible e o check obrigatório `Validate Ansible` fica
+# pendente, travando o merge. A seleção de caminhos é feita no job `changes`:
+# sem alterações relevantes, o `validate` é pulado, o que o GitHub conta como
+# sucesso.
 on:
   pull_request:
     branches:
       - dev
       - main
-    paths:
-      - "ansible/**"
-      - ".github/workflows/ansible-ci.yml"
 
 permissions:
   contents: read
@@ -17,8 +19,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Ansible Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      ansible: ${{ steps.filter.outputs.ansible }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect relevant changes
+        id: filter
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          changed="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+
+          # O grep lê de uma variável (e não de um pipe) para o `pipefail`
+          # não tratar a saída antecipada do `grep -q` como erro.
+          if grep -Eq '^(ansible/|\.github/workflows/ansible-(ci|apply)\.yml$)' <<< "$changed"; then
+            echo "ansible=true" >> "$GITHUB_OUTPUT"
+            echo "O PR altera arquivos relacionados ao Ansible."
+          else
+            echo "ansible=false" >> "$GITHUB_OUTPUT"
+            echo "O PR não altera arquivos relacionados ao Ansible. A validação será pulada."
+          fi
+
   validate:
     name: Validate Ansible
+    needs: changes
+
+    # Roda também se o `changes` falhar (a saída vem vazia): na dúvida, valida.
+    if: ${{ !cancelled() && needs.changes.outputs.ansible != 'false' }}
+
     runs-on: ubuntu-latest
     timeout-minutes: 15
 

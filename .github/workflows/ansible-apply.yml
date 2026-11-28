@@ -1,0 +1,363 @@
+name: Ansible Apply
+
+# Aplicação protegida dos playbooks Ansible na VPS de produção (#110).
+# Guia operacional: docs/workflows/ansible-apply.md
+#
+# Controles que NÃO estão neste arquivo e precisam existir no repositório (#88):
+# - Environment "production" com required reviewers e deployment branches
+#   restritas à main;
+# - proteção da main (PR obrigatório, sem force push).
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "ansible/**"
+      - "!ansible/docs/**"
+      - "!ansible/**/*.md"
+      - ".github/workflows/ansible-apply.yml"
+
+  workflow_dispatch:
+    inputs:
+      playbook:
+        description: "Perfil de playbooks autorizado (ver docs/workflows/ansible-apply.md)"
+        type: choice
+        required: true
+        default: check
+        options:
+          - check
+          - baseline
+          - prepare
+          - hardening
+          - k3s-preflight
+          - k3s
+          - k3s-verify
+          - argocd
+          - configure-runtime-tls
+      tags:
+        description: "Tags autorizadas para o perfil escolhido"
+        type: choice
+        required: true
+        default: todas
+        options:
+          - todas
+      inventory:
+        description: "Inventário autorizado"
+        type: choice
+        required: true
+        default: production
+        options:
+          - production
+
+permissions: {}
+
+jobs:
+  plan:
+    name: Resolver plano autorizado
+    # Bloqueia qualquer execução fora da main, inclusive workflow_dispatch.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      profile: ${{ steps.plan.outputs.profile }}
+      playbooks: ${{ steps.plan.outputs.playbooks }}
+      health_checks: ${{ steps.plan.outputs.health_checks }}
+      tags: ${{ steps.plan.outputs.tags }}
+      inventory: ${{ steps.plan.outputs.inventory }}
+      host: ${{ steps.plan.outputs.host }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout do commit da execução
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validar inputs contra a allowlist
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          INPUT_PLAYBOOK: ${{ inputs.playbook }}
+          INPUT_TAGS: ${{ inputs.tags }}
+          INPUT_INVENTORY: ${{ inputs.inventory }}
+        run: ansible/scripts/apply-plan.sh
+
+      - name: Publicar plano para o aprovador
+        env:
+          PROFILE: ${{ steps.plan.outputs.profile }}
+          PLAYBOOKS: ${{ steps.plan.outputs.playbooks }}
+          HEALTH_CHECKS: ${{ steps.plan.outputs.health_checks }}
+          TAGS: ${{ steps.plan.outputs.tags }}
+          INVENTORY: ${{ steps.plan.outputs.inventory }}
+          TARGET: ${{ steps.plan.outputs.host }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          {
+            echo "## Plano Ansible aguardando aprovação"
+            echo
+            echo "| Campo | Valor |"
+            echo "| --- | --- |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Ref | \`${GITHUB_REF}\` |"
+            echo "| Evento | \`${EVENT_NAME}\` |"
+            echo "| Solicitante | \`${ACTOR}\` |"
+            echo "| Inventário / host | \`${INVENTORY}\` / \`${TARGET}\` |"
+            echo "| Perfil | \`${PROFILE}\` |"
+            echo "| Playbooks | \`${PLAYBOOKS}\` |"
+            echo "| Tags | \`${TAGS:-todas}\` |"
+            echo "| Verificações de saúde | \`${HEALTH_CHECKS}\` |"
+            echo
+            echo "Revise o diff do commit em ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA} antes de aprovar."
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: Aplicar na produção
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    # Runner hospedado e efêmero: o runner privilegiado nunca roda na VPS.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # Secrets só são liberados após a aprovação deste Environment.
+    environment: production
+    # Uma execução por vez na VPS; um apply em andamento nunca é cancelado.
+    concurrency:
+      group: ansible-apply-production-apae-prod
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      ANSIBLE_CONFIG: ${{ github.workspace }}/ansible/ansible.cfg
+      ANSIBLE_HOST_KEY_CHECKING: "True"
+      ANSIBLE_RETRY_FILES_ENABLED: "False"
+      ANSIBLE_FORCE_COLOR: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_CACHE_DIR: "1"
+    steps:
+      - name: Registrar início e diretório temporário
+        id: start
+        run: |
+          echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_OUTPUT"
+          work_dir="$RUNNER_TEMP/ansible-apply"
+          {
+            echo "WORK_DIR=$work_dir"
+            echo "ANSIBLE_COLLECTIONS_PATH=$work_dir/collections"
+            echo "ANSIBLE_LOCAL_TEMP=$work_dir/tmp"
+            echo "ANSIBLE_SSH_CONTROL_PATH_DIR=$work_dir/cp"
+          } >>"$GITHUB_ENV"
+
+      - name: Checkout do commit aprovado
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Revalidar plano no commit aprovado
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          INPUT_PLAYBOOK: ${{ inputs.playbook }}
+          INPUT_TAGS: ${{ inputs.tags }}
+          INPUT_INVENTORY: ${{ inputs.inventory }}
+          PLANNED_PLAYBOOKS: ${{ needs.plan.outputs.playbooks }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          ansible/scripts/apply-plan.sh
+          # O plano aprovado precisa ser idêntico ao plano executado.
+          grep -qxF "playbooks=${PLANNED_PLAYBOOKS}" "$GITHUB_OUTPUT"
+
+      # Sem cache: dependências do job privilegiado não vêm de cache compartilhado.
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Instalar ansible-core e collections fixados
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK_DIR"/{collections,tmp,cp}
+          chmod 700 "$WORK_DIR"
+          # Apenas o ansible-core é instalado aqui; ferramentas de lint ficam no CI.
+          core_pin="$(grep -E '^ansible-core==[0-9]+\.[0-9]+\.[0-9]+$' ansible/requirements.txt)" || {
+            echo "ERRO: ansible-core sem versão exata em ansible/requirements.txt" >&2
+            exit 1
+          }
+          python -m pip install --no-input "$core_pin"
+          ansible-galaxy collection install -r ansible/requirements.yml -p "$ANSIBLE_COLLECTIONS_PATH"
+          ansible --version | head -1
+
+      - name: Preparar identidade SSH e credenciais
+        id: credentials
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+          TARGET_HOST: ${{ secrets.ANSIBLE_TARGET_HOST }}
+          KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
+          VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          NEEDS_VAULT: ${{ steps.plan.outputs.needs_vault }}
+          INVENTORY: ${{ steps.plan.outputs.inventory }}
+          TARGET: ${{ steps.plan.outputs.host }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          [ -n "$SSH_PRIVATE_KEY" ] || { echo "ERRO: secret ANSIBLE_SSH_PRIVATE_KEY ausente." >&2; exit 1; }
+          [ -n "$TARGET_HOST" ] || { echo "ERRO: secret ANSIBLE_TARGET_HOST ausente." >&2; exit 1; }
+          [ -n "$KNOWN_HOSTS" ] || { echo "ERRO: variável ANSIBLE_KNOWN_HOSTS ausente." >&2; exit 1; }
+
+          key_file="$WORK_DIR/id_automation"
+          known_hosts_file="$WORK_DIR/known_hosts"
+          printf '%s\n' "$SSH_PRIVATE_KEY" >"$key_file"
+          printf '%s\n' "$KNOWN_HOSTS" >"$known_hosts_file"
+
+          # Chave válida e sem passphrase (o job não é interativo).
+          ssh-keygen -y -P '' -f "$key_file" >/dev/null 2>&1 || {
+            echo "ERRO: ANSIBLE_SSH_PRIVATE_KEY inválida ou protegida por passphrase." >&2
+            exit 1
+          }
+
+          # Porta efetiva do inventário versionado (ansible_port -> ssh_port).
+          port="$(ansible-inventory -i "ansible/inventories/$INVENTORY/hosts.yml" --host "$TARGET" |
+            python -c 'import json,sys
+          d = json.load(sys.stdin)
+          p = str(d.get("ansible_port", ""))
+          print(d.get("ssh_port", 22) if (not p or "{{" in p) else p)')"
+          [[ "$port" =~ ^[0-9]+$ ]] || { echo "ERRO: porta SSH inválida no inventário." >&2; exit 1; }
+
+          lookup="$TARGET_HOST"
+          [ "$port" = "22" ] || lookup="[$TARGET_HOST]:$port"
+          ssh-keygen -F "$lookup" -f "$known_hosts_file" >/dev/null || {
+            echo "ERRO: ANSIBLE_KNOWN_HOSTS não contém chave confiável para o host/porta do inventário." >&2
+            exit 1
+          }
+          # Fingerprints publicadas (sem o endereço) para conferência no resumo.
+          fingerprints="$(ssh-keygen -l -f "$known_hosts_file" | awk '{print $2, $NF}' | paste -sd ';' -)"
+          echo "fingerprints=$fingerprints" >>"$GITHUB_OUTPUT"
+
+          # Variáveis de conexão sobrepostas por extra vars (maior precedência).
+          # StrictHostKeyChecking=yes e known_hosts exclusivo: sem TOFU/ssh-keyscan.
+          KEY_FILE="$key_file" KH_FILE="$known_hosts_file" python - >"$WORK_DIR/connection.json" <<'PY'
+          import json, os
+          print(json.dumps({
+              "ansible_host": os.environ["TARGET_HOST"],
+              "ansible_ssh_private_key_file": os.environ["KEY_FILE"],
+              "ansible_ssh_common_args": " ".join([
+                  "-o IdentitiesOnly=yes",
+                  "-o BatchMode=yes",
+                  "-o StrictHostKeyChecking=yes",
+                  "-o UserKnownHostsFile=" + os.environ["KH_FILE"],
+                  "-o GlobalKnownHostsFile=/dev/null",
+              ]),
+          }))
+          PY
+
+          if [ "$NEEDS_VAULT" = "true" ]; then
+            [ -n "$VAULT_PASSWORD" ] || { echo "ERRO: secret ANSIBLE_VAULT_PASSWORD ausente para playbook cifrado." >&2; exit 1; }
+            printf '%s\n' "$VAULT_PASSWORD" >"$WORK_DIR/vault-pass"
+          fi
+
+      - name: Verificar conectividade e privilégios (pré-aplicação)
+        id: preflight
+        working-directory: ansible
+        env:
+          INVENTORY: ${{ steps.plan.outputs.inventory }}
+          TARGET: ${{ steps.plan.outputs.host }}
+        run: |
+          ansible-playbook -i "inventories/$INVENTORY/hosts.yml" --limit "$TARGET" \
+            -e "@$WORK_DIR/connection.json" playbooks/check.yml
+
+      - name: Aplicar playbooks autorizados
+        id: apply
+        working-directory: ansible
+        env:
+          INVENTORY: ${{ steps.plan.outputs.inventory }}
+          TARGET: ${{ steps.plan.outputs.host }}
+          PLAYBOOKS: ${{ steps.plan.outputs.playbooks }}
+          TAGS: ${{ steps.plan.outputs.tags }}
+          NEEDS_VAULT: ${{ steps.plan.outputs.needs_vault }}
+        run: |
+          set -euo pipefail
+          args=(-i "inventories/$INVENTORY/hosts.yml" --limit "$TARGET" -e "@$WORK_DIR/connection.json")
+          [ -z "$TAGS" ] || args+=(--tags "$TAGS")
+          [ "$NEEDS_VAULT" != "true" ] || args+=(--vault-password-file "$WORK_DIR/vault-pass")
+          read -ra playbook_list <<<"$PLAYBOOKS"
+          for pb in "${playbook_list[@]}"; do
+            echo "::group::ansible-playbook playbooks/$pb"
+            ansible-playbook "${args[@]}" "playbooks/$pb"
+            echo "::endgroup::"
+          done
+
+      # Executa mesmo após falha do apply, para registrar o estado resultante.
+      - name: Verificações de saúde
+        id: health
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+        working-directory: ansible
+        env:
+          INVENTORY: ${{ steps.plan.outputs.inventory }}
+          TARGET: ${{ steps.plan.outputs.host }}
+          HEALTH_CHECKS: ${{ steps.plan.outputs.health_checks }}
+        run: |
+          set -euo pipefail
+          read -ra checks <<<"$HEALTH_CHECKS"
+          for pb in "${checks[@]}"; do
+            echo "::group::verificação playbooks/$pb"
+            ansible-playbook -i "inventories/$INVENTORY/hosts.yml" --limit "$TARGET" \
+              -e "@$WORK_DIR/connection.json" "playbooks/$pb"
+            echo "::endgroup::"
+          done
+
+      - name: Registrar resultado
+        if: always()
+        env:
+          STARTED_AT: ${{ steps.start.outputs.at }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
+          PROFILE: ${{ steps.plan.outputs.profile }}
+          PLAYBOOKS: ${{ steps.plan.outputs.playbooks }}
+          HEALTH_CHECKS: ${{ steps.plan.outputs.health_checks }}
+          TAGS: ${{ steps.plan.outputs.tags }}
+          INVENTORY: ${{ steps.plan.outputs.inventory }}
+          TARGET: ${{ steps.plan.outputs.host }}
+          FINGERPRINTS: ${{ steps.credentials.outputs.fingerprints }}
+          PREFLIGHT: ${{ steps.preflight.outcome }}
+          APPLY: ${{ steps.apply.outcome }}
+          HEALTH: ${{ steps.health.outcome }}
+        run: |
+          {
+            echo "## Resultado do Ansible Apply"
+            echo
+            echo "| Campo | Valor |"
+            echo "| --- | --- |"
+            echo "| Commit aplicado | \`${GITHUB_SHA}\` |"
+            echo "| Ref | \`${GITHUB_REF}\` |"
+            echo "| Evento / solicitante | \`${EVENT_NAME}\` / \`${ACTOR}\` |"
+            echo "| Environment | \`production\` |"
+            echo "| Inventário / host | \`${INVENTORY:-?}\` / \`${TARGET:-?}\` |"
+            echo "| Perfil / playbooks | \`${PROFILE:-?}\` / \`${PLAYBOOKS:-?}\` |"
+            echo "| Tags | \`${TAGS:-todas}\` |"
+            echo "| Host key confiável | \`${FINGERPRINTS:-não verificada}\` |"
+            echo "| Início / fim (UTC) | ${STARTED_AT} / $(date -u +%Y-%m-%dT%H:%M:%SZ) |"
+            echo "| Pré-verificação | ${PREFLIGHT:-skipped} |"
+            echo "| Aplicação | ${APPLY:-skipped} |"
+            echo "| Saúde (\`${HEALTH_CHECKS:-?}\`) | ${HEALTH:-skipped} |"
+            echo "| Execução | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT} |"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Remover material sensível
+        if: always()
+        run: |
+          if [ -d "$WORK_DIR" ]; then
+            find "$WORK_DIR" -maxdepth 1 -type f \( -name 'id_automation' -o -name 'vault-pass' \) \
+              -exec shred -u {} + 2>/dev/null || true
+            rm -rf "$WORK_DIR"
+          fi

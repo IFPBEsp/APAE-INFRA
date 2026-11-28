@@ -67,8 +67,61 @@ resource "github_branch_protection" "protection" {
   allows_force_pushes = false
 }
 
+locals {
+  # Environments sem entrada em environment_protection permanecem sem regras.
+  environment_protection = {
+    for name in var.environments : name => var.environment_protection[name]
+    if contains(keys(var.environment_protection), name)
+  }
+
+  environment_reviewer_logins = toset(flatten([
+    for settings in values(local.environment_protection) : settings.reviewer_users
+  ]))
+
+  environment_deployment_branches = merge([
+    for name, settings in local.environment_protection : {
+      for pattern in settings.deployment_branches : "${name}:${pattern}" => {
+        environment = name
+        pattern     = pattern
+      }
+    }
+  ]...)
+}
+
+# Os revisores são informados por login; a API de environments exige o ID numérico.
+data "github_user" "environment_reviewers" {
+  for_each = local.environment_reviewer_logins
+  username = each.key
+}
+
 resource "github_repository_environment" "environments" {
   for_each    = toset(var.environments)
   repository  = data.github_repository.repo.name
   environment = each.key
+
+  prevent_self_review = try(local.environment_protection[each.key].prevent_self_review, null)
+  can_admins_bypass   = try(local.environment_protection[each.key].can_admins_bypass, null)
+
+  dynamic "reviewers" {
+    for_each = contains(keys(local.environment_protection), each.key) ? [local.environment_protection[each.key]] : []
+    content {
+      users = [for login in reviewers.value.reviewer_users : data.github_user.environment_reviewers[login].id]
+    }
+  }
+
+  # Deploy apenas das branches listadas (custom branch policies).
+  dynamic "deployment_branch_policy" {
+    for_each = length(try(local.environment_protection[each.key].deployment_branches, [])) > 0 ? [1] : []
+    content {
+      protected_branches     = false
+      custom_branch_policies = true
+    }
+  }
+}
+
+resource "github_repository_environment_deployment_policy" "branches" {
+  for_each       = local.environment_deployment_branches
+  repository     = data.github_repository.repo.name
+  environment    = github_repository_environment.environments[each.value.environment].environment
+  branch_pattern = each.value.pattern
 }
