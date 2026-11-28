@@ -10,6 +10,7 @@
 - [Estudo de NGINX e Gateway API](nginx/README.md)
 - [Estudo de Terraform e GitOps](terraform/README.md)
 - [Fluxo do ArgoCD e GitOps](argocd/fluxo-argocd.md)
+- [Hostname temporário, operação TLS e migração de domínio](argocd/tls-gateway.md)
 - [Fluxo de comunicação entre repositórios](fluxo-comunicacao-repositorios.md)
 - [Boas práticas do repositório](boas-praticas/README.md)
 - [Workflows reutilizáveis de validação Kubernetes](workflows/reusable-k8s-lint.md)
