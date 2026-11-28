@@ -106,9 +106,9 @@ Não são necessários secrets adicionais. O PostgreSQL utilizado durante o job 
 
 ## Imutabilidade das migrations
 
-O workflow compara o Pull Request com `origin/${{ github.base_ref }}` usando `git diff --name-status` no diretório de migrations. A execução falha quando o diff contém qualquer arquivo com status `M` (Modified) ou `D` (Deleted).
+O workflow compara o Pull Request com `origin/${{ github.base_ref }}` usando `git diff --name-status` no diretório de migrations. Somente adições com status `A` (Added) são permitidas nesse diretório.
 
-Novas migrations com status `A` (Added) são permitidas. O diff é executado sem detecção de renomeação, portanto uma migration renomeada aparece como uma remoção seguida de uma adição e também é bloqueada.
+Qualquer outro status reprova a execução, incluindo modificações `M` (Modified), exclusões `D` (Deleted), alterações de tipo `T` (Type changed) e renomeações `R` (Renamed), além de demais status não classificados como `A`.
 
 Exemplo permitido:
 
