@@ -8,8 +8,9 @@ termina TLS e o cert-manager emite e renova o certificado via HTTP-01.
 ## Hostname temporário
 
 - Formato `apae-<ipv4-publico-com-hifens>.sslip.io`.
-- Manutenção pela equipe de infraestrutura do APAE-INFRA. Registrar no
-  acompanhamento da #112 quem confirma o IP, executa o sync e monitora a emissão.
+- Manutenção pela equipe de infraestrutura do APAE-INFRA. Luiz
+  (`@LuizArtur29`) é o responsável registrado na #112 pelo acompanhamento
+  desta implantação.
 - O serviço externo sslip.io resolve o IP embutido no hostname. Uma falha no
   serviço pode afetar a entrada e a renovação. Uma troca de IPv4 muda o hostname
   temporário e exige novo certificado, atualização de rotas e revisão das
@@ -72,14 +73,16 @@ termina TLS e o cert-manager emite e renova o certificado via HTTP-01.
      issuer/letsencrypt-production certificate/apae-public-tls --timeout=5m
    ```
 
-7. Sincronizar seletivamente o `Gateway/apae-gateway` na mesma janela da #113.
-   A inclusão da porta 443 pode recriar o data plane. Validar o listener
-   `https` com `Programmed=True` e `ResolvedRefs=True` e as rotas públicas
-   antes de sincronizar `HTTPRoute/apae-http-redirect`. Depois, confirmar a
-   convergência de todos os recursos da Application. Durante a transição,
-   usar sync sem prune. As rotas dos produtos devem apontar para
-   `sectionName: https`. Se a #113 precisar de rotas em outros namespaces,
-   autorizar apenas os namespaces previstos no listener HTTPS.
+7. Sincronizar seletivamente o `Gateway/apae-gateway`. A inclusão da porta
+   443 pode recriar o data plane. Aguardar o rollout de
+   `deployment/apae-gateway-nginx` e validar o listener `https` com
+   `Programmed=True` e `ResolvedRefs=True`, além do acesso HTTPS externo,
+   antes de sincronizar `HTTPRoute/apae-http-redirect`. Se houver rotas de
+   produto ativas, validar os endpoints HTTPS na mesma janela antes de
+   ativar o redirect. Depois, confirmar a convergência de todos os recursos
+   da Application. Durante a transição, usar sync sem prune. As rotas da
+   #113 devem apontar para `sectionName: https`. Se precisarem vir de outros
+   namespaces, autorizar apenas os namespaces previstos no listener HTTPS.
 
 ### Verificar HTTPS, redirecionamento e renovação
 
@@ -123,6 +126,29 @@ estados, resultado HTTP e validade em evidência sanitizada da #112. Evitar
 incluir chaves, conteúdo de Secrets, tokens ACME ou URLs assinadas. Os alertas
 de expiração serão implantados e testados na
 [#116](https://github.com/IFPBEsp/APAE-INFRA/issues/116).
+
+### Evidências da validação de 28/11/2026
+
+A VPS foi validada com k3s `v1.36.5+k3s1`, Gateway API `v1.6.3` e
+NGINX Gateway Fabric `2.8.1`. Na fase controlada, a Application
+`nginx-gateway` foi sincronizada pelo ArgoCD no commit `334b6e3`.
+As Applications `cert-manager` e `nginx-gateway` terminaram
+`Synced/Healthy`. A adoção pela raiz em `main` segue o procedimento da #111
+após a integração do [PR #133](https://github.com/IFPBEsp/APAE-INFRA/pull/133).
+
+| Verificação | Resultado observado |
+| --- | --- |
+| DNS e porta 80 | O registro `A` no resolvedor público retornou o IPv4 da VPS. A requisição externa recebeu resposta HTTP antes da ativação do redirect. |
+| Primeira emissão | Os certificados de staging e de produção atingiram `Ready=True` na revisão 1, nessa ordem, com pedidos ACME `valid`. |
+| HTTPS | Listener `Programmed=True` e `ResolvedRefs=True`. Cadeia Let's Encrypt `YR1` e SAN do hostname temporário verificados em conexão externa. |
+| Redirecionamento | `302` de HTTP para HTTPS preservou hostname, path `/apae-geral/exemplo` e query `origem=tls&teste=1`. |
+| HTTP-01 com redirect ativo | Uma conta temporária de staging passou de autorização `pending` para pedido `valid` usando o mesmo hostname. Seus recursos de teste foram removidos. |
+| Renovação | Staging e produção passaram da revisão 1 para a 2. O serial público de produção mudou de final `AE97C` para `72354`, com validade até 26/02/2027 às 13:02:41 UTC. |
+| Acesso ao Secret | O RBAC negou à ServiceAccount padrão de `apae-dev` a leitura do Secret TLS de produção. |
+
+O teste HTTPS chegou ao Gateway, que retornou `404` com a cadeia válida.
+Os testes de endpoints, cookies, callbacks e demais configurações das
+aplicações serão realizados com as rotas de produto da #113.
 
 ## Segredos e recuperação
 
