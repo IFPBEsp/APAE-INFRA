@@ -6,6 +6,8 @@ Este documento cobre apenas os aspectos de segurança e operação necessários 
 
 Não define uma estratégia completa de segurança ou operação.
 
+As seções 13 a 15 descrevem os pipelines implementados na issue #89: apply com aprovação manual, detecção de drift e o procedimento de rollback.
+
 ---
 
 ## 1. Princípio do menor privilégio
@@ -120,7 +122,7 @@ Porém, saved plans podem carregar dados sensíveis e exigem controle cuidadoso 
 - vínculo com commit;
 - vínculo com ambiente.
 
-A issue #59 registra o padrão como alternativa recomendada para estudo de implementação, mas não define ainda o pipeline final.
+A issue #59 registra o padrão como alternativa recomendada para estudo de implementação, mas não definia o pipeline final. O pipeline implementado está descrito na seção 13.
 
 ---
 
@@ -142,7 +144,7 @@ reviewer autorizado
 job de apply
 ```
 
-No estágio atual, o estudo recomenda aprovação humana para mudanças críticas e produção.
+No estágio atual, o estudo recomenda aprovação humana para mudanças críticas e produção. Na implementação (issue #89), a aprovação é exigida pelo environment `production` do GitHub, conforme a seção 13.
 
 ---
 
@@ -291,7 +293,85 @@ Isso reforça a separação de responsabilidades proposta pelo estudo.
 
 ---
 
-## 13. Referências
+## 13. Pipeline de apply com aprovação manual
+
+A implementação do ciclo `plan` → `apply` está em `.github/workflows/terraform-apply.yml` (issue #89).
+
+```text
+push em main (terraform/**) ou workflow_dispatch
+  ↓
+environment: production — aprovação manual
+  ↓
+checkout → setup terraform → init → plan (saved plan) → apply
+```
+
+Pontos do fluxo:
+
+- o `terraform init` conecta ao backend remoto HCP Terraform configurado na issue #87, que também fornece o lock do state;
+- o `terraform plan` grava o plano em arquivo com `-out` e o `terraform apply` consome exatamente esse arquivo, sem recalcular o plan entre as etapas;
+- a diretiva `concurrency` com `cancel-in-progress: false` garante apenas um apply por vez no ambiente, evitando corrida sobre o lock do state;
+- a aprovação humana acontece no GitHub Environment `production` (Settings > Environments), antes da execução do job de apply.
+
+---
+
+## 14. Detecção de drift
+
+A rotina de drift está em `.github/workflows/terraform-drift.yml` (issue #89):
+
+```text
+schedule (diário) ou workflow_dispatch
+  ↓
+terraform plan -detailed-exitcode
+  ↓
+0 → sem divergência
+1 → erro no plan → o job reprova (exit 1)
+2 → divergência detectada → o job emite ::warning:: e segue verde
+```
+
+Com código 2 o job não falha: ele publica um `::warning::` no Actions sinalizando a divergência (possível desvio entre dev e main, a validar conforme a issue #89). Só um erro real de `terraform plan` (código diferente de 0 e 2) reprova o job. A correção segue a estratégia da [seção 11 do documento 03](03-bootstrap-state-locking-e-drift.md):
+
+```text
+drift detectado
+  ↓
+análise
+  ↓
+mudança via Git (PR)
+  ↓
+apply controlado
+```
+
+Drift detecta divergências; não as corrige automaticamente. Correção automática fica fora do escopo atual.
+
+---
+
+## 15. Procedimento de rollback
+
+Rollback de configuração é feito no Git, não por comando do Terraform:
+
+```bash
+git revert <commit-errado>
+git push origin <branch>
+```
+
+Em seguida, abrir e mesclar o PR para a branch principal. O push em `main` com mudanças em `terraform/**` re-dispara o pipeline de apply, que exige aprovação manual no environment `production` antes de executar.
+
+```text
+git revert
+  ↓
+PR → merge em main
+  ↓
+pipeline de apply
+  ↓
+aprovação manual (production)
+  ↓
+apply reconcilia a infraestrutura
+```
+
+Como descrito na [seção 10](#10-rollback), `git revert` recupera a configuração anterior, mas não recupera dados nem recursos destruídos. Rollback de dados é responsabilidade da política de backup (issues #107 e #108).
+
+---
+
+## 16. Referências
 
 - HashiCorp — Running Terraform in Automation  
   <https://developer.hashicorp.com/terraform/tutorials/automation/automate-terraform>

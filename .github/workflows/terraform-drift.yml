@@ -1,0 +1,142 @@
+name: Terraform Drift Detection
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-drift
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VERSION: "1.13.5"
+
+jobs:
+  discover:
+    name: Discover Terraform Environments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      environments: ${{ steps.discover.outputs.environments }}
+      has-environments: ${{ steps.discover.outputs.has-environments }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Discover root modules
+        id: discover
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          environments="$(
+            find terraform/environments \
+              -mindepth 1 \
+              -maxdepth 1 \
+              -type d \
+              -print0 |
+            while IFS= read -r -d '' dir; do
+              if find "$dir" \
+                -maxdepth 1 \
+                -type f \
+                -name '*.tf' \
+                -print \
+                -quit | grep -q .; then
+                basename "$dir"
+              fi
+            done |
+            sort |
+            jq -R -s -c 'split("\n") | map(select(length > 0))'
+          )"
+
+          echo "environments=$environments" >> "$GITHUB_OUTPUT"
+
+          if [ "$environments" = "[]" ]; then
+            echo "has-environments=false" >> "$GITHUB_OUTPUT"
+            echo "No Terraform root modules found in terraform/environments/."
+          else
+            echo "has-environments=true" >> "$GITHUB_OUTPUT"
+            echo "Terraform environments found: $environments"
+          fi
+
+
+  drift:
+    name: Drift ${{ matrix.environment }}
+
+    needs:
+      - discover
+
+    if: needs.discover.outputs.has-environments == 'true'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.discover.outputs.environments) }}
+
+    defaults:
+      run:
+        working-directory: terraform/environments/${{ matrix.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        id: init
+        run: terraform init -input=false
+
+      - name: Detect drift
+        id: drift
+        shell: bash
+        env:
+          ENV_NAME: ${{ matrix.environment }}
+        run: |
+          set -uo pipefail
+
+          set +e
+          terraform plan \
+            -detailed-exitcode \
+            -input=false \
+            -no-color \
+            -lock-timeout=5m
+          exit_code=$?
+          set -e
+
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+          case "$exit_code" in
+            0)
+              echo "No drift detected in $ENV_NAME."
+              ;;
+            2)
+              echo "::warning::Drift detected in $ENV_NAME. This may be a divergence between dev and main and must be validated according to issue #89: analyze the plan above and, if confirmed, fix it via Git (PR) followed by a controlled apply."
+              echo "Review the plan output above and compare dev against main before opening a PR (issue #89)."
+              ;;
+            *)
+              echo "::error::Terraform plan failed with exit code $exit_code in $ENV_NAME."
+              exit 1
+              ;;
+          esac
