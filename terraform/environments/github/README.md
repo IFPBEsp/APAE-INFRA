@@ -6,7 +6,7 @@ Este diretório gerencia a governança e padronização das configurações dos 
 
 - **Branch Protection Rules:** Regras de proteção para as branches `main` e `dev` (revisões obrigatórias, status checks, bloqueio de force-push e exclusão).
 - **Labels padronizadas:** Rótulos comuns de trabalho e a escala Fibonacci para estimativa de esforço (`1`, `2`, `3`, `5`, `8`, `13`).
-- **Environments:** Ambientes padronizados para fluxos de deploy (`development`, `staging`, `production`).
+- **Environments:** Ambientes padronizados para fluxos de deploy (`development`, `staging`, `production`). No `APAE-INFRA`, o `production` exige aprovação de `henriquetomazzz` ou `LuizArtur29`, impede autoaprovação e bypass de administradores e aceita deploy somente da `main`. É usado pelo [`ansible-apply.yml`](../../../docs/workflows/ansible-apply.md).
 
 > **Fora de escopo:** Criação ou exclusão de repositórios. O Terraform utiliza o data source `data.github_repository` para gerenciar apenas configurações de repositórios pré-existentes.
 
