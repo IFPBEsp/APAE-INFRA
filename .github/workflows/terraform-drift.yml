@@ -114,6 +114,7 @@ jobs:
         shell: bash
         env:
           TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+          ENV_NAME: ${{ matrix.environment }}
         run: |
           set -uo pipefail
 
@@ -130,14 +131,14 @@ jobs:
 
           case "$exit_code" in
             0)
-              echo "No drift detected in ${{ matrix.environment }}."
+              echo "No drift detected in $ENV_NAME."
               ;;
             2)
-              echo "::error::Drift detected in ${{ matrix.environment }}. Analyze the plan above and fix it via Git (PR) followed by a controlled apply."
+              echo "::error::Drift detected in $ENV_NAME. Analyze the plan above and fix it via Git (PR) followed by a controlled apply."
               exit 1
               ;;
             *)
-              echo "::error::Terraform plan failed with exit code $exit_code in ${{ matrix.environment }}."
+              echo "::error::Terraform plan failed with exit code $exit_code in $ENV_NAME."
               exit "$exit_code"
               ;;
           esac
