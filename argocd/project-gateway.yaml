@@ -50,6 +50,12 @@ spec:
       kind: NginxProxy
     - group: gateway.networking.k8s.io
       kind: Gateway
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+    - group: cert-manager.io
+      kind: Issuer
+    - group: cert-manager.io
+      kind: Certificate
 
   orphanedResources:
     warn: true

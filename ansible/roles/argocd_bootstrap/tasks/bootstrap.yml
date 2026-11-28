@@ -21,6 +21,7 @@
     - project.yaml
     - project-infra.yaml
     - project-gateway.yaml
+    - project-cert-manager.yaml
     - app-of-apps.yaml
   register: argocd_bootstrap_apply
   changed_when: >-

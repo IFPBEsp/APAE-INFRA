@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://github.com/IFPBEsp/APAE-INFRA.git
     targetRevision: main
-    path: kubernetes/infra/nginx-gateway
+    path: kubernetes/infra/nginx-gateway-tls/production
 
   destination:
     server: https://kubernetes.default.svc

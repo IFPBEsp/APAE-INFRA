@@ -6,6 +6,7 @@ on:
       - '.github/workflows/update-image-overlay-*.yml'
       - '.github/workflows/docker-build-publish-image.yml'
       - 'argocd/**'
+      - 'kubernetes/infra/nginx-gateway*/**'
       - 'ansible/roles/argocd_bootstrap/tasks/bootstrap.yml'
       - 'tests/test_gateway_projects.py'
       - 'tests/test_main_image_policy.py'

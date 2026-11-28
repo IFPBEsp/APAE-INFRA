@@ -1,0 +1,20 @@
+---
+- op: add
+  path: /spec/listeners/-
+  value:
+    name: https
+    protocol: HTTPS
+    port: 443
+    hostname: hostname.invalid
+    tls:
+      mode: Terminate
+      certificateRefs:
+        - group: ""
+          kind: Secret
+          name: apae-public-tls
+    allowedRoutes:
+      namespaces:
+        from: Same
+      kinds:
+        - group: gateway.networking.k8s.io
+          kind: HTTPRoute
