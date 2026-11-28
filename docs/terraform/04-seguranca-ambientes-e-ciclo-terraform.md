@@ -324,11 +324,11 @@ schedule (diário) ou workflow_dispatch
 terraform plan -detailed-exitcode
   ↓
 0 → sem divergência
-1 → erro no plan
-2 → divergência detectada
+1 → erro no plan → o job reprova (exit 1)
+2 → divergência detectada → o job emite ::warning:: e segue verde
 ```
 
-Com código 2 o job falha de propósito, sinalizando a divergência nos Actions. A correção segue a estratégia da [seção 11 do documento 03](03-bootstrap-state-locking-e-drift.md):
+Com código 2 o job não falha: ele publica um `::warning::` no Actions sinalizando a divergência (possível desvio entre dev e main, a validar conforme a issue #89). Só um erro real de `terraform plan` (código diferente de 0 e 2) reprova o job. A correção segue a estratégia da [seção 11 do documento 03](03-bootstrap-state-locking-e-drift.md):
 
 ```text
 drift detectado

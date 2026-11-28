@@ -132,11 +132,11 @@ jobs:
               echo "No drift detected in $ENV_NAME."
               ;;
             2)
-              echo "::error::Drift detected in $ENV_NAME. Analyze the plan above and fix it via Git (PR) followed by a controlled apply."
-              exit 1
+              echo "::warning::Drift detected in $ENV_NAME. This may be a divergence between dev and main and must be validated according to issue #89: analyze the plan above and, if confirmed, fix it via Git (PR) followed by a controlled apply."
+              echo "Review the plan output above and compare dev against main before opening a PR (issue #89)."
               ;;
             *)
               echo "::error::Terraform plan failed with exit code $exit_code in $ENV_NAME."
-              exit "$exit_code"
+              exit 1
               ;;
           esac
